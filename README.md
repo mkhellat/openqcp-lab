@@ -1,0 +1,54 @@
+# openqcp-lab
+
+A collection of educational Jupyter notebooks mainly on quantum algorithms.
+
+# Run
+
+Running Jupyter notebooks require a conda installation such as
+`miniconda`. After that you could start a Jupyter notebook server on a
+unix-like operating system using:
+
+````
+$ jupyter notebook
+````
+
+From the web portal, Jupyter notebooks could be opened and executed.
+
+Most Jupyter notebooks contain python codes and hence Jupyter would
+use the preinstalled `Python 3 (pykernel)` kernel to execute codes
+within them. However, in case a notebook requires running codes in
+other languages such as `Julia`, `R`, `SageMath`, `C`, and ..., it is
+possible to install the [relevant
+kernel](https://github.com/jupyter/jupyter/wiki/Jupyter-kernels) or
+even to [make
+kernels](https://jupyter-client.readthedocs.io/en/stable/kernels.html)
+on need basis. After that, one could switch to the required kernel
+from the kernel menu inside the web-portal.
+
+Furthermore, each notebook in this project is supposed to have a
+section in which any required modules/libraries/packages would be
+checked and installed if necessary.
+
+Good luck and have fun using these tutorials!
+
+
+# GNU GPL v3+
+
+Copyright (C) 2023 Mohammadreza Khellat GNU GPL v3+
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
+USA.
+
+See also https://www.gnu.org/licenses/gpl.html
