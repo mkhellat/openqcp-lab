@@ -5,7 +5,7 @@ A collection of educational Jupyter notebooks mainly on quantum algorithms.
 # Run
 
 Running Jupyter notebooks require a conda installation such as
-`miniconda`. After that you could start a Jupyter notebook server on a
+`miniconda`. You could start a Jupyter notebook server on a
 unix-like operating system using:
 
 ````
@@ -22,8 +22,10 @@ possible to install the [relevant
 kernel](https://github.com/jupyter/jupyter/wiki/Jupyter-kernels) or
 even to [make
 kernels](https://jupyter-client.readthedocs.io/en/stable/kernels.html)
-on need basis. After that, one could switch to the required kernel
-from the kernel menu inside the web-portal.
+on need basis. Having the required kernel, one could then switch to
+that kernel from the corresponding Jupyter web-portal. To run
+different types of codes within a single notebook, one could take
+advatage of _magic_s.
 
 Furthermore, each notebook in this project is supposed to have a
 section in which any required modules/libraries/packages would be
