@@ -25,7 +25,7 @@ kernels](https://jupyter-client.readthedocs.io/en/stable/kernels.html)
 on need basis. Having the required kernel, one could then switch to
 that kernel from the corresponding Jupyter web-portal. To run
 different types of codes within a single notebook, one could take
-advatage of _magic_s.
+advantage of _magic_.
 
 Furthermore, each notebook in this project is supposed to have a
 section in which any required modules/libraries/packages would be
