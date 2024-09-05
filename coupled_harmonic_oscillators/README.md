@@ -47,9 +47,12 @@ package.
 # Results
 
 Our simulation results for $N=2$ with the physical parameters
-$\{m_0=1.0, m_1 = 2.0, k_{00} = 1.0, k_{01} = 2.0, k_{11} = 3.0 \}$
-and the initial condition $\{ \dot{y}_0(0) = 1.0, \dot{y}_1(0) = -1.0,
-y_0(0) = 0.0, y_1(0) = 0.0 \}$ is as follows :
+$\{ m_0 = 1.0, m_1 = 2.0 \}$ , 
+$k_{00} = 1.0$, 
+$k_{01} = 2.0$, 
+$k_{11} = 3.0$, 
+and the initial condition
+$\{ \dot{y}_0(0) = 1.0, \dot{y}_1(0) = -1.0, y_0(0) = 0.0, y_1(0) = 0.0 \}$ is as follows :
 
 ![Hamiltonian simulation for n=2](./figures/hs_n_2.png)
 
