@@ -12,7 +12,15 @@ unix-like operating system using:
 $ jupyter notebook
 ````
 
+or if you have migrated to jupyterlab using
+
+````
+$ jupyter lab
+````
+
 From the web portal, Jupyter notebooks could be opened and executed.
+In newer versions of Jupyter server, it is possible to open an
+`.ipynb` file in `NbClassic`, `JupyterLab` or `Notebook`.
 
 Most Jupyter notebooks contain python codes and hence Jupyter would
 use the preinstalled `Python 3 (pykernel)` kernel to execute codes
@@ -23,7 +31,7 @@ kernel](https://github.com/jupyter/jupyter/wiki/Jupyter-kernels) or
 even to [make
 kernels](https://jupyter-client.readthedocs.io/en/stable/kernels.html)
 on need basis. Having the required kernel, one could then switch to
-that kernel from the corresponding Jupyter web-portal. To run
+that kernel from the corresponding Jupyter web-portal. Also, to run
 different types of codes within a single notebook, one could take
 advantage of _magic_.
 
