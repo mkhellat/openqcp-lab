@@ -16,11 +16,10 @@ algorithm has been devised in [Exponential Quantum Speedup in
 Simulating Coupled Classical
 Oscillators](https://journals.aps.org/prx/abstract/10.1103/PhysRevX.13.041041). The
 quantum algorithm relies on an amplitude encoding of the systems
-dynamical variables in a normalized quantum state $| \psi(t) \langle$.
-
+dynamical variables in a normalized quantum state $| \psi(t) \rangle$. 
 Consequently, finding a proper Hamiltonian, the behavior of the system
-at time $\Delta t$ would be given by evolving $| \psi(t_0) \langle$ to
-$| \psi(t_0 + \Delta t) \langle$.
+at time $\Delta t$ would be given by evolving $| \psi(t_0) \rangle$ to
+$| \psi(t_0 + \Delta t) \rangle$.
 
 
 # Implementation
