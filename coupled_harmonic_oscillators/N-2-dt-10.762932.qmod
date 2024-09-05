@@ -1,0 +1,111 @@
+qfunc main() {
+  state: qbit[];
+  prepare_amplitudes([
+    0.7071,
+    (-0.7071),
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ], 0.01, state);
+  suzuki_trotter([
+    PauliTerm {
+      pauli=[
+        Pauli::I,
+        Pauli::X,
+        Pauli::I
+      ],
+      coefficient=-0.5562
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::I,
+        Pauli::X,
+        Pauli::Z
+      ],
+      coefficient=0.0562
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::X,
+        Pauli::I,
+        Pauli::I
+      ],
+      coefficient=-0.3536
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::X,
+        Pauli::I,
+        Pauli::X
+      ],
+      coefficient=0.25
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::X,
+        Pauli::I,
+        Pauli::Z
+      ],
+      coefficient=-0.3536
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::X,
+        Pauli::Z,
+        Pauli::I
+      ],
+      coefficient=-0.3536
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::X,
+        Pauli::Z,
+        Pauli::X
+      ],
+      coefficient=0.25
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::X,
+        Pauli::Z,
+        Pauli::Z
+      ],
+      coefficient=-0.3536
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::Y,
+        Pauli::I,
+        Pauli::Y
+      ],
+      coefficient=0.25
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::Y,
+        Pauli::Z,
+        Pauli::Y
+      ],
+      coefficient=0.25
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::Z,
+        Pauli::X,
+        Pauli::I
+      ],
+      coefficient=-0.5562
+    },
+    PauliTerm {
+      pauli=[
+        Pauli::Z,
+        Pauli::X,
+        Pauli::Z
+      ],
+      coefficient=0.0562
+    }
+  ], 10.7629, 4, 40, state);
+}
