@@ -8,15 +8,13 @@ An example LCU implementation of a $2 \times 2$ non-unitary matrix.
 Coefficients $\alpha_i$ are determined performing a PauliTerms
 decomposition.
 
-Consequently, SELECT and PREPARE operators are prepared so that
-$$
-\langle 0 | PREPARE^{\dagger}.SELECT.PREPARE |0\rangle = \hat{U} |\psi\rangle
-$$
-where $\hat{U}$ is the quantum circuit. For our problem $\hat{U} =
-0.5\hat{I} + 0.5\hat{Z}$. This means applying $\hat{I}$ when
+Consequently, SELECT and PREPARE operators are prepared so that 
+$\langle 0| \text{PREPARE}^{\dagger}.\text{SELECT}.\text{PREPARE} |0\rangle = \hat{U} |\psi\rangle$.
+Here, $\hat{U}$ is the quantum circuit. For our problem 
+$\hat{U} = 0.5\hat{I} + 0.5\hat{Z}$. This means applying $\hat{I}$ when
 controller qubit is in state $|0\rangle$ and applying $\hat{Z}$ when
-controller qubit is in state $|1\rangle$. This is defined in
-`lcu_controllers(controller: QNum, psi: QNum)`.
+controller qubit is in state $|1\rangle$. The required operations are 
+defined in `lcu_controllers(controller: QNum, psi: QNum)`.
 
 The rest is simply preparing the state $|\psi\rangle$ which is to be
 operated by our non-unitary operator and applying the
