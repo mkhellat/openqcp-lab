@@ -41,6 +41,12 @@ checked and installed if necessary.
 
 Good luck and have fun using these tutorials!
 
+- [( 00 ) - Quantum Fourier Transform - Abelian groups case](quantum_fourier_transform_abelian)
+- [( 01 ) - Quantum Machine Learning - minimize expectation value](minimize_expectation_value)
+- [( 02 ) - Discrete-Time Quantum Walk - path graph](quantum_walk)
+- [( 03 ) - Non-Unitary Quantum Computing - lcu](nonunitary_quantum_computing)
+- [( 04 ) - Qunatum Optimization - qubo and vqe](quantum_variational_algorithms)
+- [( 05 ) - Qunatum Simulation - coupled harmonic oscillators](coupled_harmonic_oscillators)
 
 # GNU GPL v3+
 
