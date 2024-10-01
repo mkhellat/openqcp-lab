@@ -11,7 +11,7 @@ foundations of quantum Fourier transform (for Abelian groups) as a
 linear transformation between $\mathbb{C}[G]$ and
 $\mathbb{C}[\widehat{G}]$. Both being vector spaces, over the field of
 complex numbers $\mathbb{C}$, of complex-valued functions
-$f : G \to \mathbb{C}$ and $\widehat{f} : \widehat{G} \to \mathbb{C}$
+$f : G \to \mathbb{C}$ and $\widehat{f} : \widehat{G} \to \mathbb{C}$ 
 where $G$ is a finite Abelian group and $\hat{G}$ is the complete set
 of its characters.
 
