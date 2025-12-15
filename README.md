@@ -1,8 +1,8 @@
 # openqcp-lab
 
-A collection of educational Jupyter notebooks mainly on quantum algorithms.
+A collection of educational Jupyter notebooks focused on quantum algorithms.
 
-# Run
+## Run
 
 Running Jupyter notebooks require a conda installation such as
 `miniconda`. You could start a Jupyter notebook server on a
@@ -45,10 +45,10 @@ Good luck and have fun using these tutorials!
 - [( 01 ) - Quantum Machine Learning - minimize expectation value](minimize_expectation_value)
 - [( 02 ) - Discrete-Time Quantum Walk - path graph](quantum_walk)
 - [( 03 ) - Non-Unitary Quantum Computing - lcu](nonunitary_quantum_computing)
-- [( 04 ) - Qunatum Optimization - qubo and vqe](quantum_variational_algorithms)
-- [( 05 ) - Qunatum Simulation - coupled harmonic oscillators](coupled_harmonic_oscillators)
+- [( 04 ) - Quantum Optimization - qubo and vqe](quantum_variational_algorithms)
+- [( 05 ) - Quantum Simulation - coupled harmonic oscillators](coupled_harmonic_oscillators)
 
-# GNU GPL v3+
+## GNU GPL v3+
 
 Copyright (C) 2023 Mohammadreza Khellat GNU GPL v3+
 

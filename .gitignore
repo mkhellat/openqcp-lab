@@ -1,0 +1,30 @@
+# Jupyter
+**/.ipynb_checkpoints/
+*.ipynb_save
+*.ipynb_checkpoints
+
+# Scratch/test notebooks (keep locally but don't version control)
+**/test.ipynb
+**/Untitled.ipynb
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.env
+.venv
+venv/
+env/
+
+# Editor / OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local data / cache
+*.log
+*.tmp
+.cache/

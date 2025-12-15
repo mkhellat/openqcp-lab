@@ -8,7 +8,7 @@ simulation over time.
 # Background
 
 The dynamics of a 1-dimensional classical system of $N$ coupled
-harmonic oscillators could be described in terms of _eigenfrequecies_
+harmonic oscillators could be described in terms of _eigenfrequencies_
 and _normal modes_.
 
 To improve the time complexity of the required computations, a quantum
@@ -26,7 +26,7 @@ $| \psi(t_0 + \Delta t) \rangle$.
 
 Our strategy for Hamiltonian simulation would be to decompose the
 Hamiltonian operator into Pauli terms of integral qubit size and to
-evolve the decompsed Hamiltoninan using the generalized [_Suzuki-Trotter
+evolve the decomposed Hamiltonian using the generalized [_Suzuki-Trotter
 decomposition_](https://arxiv.org/abs/math-ph/0506007v1).
 
 
