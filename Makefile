@@ -34,3 +34,6 @@ clean:
 test:
 	@echo "Running basic import tests..."
 	@python3 -c "import numpy; import scipy; import sympy; import matplotlib; import pennylane; import classiq; print('All core packages imported successfully.')" || echo "Some packages failed to import."
+	@echo ""
+	@echo "Checking notebook syntax..."
+	@python3 -c "import json, sys; [json.load(open(f)) for f in ['coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D_N_2.ipynb', 'minimize_expectation_value/minimize_vqc_output.ipynb', 'nonunitary_quantum_computing/lcu_2x2.ipynb', 'quantum_walk/quantum_walk_discrete_time_line_16nodes.ipynb', 'quantum_fourier_transform_abelian/qft_abelian_qpe_hadamard.ipynb', 'quantum_variational_algorithms/VA0_qubo_and_vqe.ipynb']]; print('All notebooks have valid JSON structure.')" 2>/dev/null || echo "Warning: Some notebooks may have JSON syntax issues."
