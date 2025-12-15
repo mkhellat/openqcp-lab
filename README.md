@@ -94,6 +94,9 @@ the notebooks should run without requiring additional package
 installations. Each notebook's README also documents its specific
 software requirements for reference.
 
+For information on reproducing figures and results from the notebooks,
+see [REPRODUCING_RESULTS.md](REPRODUCING_RESULTS.md).
+
 Good luck and have fun using these tutorials!
 
 - [( 00 ) - Quantum Fourier Transform - Abelian groups case](quantum_fourier_transform_abelian)

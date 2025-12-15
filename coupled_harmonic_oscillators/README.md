@@ -67,6 +67,23 @@ which compares quite well with the analytical results :
 
 ![Hamiltonian simulation for n=2](./figures/ar_n_2.png)
 
+## Reproducing Results
+
+To reproduce these figures, run the notebook
+`N_coupled_harmonic_oscillators_1_D_N_2.ipynb`. The figures are generated
+in the following cells:
+
+- **Cell 49**: Generates the Hamiltonian simulation plot (`hs_n_2.png`)
+- **Cell 59**: Generates the analytical solution plot (`ar_n_2.png`)
+
+By default, the plots are displayed using `plt.show()`. To save them to
+the `figures/` directory, add `plt.savefig('figures/filename.png')` calls
+before `plt.show()` in the respective cells.
+
+**Note:** The figures in the `figures/` directory are precomputed examples
+for reference. Running the notebook will generate new plots based on the
+current execution results.
+
 
 # Contributors
 

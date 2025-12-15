@@ -34,6 +34,18 @@ If you have set up the base environment as described in the main README,
 no additional installation is needed.
 
 
+# Outputs
+
+The notebook may generate the following file when executed:
+
+- `qft-expvalue.qmod` - Quantum model file (generated if the `write_qmod`
+  cell is executed)
+
+This file is saved in the `quantum_fourier_transform_abelian/` directory.
+The notebook also displays plots showing expectation values and measurement
+results, but these are displayed inline and not saved to files by default.
+
+
 # GNU GPL v3+
 
 Copyright (C) 2024 Mohammadreza Khellat GNU GPL v3+

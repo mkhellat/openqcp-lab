@@ -33,6 +33,19 @@ If you have set up the base environment as described in the main README,
 no additional installation is needed.
 
 
+# Outputs
+
+The notebook may generate the following file when executed:
+
+- `lcu-2x2.qmod` - Quantum model file (generated if the `write_qmod` cell
+  is executed)
+
+This file is saved in the `nonunitary_quantum_computing/` directory.
+The notebook also displays measurement results showing the application of
+the non-unitary operator, but these are displayed inline and not saved to
+files by default.
+
+
 # GNU GPL v3+
 
 Copyright (C) 2024 Mohammadreza Khellat GNU GPL v3+
