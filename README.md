@@ -2,21 +2,75 @@
 
 A collection of educational Jupyter notebooks focused on quantum algorithms.
 
+## Environment Setup
+
+We recommend setting up a dedicated Python environment before running
+the notebooks. The project includes a `requirements.txt` file that
+specifies all necessary dependencies.
+
+### Using pip (recommended)
+
+Create a virtual environment and install dependencies:
+
+```bash
+python3 -m venv venv
+. venv/bin/activate  # On Windows: venv\\Scripts\\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Using conda
+
+Alternatively, if you prefer conda:
+
+```bash
+conda create -n openqcp-lab python=3.9
+conda activate openqcp-lab
+pip install -r requirements.txt
+```
+
+### Using `setup_env.sh` helper script
+
+You can also use the provided POSIX shell script to create a virtual
+environment and install dependencies in one step:
+
+```bash
+./setup_env.sh
+```
+
+This will create a `venv` directory (if it does not already exist),
+install the required packages, and print instructions on how to
+activate the environment.
+
+### Using `Makefile` targets
+
+If you have `make` installed, you can use the provided `Makefile`:
+
+- **Create a virtual environment and install dependencies**:
+
+  ```bash
+  make env
+  ```
+
+- **Install dependencies in the current environment**:
+
+  ```bash
+  make install
+  ```
+
 ## Run
 
-Running Jupyter notebooks require a conda installation such as
-`miniconda`. You could start a Jupyter notebook server on a
-unix-like operating system using:
+After setting up the environment, start a Jupyter notebook server:
 
-````
-$ jupyter notebook
-````
+```bash
+jupyter notebook
+```
 
-or if you have migrated to jupyterlab using
+or if you have migrated to JupyterLab:
 
-````
-$ jupyter lab
-````
+```bash
+jupyter lab
+```
 
 From the web portal, Jupyter notebooks could be opened and executed.
 In newer versions of Jupyter server, it is possible to open an
@@ -35,9 +89,10 @@ that kernel from the corresponding Jupyter web-portal. Also, to run
 different types of codes within a single notebook, one could take
 advantage of _magic_.
 
-Furthermore, each notebook in this project is supposed to have a
-section in which any required modules/libraries/packages would be
-checked and installed if necessary.
+**Note:** If you have installed the dependencies from `requirements.txt`,
+the notebooks should run without requiring additional package
+installations. Each notebook's README also documents its specific
+software requirements for reference.
 
 Good luck and have fun using these tutorials!
 

@@ -32,16 +32,23 @@ decomposition_](https://arxiv.org/abs/math-ph/0506007v1).
 
 # Software Requirements
 
-To run the codes within the notebook, you would need the following
-python modules:
+The following Python packages are required to run this notebook:
 
-```
-pip install math matplotlib numpy sympy scipy enum classiq 
-```
-Apart from the above python modules, since we have used `r''`
-formatting strings for the legends and labels of the plots, you need
-to have a working LaTeX installation as well as the `cm-super`
-package.
+- `numpy`
+- `scipy`
+- `sympy`
+- `matplotlib`
+- `classiq`
+
+**Note:** The `math` and `enum` modules are part of Python's standard
+library and do not require installation. All other packages listed above
+are included in the top-level `requirements.txt`. If you have set up the
+base environment as described in the main README, no additional
+installation is needed.
+
+Apart from the above Python modules, since we have used `r''` formatting
+strings for the legends and labels of the plots, you need to have a
+working LaTeX installation as well as the `cm-super` package.
 
 
 # Results

@@ -1,0 +1,17 @@
+# Core scientific computing libraries
+numpy>=1.20.0
+scipy>=1.7.0
+sympy>=1.9.0
+matplotlib>=3.4.0
+
+# Quantum computing frameworks
+pennylane>=0.28.0
+classiq>=0.20.0
+
+# Jupyter/IPython (for notebook execution)
+ipython>=7.0.0
+jupyter>=1.0.0
+
+# Optional dependencies (installed on-demand in specific notebooks)
+# qiskit>=0.45.0
+# qiskit-optimization>=0.6.0

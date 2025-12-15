@@ -18,12 +18,14 @@ of `1e-07`.
 
 # Software Requirements
 
-To run the codes within the notebook, you would need the following
-python modules:
+The following Python packages are required to run this notebook:
 
-```
-pip install json pennylane
-```
+- `pennylane`
+
+**Note:** The `json` module is part of Python's standard library and does
+not require installation. The `pennylane` package is included in the
+top-level `requirements.txt`. If you have set up the base environment as
+described in the main README, no additional installation is needed.
 
 
 # GNU GPL v3+
