@@ -1,39 +1,61 @@
-.PHONY: help env install clean test
+-include config.mk
+
+VENV       ?= venv
+PYTHON     := $(VENV)/bin/python
+PIP        := $(VENV)/bin/pip
+PYTEST     := $(VENV)/bin/pytest
+
+.PHONY: help env install clean distclean test test-import test-syntax test-run
+
+find_notebooks = find . -name '*.ipynb' \
+	-not -path './.git/*' \
+	-not -path '*/.ipynb_checkpoints/*' \
+	-not -name 'test.ipynb' \
+	-not -name 'Untitled.ipynb'
 
 help:
 	@echo "openqcp-lab Makefile"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  make env      - Create virtual environment and install dependencies"
-	@echo "  make install  - Install dependencies in current environment"
-	@echo "  make clean    - Remove virtual environment and cache files"
-	@echo "  make test     - Run basic import tests (if implemented)"
+	@echo "  make env       - Run ./bootstrap to provision venv/ (Python $(if $(REQUIRED_PYTHON_VERSION),$(REQUIRED_PYTHON_VERSION),3.12))"
+	@echo "  make install   - Install/refresh dependencies into an existing venv"
+	@echo "  make test      - Run import checks, notebook JSON checks, and full notebook execution"
+	@echo "  make clean     - Remove cache/bytecode files"
+	@echo "  make distclean - Remove venv/, config.mk, config.log, and cache files"
 
 env:
-	@echo "Creating virtual environment..."
-	python3 -m venv venv
-	@echo "Installing dependencies..."
-	./venv/bin/pip install --upgrade pip
-	./venv/bin/pip install -r requirements.txt
-	@echo ""
-	@echo "Environment created! Activate it with:"
-	@echo "  source venv/bin/activate"
+	./bootstrap
 
 install:
-	@echo "Installing dependencies..."
-	pip install --upgrade pip
-	pip install -r requirements.txt
+	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.txt
 
 clean:
-	@echo "Removing virtual environment and cache files..."
-	rm -rf venv
-	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@echo "Clean complete."
+	find . -type d -name '.ipynb_checkpoints' -exec rm -rf {} + 2>/dev/null || true
 
-test:
-	@echo "Running basic import tests..."
-	@python3 -c "import numpy; import scipy; import sympy; import matplotlib; import pennylane; import classiq; print('All core packages imported successfully.')" || echo "Some packages failed to import."
-	@echo ""
-	@echo "Checking notebook syntax..."
-	@python3 -c "import json, sys; [json.load(open(f)) for f in ['coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D_N_2.ipynb', 'minimize_expectation_value/minimize_vqc_output.ipynb', 'nonunitary_quantum_computing/lcu_2x2.ipynb', 'quantum_walk/quantum_walk_discrete_time_line_16nodes.ipynb', 'quantum_fourier_transform_abelian/qft_abelian_qpe_hadamard.ipynb', 'quantum_variational_algorithms/VA0_qubo_and_vqe.ipynb']]; print('All notebooks have valid JSON structure.')" 2>/dev/null || echo "Warning: Some notebooks may have JSON syntax issues."
+distclean: clean
+	rm -rf $(VENV) config.mk config.log
+
+test: test-import test-syntax test-run
+
+test-import:
+	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
+	@echo "Checking core package imports..."
+	$(PYTHON) -c "import numpy, scipy, sympy, matplotlib, pennylane, classiq; print('All core packages imported successfully.')"
+
+test-syntax:
+	@echo "Checking notebook JSON structure..."
+	@$(find_notebooks) -print0 | \
+	$(PYTHON) -c "\
+import json, sys; \
+files = sys.stdin.read().split(chr(0))[:-1]; \
+[json.load(open(f)) for f in files]; \
+print('All %d notebooks have valid JSON structure.' % len(files))"
+
+test-run:
+	@test -x "$(PYTEST)" || { echo "nbmake not installed - run 'make env' first." >&2; exit 1; }
+	@echo "Executing notebooks with nbmake..."
+	$(find_notebooks) -print0 | xargs -0 $(PYTEST) --nbmake --nbmake-timeout=600

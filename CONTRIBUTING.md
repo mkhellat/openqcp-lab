@@ -22,14 +22,14 @@ guidelines to help you get started.
    - Set up the Python environment using one of the methods described
      in the main README:
      ```bash
-     # Option 1: Using the setup script
-     ./setup_env.sh
-     
+     # Option 1: Using the bootstrap script (recommended)
+     ./bootstrap
+
      # Option 2: Using Makefile
      make env
-     
-     # Option 3: Manual setup
-     python3 -m venv venv
+
+     # Option 3: Manual setup (requires Python 3.12)
+     python3.12 -m venv venv
      . venv/bin/activate
      pip install -r requirements.txt
      ```

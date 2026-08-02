@@ -8,55 +8,46 @@ We recommend setting up a dedicated Python environment before running
 the notebooks. The project includes a `requirements.txt` file that
 specifies all necessary dependencies.
 
-### Using pip (recommended)
+**Note:** `classiq` does not yet publish wheels for Python 3.13+, so
+the environment must use Python 3.12. Setting up a plain `venv` with
+whatever `python3` your system resolves to may not satisfy this if
+your system's default Python is newer.
 
-Create a virtual environment and install dependencies:
+### Using `./bootstrap` (recommended)
+
+The provided `bootstrap` script provisions a Python 3.12 interpreter
+(via [uv](https://docs.astral.sh/uv/) by default, with automatic
+fallback to pyenv or building from source) and creates `venv/` with
+all dependencies installed:
 
 ```bash
-python3 -m venv venv
+./bootstrap
+```
+
+Run `./bootstrap --help` for provisioning options (`--with-python=uv|pyenv|source`).
+
+### Using `Makefile` targets
+
+Equivalently, if you have `make` installed:
+
+```bash
+make env
+```
+
+This runs `./bootstrap` under the hood. See `make help` for other
+targets, including `make test` for running the test suite.
+
+### Manual setup
+
+If you already have a Python 3.12 interpreter available, you can set
+up the environment yourself:
+
+```bash
+python3.12 -m venv venv
 . venv/bin/activate  # On Windows: venv\\Scripts\\activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
-
-### Using conda
-
-Alternatively, if you prefer conda:
-
-```bash
-conda create -n openqcp-lab python=3.9
-conda activate openqcp-lab
-pip install -r requirements.txt
-```
-
-### Using `setup_env.sh` helper script
-
-You can also use the provided POSIX shell script to create a virtual
-environment and install dependencies in one step:
-
-```bash
-./setup_env.sh
-```
-
-This will create a `venv` directory (if it does not already exist),
-install the required packages, and print instructions on how to
-activate the environment.
-
-### Using `Makefile` targets
-
-If you have `make` installed, you can use the provided `Makefile`:
-
-- **Create a virtual environment and install dependencies**:
-
-  ```bash
-  make env
-  ```
-
-- **Install dependencies in the current environment**:
-
-  ```bash
-  make install
-  ```
 
 ## Run
 

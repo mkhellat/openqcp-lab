@@ -1,0 +1,345 @@
+#!/bin/sh
+# -*- mode: shell-script -*-
+# POSIX-compliant bootstrap script with Python version management
+#
+# classiq does not yet publish wheels for Python 3.13+, so this script
+# provisions a pinned interpreter (uv, pyenv, or a from-source build --
+# whichever is available) rather than relying on whatever python3 the
+# host OS resolves to, then builds venv/ from requirements.txt.
+
+set -eu
+
+# Clean exit handler
+trap 'exit 130' INT
+trap 'handle_exit' EXIT
+
+#---------------------------------------------------------------------
+# Handle exit
+#---------------------------------------------------------------------
+handle_exit() {
+    if [ "$status" -ne 0 ]; then
+        echo "${RED}## Bootstrap failed - see ${config_log} ##${RESET}" >&2
+    fi
+}
+
+VERSION="1.0.0"
+PACKAGE="openqcp-lab"
+
+# Required Python version (classiq's supported ceiling; see requirements.txt)
+REQUIRED_PYTHON_MAJOR=3
+REQUIRED_PYTHON_MINOR=12
+REQUIRED_PYTHON_PATCH=13
+REQUIRED_PYTHON_VERSION="${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}.${REQUIRED_PYTHON_PATCH}"
+REQUIRED_PYTHON_EXE="python${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}"
+VERBOSE=0
+
+# Color support (auto-detected)
+if [ -t 1 ] && [ -n "${TERM:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+    RED=$(printf '\033[31m')
+    GREEN=$(printf '\033[32m')
+    YELLOW=$(printf '\033[33m')
+    BLUE=$(printf '\033[34m')
+    RESET=$(printf '\033[0m')
+else
+    RED=""
+    GREEN=""
+    YELLOW=""
+    BLUE=""
+    RESET=""
+fi
+
+: "${TMPDIR:=/tmp}"
+config_log=config.log
+status=0
+venv_path="venv"
+python_path=""
+python_method=auto
+
+#---------------------------------------------------------------------
+# POSIX-compliant argument parsing
+#---------------------------------------------------------------------
+while [ $# -gt 0 ]; do
+    case $1 in
+        --help)
+            cat << EOF
+Usage: ./bootstrap [OPTIONS]...
+
+Provisions a Python ${REQUIRED_PYTHON_VERSION}-compatible virtual
+environment (venv/) for running the openqcp-lab notebooks.
+
+Options:
+  --with-venv=PATH   place the virtual environment at PATH [${venv_path}]
+  --with-python=uv|pyenv|source|auto
+                      method used to obtain Python ${REQUIRED_PYTHON_VERSION}
+                      [auto: try uv, then pyenv, then build from source]
+  --verbose           enable verbose output for debugging
+  --help              show this help
+  --version           show bootstrap version
+
+Report issues to <mkhellat@beavernets.com>
+EOF
+            exit 0
+            ;;
+        --version)          echo "${PACKAGE} bootstrap ${VERSION}"; exit 0 ;;
+        --with-venv=*)       venv_path=${1#*=} ;;
+        --with-python=*)     python_method=${1#*=} ;;
+        --verbose)           VERBOSE=1 ;;
+        *)                   echo "bootstrap: error: invalid option: $1" >&2
+                              exit 1 ;;
+    esac
+    shift
+done
+
+#---------------------------------------------------------------------
+# Status reporting functions
+#---------------------------------------------------------------------
+msg_checking() { printf "%schecking %s... %s" "$BLUE" "$1" "$RESET"; }
+msg_result()   { printf "%s%s%s\n" "$1" "$2" "$RESET"; }
+msg_error()    { printf "%sERROR: %s%s\n" "$RED" "$1" "$RESET" >&2; }
+msg_warn()     { printf "%sWARNING: %s%s\n" "$YELLOW" "$1" "$RESET" >&2; }
+msg_info()     { printf "%s%s%s\n" "$GREEN" "$1" "$RESET"; }
+msg_note()     { printf "%s%s%s\n" "$BLUE" "$1" "$RESET"; }
+
+msg_verbose() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        printf "*** %s%s%s\n" "${YELLOW}" "$1" "${RESET}" >&2
+    fi
+    echo "VERBOSE: $1" >> "${config_log}"
+}
+
+#---------------------------------------------------------------------
+# Platform detection
+#---------------------------------------------------------------------
+detect_platform() {
+    OS=$(uname -s)
+    ARCH=$(uname -m)
+    case ${OS} in
+        Darwin)  PLATFORM=macos ;;
+        Linux)   PLATFORM=linux ;;
+        FreeBSD) PLATFORM=freebsd ;;
+        *)       PLATFORM=unknown ;;
+    esac
+
+    msg_info "Configuring for ${PLATFORM}-${ARCH}"
+    echo "Platform: ${PLATFORM} (${OS} ${ARCH})" >> "${config_log}"
+    echo "Uname: $(uname -a)" >> "${config_log}"
+}
+
+#---------------------------------------------------------------------
+# Verify Python version meets requirements
+#---------------------------------------------------------------------
+verify_python_version() {
+    temp_file="${TMPDIR}/verify_python_version.$$"
+    cat << EOF > "${temp_file}"
+import sys
+vi = sys.version_info
+if (vi.major, vi.minor) != (${REQUIRED_PYTHON_MAJOR}, ${REQUIRED_PYTHON_MINOR}):
+    raise SystemExit(
+        'Python %d.%d != required %d.%d'
+        % (vi.major, vi.minor, ${REQUIRED_PYTHON_MAJOR}, ${REQUIRED_PYTHON_MINOR})
+    )
+EOF
+    "${1}" "${temp_file}" >> "${config_log}" 2>&1
+    exit_status=$?
+    rm -f "${temp_file}"
+    return ${exit_status}
+}
+
+#---------------------------------------------------------------------
+# Provision Python via uv (preferred: fast, no compiler needed)
+#---------------------------------------------------------------------
+provision_python_uv() {
+    command -v uv >/dev/null 2>&1 || return 1
+    msg_note "Using uv: $(uv --version)"
+    uv python install "${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}" >> "${config_log}" 2>&1 || return 1
+    python_path=$(uv python find "${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}" 2>> "${config_log}") || return 1
+    provision_method="uv"
+    return 0
+}
+
+#---------------------------------------------------------------------
+# Provision Python via pyenv
+#---------------------------------------------------------------------
+provision_python_pyenv() {
+    command -v pyenv >/dev/null 2>&1 || return 1
+    msg_note "Using pyenv to install Python ${REQUIRED_PYTHON_VERSION}"
+    pyenv install -s "${REQUIRED_PYTHON_VERSION}" >> "${config_log}" 2>&1 || return 1
+    python_path="$(pyenv root)/versions/${REQUIRED_PYTHON_VERSION}/bin/python${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}"
+    [ -x "${python_path}" ] || return 1
+    provision_method="pyenv"
+    return 0
+}
+
+#---------------------------------------------------------------------
+# Provision Python by building CPython from source
+#---------------------------------------------------------------------
+provision_python_source() {
+    for tool in gcc make curl tar; do
+        command -v "$tool" >/dev/null 2>&1 || {
+            msg_error "'$tool' is required to build Python from source"
+            return 1
+        }
+    done
+
+    build_root="${HOME}/.local/opt/python/${REQUIRED_PYTHON_VERSION}"
+    py_bin="${build_root}/bin/python${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}"
+
+    if [ -x "${py_bin}" ] && verify_python_version "${py_bin}"; then
+        msg_note "Found existing source build at ${py_bin}"
+        python_path="${py_bin}"
+        provision_method="source (cached)"
+        return 0
+    fi
+
+    msg_note "Building CPython ${REQUIRED_PYTHON_VERSION} from source into ${build_root}"
+    msg_note "(requires openssl, zlib, libffi, bzip2, xz, sqlite, readline, ncurses, tk dev headers)"
+
+    build_dir="${TMPDIR}/openqcp-python-build-$$"
+    mkdir -p "${build_dir}"
+    (
+        cd "${build_dir}"
+        url="https://www.python.org/ftp/python/${REQUIRED_PYTHON_VERSION}/Python-${REQUIRED_PYTHON_VERSION}.tar.xz"
+        msg_verbose "Downloading ${url}"
+        curl -sSL "${url}" -o python-src.tar.xz
+        tar -xJf python-src.tar.xz
+        cd "Python-${REQUIRED_PYTHON_VERSION}"
+
+        cpu_count=$(command -v nproc >/dev/null 2>&1 && nproc || echo 1)
+
+        msg_verbose "Configuring..."
+        ./configure --prefix="${build_root}" --enable-optimizations \
+            --with-ensurepip=install >> "${OLDPWD}/${config_log}" 2>&1
+
+        msg_verbose "Building (this can take several minutes)..."
+        make -j "${cpu_count}" >> "${OLDPWD}/${config_log}" 2>&1
+
+        msg_verbose "Installing to ${build_root}..."
+        make altinstall >> "${OLDPWD}/${config_log}" 2>&1
+    ) || { rm -rf "${build_dir}"; return 1; }
+    rm -rf "${build_dir}"
+
+    [ -x "${py_bin}" ] || return 1
+    python_path="${py_bin}"
+    provision_method="source (built)"
+    return 0
+}
+
+#---------------------------------------------------------------------
+# Obtain a Python ${REQUIRED_PYTHON_VERSION} interpreter
+#---------------------------------------------------------------------
+provision_python() {
+    msg_info "Locating Python ${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}:"
+
+    case "${python_method}" in
+        uv)     provision_python_uv     || { msg_error "uv provisioning failed"; return 1; } ;;
+        pyenv)  provision_python_pyenv  || { msg_error "pyenv provisioning failed"; return 1; } ;;
+        source) provision_python_source || { msg_error "source build failed"; return 1; } ;;
+        auto)
+            msg_checking "system Python ${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}"
+            if command -v "${REQUIRED_PYTHON_EXE}" >/dev/null 2>&1 \
+                && verify_python_version "$(command -v "${REQUIRED_PYTHON_EXE}")"; then
+                python_path=$(command -v "${REQUIRED_PYTHON_EXE}")
+                provision_method="system"
+                msg_result "${GREEN}" "found"
+            else
+                msg_result "${YELLOW}" "not found"
+                provision_python_uv || provision_python_pyenv || provision_python_source || {
+                    msg_error "Could not obtain Python ${REQUIRED_PYTHON_VERSION} via uv, pyenv, or source build"
+                    return 1
+                }
+            fi
+            ;;
+        *)
+            msg_error "Unknown --with-python method: ${python_method}"
+            return 1
+            ;;
+    esac
+
+    msg_info "Python ${REQUIRED_PYTHON_VERSION} provisioned via ${provision_method}: ${python_path}"
+}
+
+#---------------------------------------------------------------------
+# Create (or repair) the virtual environment
+#---------------------------------------------------------------------
+setup_venv() {
+    msg_info "Configuring virtual environment (${venv_path}):"
+
+    if [ -d "${venv_path}" ]; then
+        if verify_python_version "${venv_path}/bin/python"; then
+            msg_note "Existing venv at ${venv_path} already matches Python ${REQUIRED_PYTHON_MAJOR}.${REQUIRED_PYTHON_MINOR}"
+        else
+            msg_warn "Existing venv at ${venv_path} has the wrong Python version, recreating"
+            rm -rf "${venv_path}"
+        fi
+    fi
+
+    if [ ! -d "${venv_path}" ]; then
+        msg_checking "creating venv" && echo
+        "${python_path}" -m venv "${venv_path}" >> "${config_log}" 2>&1
+    fi
+
+    verify_python_version "${venv_path}/bin/python" || {
+        msg_error "Virtual environment Python verification failed"
+        return 1
+    }
+    msg_result "${GREEN}" "venv ready"
+}
+
+#---------------------------------------------------------------------
+# Install project + test dependencies into the venv
+#---------------------------------------------------------------------
+install_dependencies() {
+    msg_info "Installing dependencies:"
+    "${venv_path}/bin/pip" install --upgrade pip >> "${config_log}" 2>&1
+    "${venv_path}/bin/pip" install -r requirements.txt >> "${config_log}" 2>&1
+    msg_note "requirements.txt installed"
+
+    "${venv_path}/bin/pip" install nbmake pytest >> "${config_log}" 2>&1
+    msg_note "test tooling (nbmake, pytest) installed"
+}
+
+#---------------------------------------------------------------------
+# Generate config.mk consumed by the Makefile
+#---------------------------------------------------------------------
+generate_config_mk() {
+    msg_checking "config.mk" && echo
+    cat > config.mk << EOF
+# Generated by ./bootstrap -- do not edit by hand
+VENV := ${venv_path}
+REQUIRED_PYTHON_VERSION := ${REQUIRED_PYTHON_VERSION}
+EOF
+    msg_result "${GREEN}" "done"
+}
+
+#---------------------------------------------------------------------
+# Main execution
+#---------------------------------------------------------------------
+main() {
+    : > "${config_log}"
+
+    detect_platform
+    provision_python || exit 1
+    setup_venv || exit 1
+    install_dependencies
+    generate_config_mk
+
+    msg_info "Configuration Summary:"
+    echo "  Python version:        ${REQUIRED_PYTHON_VERSION}"
+    echo "  Python source:         ${provision_method}"
+    echo "  Python path:           ${python_path}"
+    echo "  Virtual environment:   ${venv_path}"
+    echo ""
+    msg_info "Bootstrap complete. To activate the environment, run:"
+    echo "  . ${venv_path}/bin/activate"
+    echo ""
+    msg_info "Then, for example:"
+    echo "  jupyter notebook      # explore interactively"
+    echo "  make test             # run import + notebook-execution tests"
+}
+
+main "$@" || {
+    status=$?
+    exit $status
+}
+
+exit 0
