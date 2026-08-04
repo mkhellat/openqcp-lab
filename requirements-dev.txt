@@ -1,0 +1,10 @@
+# Development/profiling dependencies, not needed to run the tutorial
+# notebooks. Install on top of the main requirements.txt:
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# Used by coupled_harmonic_oscillators/pauli_perf/ (see PLAN.md).
+
+snakeviz==2.2.2
+line_profiler==5.0.2
+py-spy==0.4.2

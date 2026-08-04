@@ -5,7 +5,7 @@ PYTHON     := $(VENV)/bin/python
 PIP        := $(VENV)/bin/pip
 PYTEST     := $(VENV)/bin/pytest
 
-.PHONY: help env install clean distclean test test-import test-syntax test-run
+.PHONY: help env install install-dev clean distclean test test-import test-syntax test-run
 
 find_notebooks = find . -name '*.ipynb' \
 	-not -path './.git/*' \
@@ -19,6 +19,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make env       - Run ./bootstrap to provision venv/ (Python $(if $(REQUIRED_PYTHON_VERSION),$(REQUIRED_PYTHON_VERSION),3.12))"
 	@echo "  make install   - Install/refresh dependencies into an existing venv"
+	@echo "  make install-dev - Also install dev/profiling tools (requirements-dev.txt)"
 	@echo "  make test      - Run import checks, notebook JSON checks, and full notebook execution"
 	@echo "  make clean     - Remove cache/bytecode files"
 	@echo "  make distclean - Remove venv/, config.mk, config.log, and cache files"
@@ -30,6 +31,9 @@ install:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
+
+install-dev: install
+	$(PIP) install -r requirements-dev.txt
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
