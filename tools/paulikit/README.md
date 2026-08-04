@@ -1,0 +1,185 @@
+# paulikit
+
+Performance-engineering tools for Pauli decomposition of Hermitian
+operators. This package is not a tutorial — it exists to build
+**original**, fast Pauli decomposition implementations to scale the
+`coupled_harmonic_oscillators` Hamiltonian-simulation tutorial (in the
+parent `openqcp-lab` repository) to larger N than its original
+symbolic brute-force approach allows.
+
+See [`PLAN.md`](PLAN.md) for the full research background, phased
+plan, and design rationale.
+
+
+## Problem
+
+The tutorial notebook's Pauli decomposition is a dense, symbolic
+(SymPy), brute-force approach: it loops over all $4^n$ Pauli strings
+and computes a symbolic trace for each one. This does not scale past
+roughly N=4 oscillators in practice.
+
+`paulikit` implements faster, original algorithms as a standalone
+Python package, kept separate from the tutorial notebooks so it can be
+developed, tested, and (potentially) published independently.
+
+
+## Installation
+
+From this directory (editable install, recommended for development):
+
+```bash
+pip install -e .
+```
+
+With test/profiling dependencies:
+
+```bash
+pip install -e ".[test]"   # pytest, PennyLane (for fixture regeneration/reference checks)
+pip install -e ".[dev]"    # the above, plus snakeviz, line_profiler, py-spy
+```
+
+Requires Python >= 3.10. Runtime dependencies are just `numpy` — the
+core algorithms have no dependency on PennyLane, Qiskit, or Classiq;
+those are only used in the `test`/`dev` extras, for generating and
+cross-checking correctness fixtures.
+
+
+## Usage
+
+### Command line
+
+Once installed, the `paulikit` console script is available:
+
+```bash
+paulikit --help
+paulikit decompose --n-oscillators 4 --show-terms
+paulikit benchmark --n-oscillators 2 4 8 16 30
+paulikit regenerate-fixtures
+```
+
+Run `paulikit <subcommand> --help` for full details on each.
+
+### As a library
+
+```python
+from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
+from paulikit.algorithms.fwht import fwht_pauli_terms
+
+spring_constants = {(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}
+masses = [1.0, 2.0]
+
+H = build_hamiltonian(n_oscillators=2, spring_constants=spring_constants, masses=masses)
+H_padded, n_qubits = pad_to_power_of_two(H)
+
+terms = fwht_pauli_terms(H_padded)  # {"IXI": -0.556..., "XII": -0.354..., ...}
+```
+
+
+## Package layout
+
+```
+src/paulikit/
+    __init__.py           Package metadata, public API summary.
+    hamiltonian.py         Coupled-oscillator Hamiltonian construction
+                            (independent NumPy reimplementation of the
+                            tutorial notebook's SymPy version).
+    pauli_utils.py          Minimal, dependency-free Pauli-matrix
+                            helpers (label <-> matrix, reconstruction).
+    algorithms/
+        __init__.py
+        fwht.py             The Fast Walsh-Hadamard Transform based
+                            decomposition algorithm (see PLAN.md;
+                            more algorithms planned here).
+    testing/
+        __init__.py
+        fixtures.py         Known-good Hamiltonians and their
+                            independently-verified expected Pauli
+                            decompositions, for use by any algorithm's
+                            tests.
+    cli.py                  Command-line interface wiring the above
+                            together into subcommands.
+tests/
+    test_fixtures.py        Self-consistency checks for the fixtures.
+    test_fwht.py             Correctness tests for algorithms/fwht.py.
+```
+
+`hamiltonian.py` and `pauli_utils.py` sit at the package root (not
+under `algorithms/`) because they are not algorithm-specific: every
+current and planned decomposition algorithm needs the same Hamiltonian
+construction and the same Pauli-matrix utilities.
+
+
+## Running the tests
+
+```bash
+pytest
+```
+
+(from this directory; `pyproject.toml` sets `testpaths = ["tests"]`,
+and the package must be installed - `pip install -e ".[test]"` - for
+imports to resolve).
+
+
+## Algorithms implemented
+
+### Fast Walsh-Hadamard Transform (FWHT) — `paulikit.algorithms.fwht`
+
+O(N² log N) for an N×N matrix (N = 2ⁿ), per
+[Pauli decomposition via the fast Walsh-Hadamard transform](https://iopscience.iop.org/article/10.1088/1367-2630/adb44d).
+This is an **original implementation**: the algorithm's three steps
+(XOR-index gather, Walsh-Hadamard Transform, phase-factor
+multiplication) were independently re-derived from the symplectic
+(X/Z) representation of Pauli operators and verified against a
+from-scratch, definition-level brute-force decomposition before being
+written in fast form — see `algorithms/fwht.py`'s module docstring for
+the full derivation.
+
+Verified two ways (see `tests/test_fwht.py`):
+- Against a from-scratch brute-force reference on random Hermitian
+  matrices (n = 1..4 qubits): exact match to floating-point precision.
+- Against `testing.fixtures.ALL_FIXTURES` (real coupled-oscillator
+  Hamiltonians at N=2, N=4): exact label-set and coefficient match.
+
+Planned (see `PLAN.md`): Tensorized Pauli Decomposition (TPD), PHASE,
+and C-ported variants of whichever algorithm profiling identifies as
+worth porting — this is why `algorithms/` is a subpackage rather than
+a single module.
+
+
+## Reference baseline (not a dependency of the implementation)
+
+PennyLane's `qml.pauli_decompose` was used during development purely
+as a correctness and performance **reference point** — it is a
+test/dev-only dependency (see `pyproject.toml`'s `test`/`dev` extras),
+never imported by `paulikit.algorithms` itself. Measured against a
+`scipy.sparse`-native encoding of the coupled-oscillator Hamiltonian's
+actual sparsity pattern:
+
+| N   | qubits | matrix dim | time (sparse) |
+|-----|--------|------------|----------------|
+| 16  | 8      | 256        | 0.37s          |
+| 30  | 9      | 512        | 1.29s          |
+| 50  | 11     | 2048       | 9.37s          |
+| 100 | 13     | 8192       | 94.8s          |
+
+`paulikit.algorithms.fwht`'s own timing at N=30 (via
+`paulikit benchmark`) is roughly 0.48s using the full dense coefficient
+array (no sparsity exploitation yet), already faster than the
+PennyLane sparse reference despite that difference — though this isn't
+yet an apples-to-apples comparison; see `PLAN.md` for the planned
+systematic benchmarking.
+
+
+## Status
+
+Phase 1 (original pure-Python FWHT implementation) is complete and
+correctness-verified. Next: systematic benchmarking across N values
+and profiling (cProfile/snakeviz, line_profiler, py-spy) to identify
+whether/what needs a native (C) port — see `PLAN.md` and the parent
+repository's task list for current progress.
+
+
+## License
+
+GPL-3.0-or-later, matching the parent `openqcp-lab` repository. See
+the repository root's `LICENSE` file.

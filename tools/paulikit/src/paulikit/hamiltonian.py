@@ -1,26 +1,34 @@
 """Numeric construction of the coupled-oscillator Hamiltonian.
 
 This is an independent NumPy reimplementation of the Hamiltonian
-construction in ``N_coupled_harmonic_oscillators_1_D.ipynb``'s
-``prepare_hmatrix(N)`` (which builds the matrix symbolically with
-SymPy). It exists so that pauli_perf's correctness fixtures and
-benchmarks do not depend on importing a notebook, and so the matrix
-can be built directly in floating point for large N without symbolic
-overhead.
+construction in the parent ``openqcp-lab`` repository's
+``coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D_N_2.ipynb``
+notebook (which builds the matrix symbolically with SymPy, in a
+function there named ``prepare_hmatrix(N)``). It exists so that
+paulikit's correctness fixtures and benchmarks do not depend on
+importing a notebook, and so the matrix can be built directly in
+floating point for large N without symbolic overhead.
 
 Cross-checked against the notebook's own ``prepare_hmatrix`` at N=2
 and N=4: matches to machine epsilon (~1e-16) for both.
 """
 
+from __future__ import annotations
+
 import numpy as np
+from numpy.typing import NDArray
 
 
-def build_hamiltonian(n_oscillators, spring_constants, masses):
+def build_hamiltonian(
+    n_oscillators: int,
+    spring_constants: dict[tuple[int, int], float],
+    masses: list[float],
+) -> NDArray[np.floating]:
     """Build the coupled-oscillator Hamiltonian matrix.
 
-    Reproduces the structure described in
+    Reproduces the structure described in the parent repository's
     ``coupled_harmonic_oscillators/README.md`` and implemented
-    symbolically in ``N_coupled_harmonic_oscillators_1_D.ipynb``: an
+    symbolically in its tutorial notebooks: an
     ``(N + N*(N+1)/2)``-dimensional matrix with a block-antidiagonal
     "B" coupling block, built from a "sqrt(k/m)" encoding of the
     physical spring constants and masses.
@@ -39,11 +47,9 @@ def build_hamiltonian(n_oscillators, spring_constants, masses):
 
     Note:
         Only oscillators 0 and 1 contribute coupling-block entries,
-        matching the notebook's own ``if i < 2`` branch. This is a
-        property of the original algorithm's encoding, not a bug in
-        this reimplementation - see
-        ``N_coupled_harmonic_oscillators_1_D.ipynb``, cell defining
-        ``prepare_hmatrix``, for the symbolic version this mirrors.
+        matching the source notebook's own ``if i < 2`` branch. This
+        is a property of the original algorithm's encoding, not a bug
+        in this reimplementation.
     """
     n = n_oscillators
     coupling_count = n * (n + 1) // 2
@@ -71,7 +77,9 @@ def build_hamiltonian(n_oscillators, spring_constants, masses):
     return hamiltonian
 
 
-def pad_to_power_of_two(matrix):
+def pad_to_power_of_two(
+    matrix: NDArray[np.floating],
+) -> tuple[NDArray[np.floating], int]:
     """Zero-pad a square matrix so its dimension is a power of two.
 
     Required before Pauli decomposition, since an n-qubit operator
@@ -87,7 +95,7 @@ def pad_to_power_of_two(matrix):
     """
     size = matrix.shape[0]
     n_qubits = int(np.ceil(np.log2(size)))
-    dim = 2 ** n_qubits
+    dim = 2**n_qubits
     padded = np.zeros((dim, dim))
     padded[:size, :size] = matrix
     return padded, n_qubits

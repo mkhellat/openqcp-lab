@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paulikit"
+version = "0.1.0"
+description = "Performance-engineering tools for Pauli decomposition of Hermitian operators"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE*"]
+authors = [
+    { name = "Mohammadreza Khellat", email = "mkhellat@gmail.com" },
+]
+keywords = [
+    "quantum-computing",
+    "pauli-decomposition",
+    "hamiltonian-simulation",
+    "performance-engineering",
+    "walsh-hadamard-transform",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7",
+    "pennylane>=0.35",
+]
+dev = [
+    "pytest>=7",
+    "pennylane>=0.35",
+    "snakeviz",
+    "line_profiler",
+    "py-spy",
+]
+
+[project.urls]
+Homepage = "https://codeberg.org/mkhellat/openqcp-lab"
+Repository = "https://codeberg.org/mkhellat/openqcp-lab"
+"Plan / research notes" = "https://codeberg.org/mkhellat/openqcp-lab/src/branch/main/coupled_harmonic_oscillators/paulikit/PLAN.md"
+
+[project.scripts]
+paulikit = "paulikit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 92
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

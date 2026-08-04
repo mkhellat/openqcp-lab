@@ -1,37 +1,40 @@
 """Correctness fixtures for Pauli decomposition, independent of any
-implementation under test.
+algorithm implementation under test.
 
-These fixtures exist so that any Pauli-decomposition implementation
-built in this module (starting with the original pure-Python FWHT
-implementation planned in PLAN.md) can be validated against known-good
-data, without depending on the implementation under test to also
-generate its own "ground truth."
+These fixtures exist so that any Pauli-decomposition algorithm added
+to ``paulikit.algorithms`` can be validated against known-good data,
+without depending on the implementation under test to also generate
+its own "ground truth."
 
 How this data was produced
 ---------------------------
-Each fixture's Hamiltonian is built with ``hamiltonian.build_hamiltonian``
-(an independent NumPy reimplementation of the notebook's own
-``prepare_hmatrix``, cross-checked against the SymPy original to
-machine epsilon - see hamiltonian.py's docstring). The *expected*
-decomposition was generated with PennyLane's ``qml.pauli_decompose``,
-used here strictly as an independent, trusted oracle - not as part of
-the eventual FWHT implementation. Regenerate with
-``generate_fixture_data()`` in this file if the Hamiltonian
-construction ever changes.
+Each fixture's Hamiltonian is built with
+``paulikit.hamiltonian.build_hamiltonian`` (an independent NumPy
+reimplementation of the source notebook's own ``prepare_hmatrix``,
+cross-checked against the SymPy original to machine epsilon - see
+that module's docstring). The *expected* decomposition was generated
+with PennyLane's ``qml.pauli_decompose``, used here strictly as an
+independent, trusted oracle - not as part of any algorithm
+implementation in this package. Regenerate with
+``generate_fixture_data()`` (or ``paulikit regenerate-fixtures`` on
+the command line) if the Hamiltonian construction ever changes.
 
 Each expected decomposition was itself validated by reconstructing H
 from the returned Pauli terms and checking the result matches the
 original padded Hamiltonian to machine epsilon (see
-``test_fixtures.py::test_fixture_reconstructs_hamiltonian``, which
-re-verifies this on every test run rather than trusting the stored
-constants blindly).
+``tests/test_fixtures.py::test_fixture_reconstructs_hamiltonian``,
+which re-verifies this on every test run rather than trusting the
+stored constants blindly).
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 import numpy as np
+from numpy.typing import NDArray
 
-from hamiltonian import build_hamiltonian, pad_to_power_of_two
+from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
 
 
 @dataclass(frozen=True)
@@ -55,18 +58,18 @@ class DecompositionFixture:
 
     name: str
     n_oscillators: int
-    spring_constants: dict
-    masses: list
+    spring_constants: dict[tuple[int, int], float]
+    masses: list[float]
     n_qubits: int
-    expected_terms: dict = field(default_factory=dict)
+    expected_terms: dict[str, float] = field(default_factory=dict)
 
-    def hamiltonian(self):
+    def hamiltonian(self) -> NDArray[np.floating]:
         """Rebuild the (unpadded) Hamiltonian matrix for this fixture."""
         return build_hamiltonian(
             self.n_oscillators, self.spring_constants, self.masses
         )
 
-    def padded_hamiltonian(self):
+    def padded_hamiltonian(self) -> NDArray[np.floating]:
         """Rebuild the zero-padded, power-of-two-dimensioned Hamiltonian."""
         padded, n_qubits = pad_to_power_of_two(self.hamiltonian())
         assert n_qubits == self.n_qubits, (
@@ -180,7 +183,7 @@ FIXTURE_N4 = DecompositionFixture(
 ALL_FIXTURES = [FIXTURE_N2, FIXTURE_N4]
 
 
-def pauli_word_to_label(pauli_word, n_qubits):
+def pauli_word_to_label(pauli_word, n_qubits: int) -> str:
     """Convert a PennyLane ``PauliWord`` to a fixed-width label string.
 
     Args:
@@ -196,15 +199,17 @@ def pauli_word_to_label(pauli_word, n_qubits):
     return "".join(pauli_word.get(w, "I") for w in range(n_qubits))
 
 
-def generate_fixture_data():
+def generate_fixture_data() -> None:
     """Regenerate the ``expected_terms`` dicts above from scratch.
 
     Uses PennyLane's ``qml.pauli_decompose`` as an independent oracle.
-    Run this manually (``python fixtures.py``) if the Hamiltonian
-    construction changes and the constants above need updating -
-    it is not called automatically, so the stored fixtures stay fixed
-    and reviewable in version control rather than silently
-    regenerating on every test run.
+    Run via ``paulikit regenerate-fixtures`` on the command line if
+    the Hamiltonian construction changes and the constants above need
+    updating - this function is not called automatically, so the
+    stored fixtures stay fixed and reviewable in version control
+    rather than silently regenerating on every test run. Requires
+    PennyLane to be installed (a development-only dependency of this
+    package, not required to use ``paulikit.algorithms`` itself).
     """
     import pennylane as qml
 
@@ -220,7 +225,3 @@ def generate_fixture_data():
         for label in sorted(terms):
             print(f"    {label!r}: {terms[label]!r},")
         print()
-
-
-if __name__ == "__main__":
-    generate_fixture_data()

@@ -176,11 +176,18 @@ Surveyed this session, informing methodology (not code reuse):
 ## 5. Phased plan
 
 ### Phase 0 — Scaffolding (this document + directory structure)
-- `coupled_harmonic_oscillators/pauli_perf/README.md` — module overview.
-- `coupled_harmonic_oscillators/pauli_perf/PLAN.md` — this document.
-- `requirements-dev.txt` (repo root) — profiling tools, kept separate
-  from the main pinned `requirements.txt` so tutorial users don't need
-  to install them.
+- `coupled_harmonic_oscillators/paulikit/README.md` — package overview.
+- `coupled_harmonic_oscillators/paulikit/PLAN.md` — this document.
+- `coupled_harmonic_oscillators/paulikit/pyproject.toml` — PEP 621
+  package metadata; `paulikit` is installable (`pip install -e .`)
+  with a `paulikit` console-script entry point, separate from the
+  parent repository's plain `requirements.txt` approach used by the
+  tutorial notebooks. Package restructured (2026-08-04) from an
+  initial flat `pauli_perf/` script collection into a proper
+  `src/paulikit/` layout with `algorithms/` and `testing/`
+  subpackages, once it became clear more than one decomposition
+  algorithm was in scope (see Section 5, Phase 1 note below) and that
+  release to PyPI was a real possibility, not just an internal tool.
 
 ### Phase 1 — Original pure-Python FWHT implementation
 - Correctness fixtures first, independent of implementation: N=2 (hand

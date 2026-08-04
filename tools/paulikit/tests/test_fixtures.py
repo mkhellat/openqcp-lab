@@ -1,29 +1,26 @@
 """Self-consistency tests for the correctness fixtures themselves.
 
-These tests validate fixtures.py independently of any Pauli
-decomposition implementation: they check that each fixture's stored
-``expected_terms`` actually reconstructs the fixture's own Hamiltonian
-matrix, using pauli_utils.py's dependency-free reconstruction (not the
-library used to originally generate the fixture data). This guards
-against the fixtures themselves being wrong or going stale if
-hamiltonian.py's construction ever changes without regenerating them.
+These tests validate ``paulikit.testing.fixtures`` independently of
+any Pauli decomposition algorithm: they check that each fixture's
+stored ``expected_terms`` actually reconstructs the fixture's own
+Hamiltonian matrix, using ``paulikit.pauli_utils``'s dependency-free
+reconstruction (not the library used to originally generate the
+fixture data). This guards against the fixtures themselves being
+wrong or going stale if ``paulikit.hamiltonian``'s construction ever
+changes without regenerating them.
 
-Any future Pauli decomposition implementation should be tested against
-these same fixtures in its own test module (e.g.
-test_fwht_decompose.py), asserting its output matches
-fixture.expected_terms - not by re-deriving expected values inline.
+Any Pauli decomposition algorithm added to ``paulikit.algorithms``
+should be tested against these same fixtures in its own test module
+(e.g. ``test_fwht.py``), asserting its output matches
+``fixture.expected_terms`` - not by re-deriving expected values
+inline.
 """
-
-import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from fixtures import ALL_FIXTURES  # noqa: E402
-from pauli_utils import reconstruct_from_terms  # noqa: E402
+from paulikit.pauli_utils import reconstruct_from_terms
+from paulikit.testing.fixtures import ALL_FIXTURES
 
 
 @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=lambda f: f.name)

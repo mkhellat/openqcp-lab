@@ -1,15 +1,17 @@
-"""Minimal, dependency-free Pauli-matrix utilities shared by tests and
-implementations in this module.
+"""Minimal, dependency-free Pauli-matrix utilities shared across paulikit.
 
 Deliberately does not depend on PennyLane, Qiskit, or Classiq: this
 module is meant to remain usable as an independent check even if the
-libraries used to *generate* the fixtures (see fixtures.py) are absent
-or change behavior.
+libraries used to *generate* the fixtures (see
+``paulikit.testing.fixtures``) are absent or change behavior.
 """
 
-import numpy as np
+from __future__ import annotations
 
-_PAULI_MATRICES = {
+import numpy as np
+from numpy.typing import NDArray
+
+_PAULI_MATRICES: dict[str, NDArray[np.complexfloating]] = {
     "I": np.array([[1, 0], [0, 1]], dtype=complex),
     "X": np.array([[0, 1], [1, 0]], dtype=complex),
     "Y": np.array([[0, -1j], [1j, 0]], dtype=complex),
@@ -17,13 +19,13 @@ _PAULI_MATRICES = {
 }
 
 
-def pauli_string_to_matrix(label):
+def pauli_string_to_matrix(label: str) -> NDArray[np.complexfloating]:
     """Build the dense matrix for a Pauli string label via tensor product.
 
     Args:
         label: A string of Pauli letters, e.g. ``"IXZ"``. The leftmost
             character is qubit 0, matching the convention used by
-            ``fixtures.pauli_word_to_label``.
+            ``paulikit.testing.fixtures.pauli_word_to_label``.
 
     Returns:
         A ``(2**len(label), 2**len(label))`` complex ``numpy.ndarray``.
@@ -34,22 +36,29 @@ def pauli_string_to_matrix(label):
     return matrix
 
 
-def reconstruct_from_terms(terms, n_qubits):
-    """Reconstruct a dense Hamiltonian from a label -> coefficient dict.
+def reconstruct_from_terms(
+    terms: dict[str, float] | dict[str, complex], n_qubits: int
+) -> NDArray[np.complexfloating]:
+    """Reconstruct a dense operator from a label -> coefficient dict.
 
     Args:
-        terms: Mapping from Pauli-string label to real coefficient,
-            as produced by an implementation under test or stored in
-            fixtures.py.
+        terms: Mapping from Pauli-string label to coefficient (real or
+            complex - complex coefficients arise when decomposing a
+            non-Hermitian operator), as produced by a decomposition
+            algorithm (e.g.
+            ``paulikit.algorithms.fwht.fwht_pauli_terms``) or stored
+            in ``paulikit.testing.fixtures``.
         n_qubits: Number of qubits; every label in ``terms`` must have
             this length.
 
     Returns:
         A ``(2**n_qubits, 2**n_qubits)`` complex ``numpy.ndarray``
         equal to the sum of ``coefficient * pauli_string_to_matrix(label)``
-        over all terms.
+        over all terms. Real if every term's coefficient was real and
+        the label set is such that the result is Hermitian; complex in
+        general.
     """
-    dim = 2 ** n_qubits
+    dim = 2**n_qubits
     total = np.zeros((dim, dim), dtype=complex)
     for label, coefficient in terms.items():
         assert len(label) == n_qubits, (
