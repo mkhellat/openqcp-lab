@@ -5,7 +5,7 @@ PYTHON     := $(VENV)/bin/python
 PIP        := $(VENV)/bin/pip
 PYTEST     := $(VENV)/bin/pytest
 
-.PHONY: help env install install-dev clean distclean test test-import test-syntax test-run
+.PHONY: help env install install-dev clean distclean test test-import test-syntax test-run test-tools
 
 find_notebooks = find . -name '*.ipynb' \
 	-not -path './.git/*' \
@@ -20,7 +20,8 @@ help:
 	@echo "  make env       - Run ./bootstrap to provision venv/ (Python $(if $(REQUIRED_PYTHON_VERSION),$(REQUIRED_PYTHON_VERSION),3.12))"
 	@echo "  make install   - Install/refresh dependencies into an existing venv"
 	@echo "  make install-dev - Also install dev/profiling tools (requirements-dev.txt)"
-	@echo "  make test      - Run import checks, notebook JSON checks, and full notebook execution"
+	@echo "  make test      - Run import checks, notebook JSON checks, notebook execution, and tools/ test suites"
+	@echo "  make test-tools - Run tools/*/tests/ (e.g. tools/paulikit) - installs each in editable mode first"
 	@echo "  make clean     - Remove cache/bytecode files"
 	@echo "  make distclean - Remove venv/, config.mk, config.log, and cache files"
 
@@ -39,11 +40,13 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name '.ipynb_checkpoints' -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
 
 distclean: clean
 	rm -rf $(VENV) config.mk config.log
 
-test: test-import test-syntax test-run
+test: test-import test-syntax test-run test-tools
 
 test-import:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
@@ -63,3 +66,13 @@ test-run:
 	@test -x "$(PYTEST)" || { echo "nbmake not installed - run 'make env' first." >&2; exit 1; }
 	@echo "Executing notebooks with nbmake..."
 	$(find_notebooks) -print0 | xargs -0 $(PYTEST) --nbmake --nbmake-timeout=600
+
+test-tools:
+	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
+	@for tool_dir in tools/*/; do \
+		if [ -f "$$tool_dir/pyproject.toml" ]; then \
+			echo "Testing $$tool_dir..."; \
+			$(PIP) install -q -e "$$tool_dir[test]" && \
+			(cd "$$tool_dir" && $(realpath $(PYTEST)) -q) || exit 1; \
+		fi; \
+	done

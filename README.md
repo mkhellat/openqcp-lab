@@ -1,6 +1,8 @@
 # openqcp-lab
 
-A collection of educational Jupyter notebooks focused on quantum algorithms.
+A collection of educational Jupyter notebooks focused on quantum
+algorithms, plus standalone tools developed in support of them (see
+[Tools](#tools) below).
 
 ## Environment Setup
 
@@ -115,6 +117,19 @@ Good luck and have fun using these tutorials!
 - [( 05 ) - Quantum Simulation - coupled harmonic oscillators](coupled_harmonic_oscillators)  
   Simulate the dynamics of coupled classical harmonic oscillators using
   quantum Hamiltonian simulation with exponential speedup.
+
+## Tools
+
+Standalone, installable Python packages developed in support of the
+tutorials above, kept separate from the notebooks themselves since
+they're independently versioned software rather than lesson material.
+
+- [`paulikit`](tools/paulikit) — performance-engineering tools for
+  Pauli decomposition of Hermitian and non-Hermitian operators.
+  Built to scale module ( 05 )'s Hamiltonian simulation beyond its
+  original symbolic decomposition's practical limit (~N=4). Install
+  with `pip install -e tools/paulikit` and see that package's own
+  README for usage.
 
 ## GNU GPL v3+
 

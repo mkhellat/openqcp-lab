@@ -53,8 +53,14 @@ guidelines to help you get started.
 
 6. **Make Your Changes:**
    - Make your changes to the codebase.
-   - Follow the notebook structure guidelines in `NOTEBOOK_TEMPLATE.md`
-     if adding or modifying notebooks.
+   - If adding or modifying a **tutorial notebook**, follow the
+     notebook structure guidelines in `NOTEBOOK_TEMPLATE.md`.
+   - If adding or modifying a **tool** under `tools/` (e.g.
+     `paulikit`), follow that package's own conventions: a
+     `pyproject.toml` with full PEP 621 metadata, a `src/<package>/`
+     layout, type hints on public functions, and a `tests/` directory
+     with real pytest coverage - not ad hoc scripts. See `tools/paulikit`
+     for a worked example.
    - Ensure code follows Python style conventions (PEP 8).
 
 7. **Test Your Changes:**
@@ -64,6 +70,13 @@ guidelines to help you get started.
      ```
    - If modifying notebooks, verify they have valid JSON structure
      and can be opened in Jupyter.
+   - If modifying a tool under `tools/`, install it in editable mode
+     with its test extras and run its test suite, e.g.:
+     ```bash
+     cd tools/paulikit
+     pip install -e ".[test]"
+     pytest
+     ```
 
 8. **Commit Your Changes:**
    - Commit your changes with a clear and descriptive message:
@@ -102,14 +115,19 @@ guidelines to help you get started.
       git branch -D feature/your-feature-name
       ```
 
-## Code Style and Notebook Guidelines
+## Code Style and Guidelines
 
 - **Python Code:** Follow PEP 8 style guidelines where applicable
 - **Notebooks:** Follow the structure outlined in `NOTEBOOK_TEMPLATE.md`
-- **Documentation:** Update README files when adding new features or
-  notebooks
-- **Dependencies:** Add new dependencies to `requirements.txt` with
-  appropriate version constraints
+- **Tools (`tools/`):** Each tool is its own installable package with
+  its own `pyproject.toml`, dependencies, and test suite - don't add
+  its dependencies to the top-level `requirements.txt`, which is
+  scoped to the tutorial notebooks
+- **Documentation:** Update README files when adding new features,
+  notebooks, or tools
+- **Dependencies:** Add new tutorial-notebook dependencies to
+  `requirements.txt` with appropriate version constraints; add new
+  tool dependencies to that tool's own `pyproject.toml`
 
 ## Code of Conduct
 
