@@ -23,6 +23,9 @@ build/
 dist/
 *.egg
 
+# Sphinx build output (paulikit and any future packages' docs/)
+_build/
+
 # Virtual environments
 .env
 .venv

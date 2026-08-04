@@ -5,7 +5,7 @@ PYTHON     := $(VENV)/bin/python
 PIP        := $(VENV)/bin/pip
 PYTEST     := $(VENV)/bin/pytest
 
-.PHONY: help env install install-dev clean distclean test test-import test-syntax test-run test-tools
+.PHONY: help env install install-dev clean distclean test test-import test-syntax test-run test-tools docs-tools
 
 find_notebooks = find . -name '*.ipynb' \
 	-not -path './.git/*' \
@@ -22,6 +22,7 @@ help:
 	@echo "  make install-dev - Also install dev/profiling tools (requirements-dev.txt)"
 	@echo "  make test      - Run import checks, notebook JSON checks, notebook execution, and tools/ test suites"
 	@echo "  make test-tools - Run tools/*/tests/ (e.g. tools/paulikit) - installs each in editable mode first"
+	@echo "  make docs-tools - Build Sphinx docs for every tool under tools/ that provides them"
 	@echo "  make clean     - Remove cache/bytecode files"
 	@echo "  make distclean - Remove venv/, config.mk, config.log, and cache files"
 
@@ -42,6 +43,9 @@ clean:
 	find . -type d -name '.ipynb_checkpoints' -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
+	@for tool_dir in tools/*/; do \
+		if [ -f "$$tool_dir/Makefile" ]; then $(MAKE) -C "$$tool_dir" clean; fi; \
+	done
 
 distclean: clean
 	rm -rf $(VENV) config.mk config.log
@@ -70,9 +74,20 @@ test-run:
 test-tools:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	@for tool_dir in tools/*/; do \
-		if [ -f "$$tool_dir/pyproject.toml" ]; then \
+		if [ -f "$$tool_dir/Makefile" ]; then \
 			echo "Testing $$tool_dir..."; \
-			$(PIP) install -q -e "$$tool_dir[test]" && \
-			(cd "$$tool_dir" && $(realpath $(PYTEST)) -q) || exit 1; \
+			$(MAKE) -C "$$tool_dir" test PYTHON="$(abspath $(PYTHON))" \
+				PIP="$(abspath $(PYTHON)) -m pip" \
+				PYTEST="$(abspath $(PYTEST))" || exit 1; \
+		fi; \
+	done
+
+docs-tools:
+	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
+	@for tool_dir in tools/*/; do \
+		if [ -f "$$tool_dir/docs/conf.py" ] && [ -f "$$tool_dir/Makefile" ]; then \
+			echo "Building docs for $$tool_dir..."; \
+			$(MAKE) -C "$$tool_dir" docs PYTHON="$(abspath $(PYTHON))" \
+				PIP="$(abspath $(PYTHON)) -m pip" || exit 1; \
 		fi; \
 	done
