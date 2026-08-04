@@ -12,6 +12,12 @@ against every tensor-product Pauli string) before writing the fast
 version, rather than transcribed from the paper. See
 ``tests/test_fwht.py`` (package root) for that verification.
 
+See the full documentation site (``docs/``) for a much more detailed
+treatment: :doc:`/background` (the physical problem this solves),
+:doc:`/theory` (this module's derivation, worked step by step with a
+hand-verified example), and :doc:`/non_hermitian` (physical examples
+of non-Hermitian operators and a worked complex-coefficient example).
+
 Mathematical basis
 -------------------
 Using the symplectic (X/Z) representation of an n-qubit Pauli string,
