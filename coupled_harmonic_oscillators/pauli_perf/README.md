@@ -80,11 +80,41 @@ This module's own implementation will be benchmarked against this
 table as it develops.
 
 
+## Files
+
+- `PLAN.md` — full research trail, phased plan, and rationale.
+- `hamiltonian.py` — independent NumPy reimplementation of the
+  notebook's `prepare_hmatrix(N)`, used to build test Hamiltonians
+  without symbolic (SymPy) overhead. Cross-checked against the
+  notebook's SymPy version to machine epsilon at N=2 and N=4.
+- `pauli_utils.py` — minimal, dependency-free Pauli-matrix helpers
+  (string label <-> matrix, reconstruction from a term dict).
+  Deliberately does not depend on PennyLane/Qiskit/Classiq, so it
+  stays usable as an independent check regardless of which library
+  (if any) an implementation under test happens to use internally.
+- `fixtures.py` — correctness fixtures: known-good Hamiltonians and
+  their expected Pauli decompositions (generated once via PennyLane's
+  `qml.pauli_decompose` as an independent oracle, then stored as
+  plain constants — not regenerated automatically). See the module
+  docstring for how to regenerate if `hamiltonian.py` ever changes.
+- `tests/test_fixtures.py` — validates the fixtures are internally
+  consistent (the stored terms actually reconstruct the Hamiltonian),
+  independent of any decomposition implementation. Future
+  implementations should be tested against `fixtures.ALL_FIXTURES` in
+  their own test module, not by re-deriving expected values inline.
+
+Run the fixture tests:
+
+```bash
+pytest coupled_harmonic_oscillators/pauli_perf/tests/ -v
+```
+
+
 ## Status
 
-Scaffolding only. See the repository's task list for current progress
-on correctness fixtures, the FWHT implementation itself, benchmarking,
-and profiling.
+Correctness fixtures (N=2, N=4) are in place and self-validated. Next:
+the original pure-Python FWHT implementation itself (see PLAN.md
+Phase 1). See the repository's task list for current progress.
 
 
 ## Software Requirements
