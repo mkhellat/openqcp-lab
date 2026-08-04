@@ -102,8 +102,19 @@ table as it develops.
   independent of any decomposition implementation. Future
   implementations should be tested against `fixtures.ALL_FIXTURES` in
   their own test module, not by re-deriving expected values inline.
+- `fwht_decompose.py` — the original FWHT-based Pauli decomposition
+  implementation (Phase 1). The algorithm was independently re-derived
+  and verified against a from-scratch, definition-level brute-force
+  decomposition before being written in its fast form — see the
+  module's docstring for the full derivation (symplectic X/Z
+  representation, the XOR-gather/WHT/phase-multiply correspondence).
+- `tests/test_fwht_decompose.py` — validates `fwht_decompose.py`
+  against both the from-scratch brute-force reference (general random
+  Hermitian matrices, n=1..4) and `fixtures.ALL_FIXTURES` (exact label
+  and coefficient match), plus edge cases (non-power-of-two input,
+  non-square input, odd-sized Hamiltonians requiring padding).
 
-Run the fixture tests:
+Run the tests:
 
 ```bash
 pytest coupled_harmonic_oscillators/pauli_perf/tests/ -v
@@ -112,9 +123,17 @@ pytest coupled_harmonic_oscillators/pauli_perf/tests/ -v
 
 ## Status
 
-Correctness fixtures (N=2, N=4) are in place and self-validated. Next:
-the original pure-Python FWHT implementation itself (see PLAN.md
-Phase 1). See the repository's task list for current progress.
+Phase 1 (original pure-Python FWHT implementation) is done and
+correctness-verified: `fwht_decompose.py` matches both a from-scratch
+brute-force reference and `fixtures.ALL_FIXTURES` exactly. A quick
+timing check at N=30 (the target size) took ~0.48s — already faster
+than the PennyLane sparse reference's ~1.29s in this session's
+baseline table, though this implementation computes the full dense
+coefficient array rather than exploiting sparsity, so that comparison
+isn't yet apples-to-apples (to be revisited properly in the
+benchmarking phase). Next: systematic benchmarking across N values
+(Phase 1 wrap-up) and profiling (Phase 2) — see PLAN.md and the
+repository's task list for current progress.
 
 
 ## Software Requirements
