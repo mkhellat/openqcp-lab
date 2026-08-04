@@ -8,7 +8,8 @@ solution using Variational Quantum Eigensolvers (VQE).
 # Implementation
 
 The notebook implements a VQE solver for the Max-Cut problem using
-Qiskit's `EfficientSU2` ansatz and `GSLS` optimizer. The QUBO problem
+Qiskit's `EfficientSU2` ansatz and `COBYLA` optimizer, and compares
+the result against a brute-force classical baseline. The QUBO problem
 is formulated as a ground state problem and solved using variational
 quantum algorithms.
 
@@ -18,22 +19,14 @@ quantum algorithms.
 The following Python packages are required to run this notebook:
 
 - `numpy` (for numerical operations)
-- `qiskit` (for quantum circuit construction and VQE implementation)
+- `networkx` (for graph construction)
+- `qiskit` (for quantum circuit construction)
+- `qiskit-algorithms` (for the VQE algorithm and optimizers)
 - `qiskit-optimization` (for QUBO problem formulation)
 
-**Note:** The `numpy` package is included in the top-level
-`requirements.txt`. The Qiskit packages (`qiskit` and
-`qiskit-optimization`) are optional dependencies that will be
-automatically installed by the notebook if not already present. If you
-prefer to install them beforehand, you can run:
-
-```bash
-pip install qiskit qiskit-optimization
-```
-
-Alternatively, if you have set up the base environment as described in
-the main README, the notebook will handle the installation of Qiskit
-packages automatically when executed.
+**Note:** All of the above are listed in the top-level
+`requirements.txt` and installed by `./bootstrap` (or `make env`), so
+no separate installation step is needed.
 
 
 # GNU GPL v3+

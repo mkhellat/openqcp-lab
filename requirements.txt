@@ -12,6 +12,8 @@ classiq>=0.20.0
 ipython>=7.0.0
 jupyter>=1.0.0
 
-# Optional dependencies (installed on-demand in specific notebooks)
-# qiskit>=0.45.0
-# qiskit-optimization>=0.6.0
+# Qiskit stack (quantum_variational_algorithms module)
+qiskit>=2.5.1
+qiskit-algorithms>=0.4.0
+qiskit-optimization>=0.7.0
+networkx>=3.0
