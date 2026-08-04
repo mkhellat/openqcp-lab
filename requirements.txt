@@ -1,19 +1,19 @@
 # Core scientific computing libraries
-numpy>=1.20.0
-scipy>=1.7.0
-sympy>=1.9.0
-matplotlib>=3.4.0
+numpy==2.5.1
+scipy==1.18.0
+sympy==1.14.0
+matplotlib==3.11.1
 
 # Quantum computing frameworks
-pennylane>=0.28.0
-classiq>=0.20.0
+pennylane==0.45.1
+classiq==1.23.0
 
 # Jupyter/IPython (for notebook execution)
-ipython>=7.0.0
-jupyter>=1.0.0
+ipython==9.16.0
+jupyter==1.1.1
 
 # Qiskit stack (quantum_variational_algorithms module)
-qiskit>=2.5.1
-qiskit-algorithms>=0.4.0
-qiskit-optimization>=0.7.0
-networkx>=3.0
+qiskit==2.5.1
+qiskit-algorithms==0.4.0
+qiskit-optimization==0.7.0
+networkx==3.6.1
