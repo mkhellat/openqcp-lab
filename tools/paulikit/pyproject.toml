@@ -68,6 +68,10 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: benchmark/reference comparisons that take minutes to run; excluded by default (see Makefile's `test` target, which passes -m 'not slow')",
+]
+addopts = "-m 'not slow'"
 
 [tool.ruff]
 line-length = 92

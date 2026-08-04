@@ -151,32 +151,41 @@ a single module.
 PennyLane's `qml.pauli_decompose` was used during development purely
 as a correctness and performance **reference point** — it is a
 test/dev-only dependency (see `pyproject.toml`'s `test`/`dev` extras),
-never imported by `paulikit.algorithms` itself. Measured against a
-`scipy.sparse`-native encoding of the coupled-oscillator Hamiltonian's
-actual sparsity pattern:
+never imported by `paulikit.algorithms` itself. Both implementations
+were run on the *exact same* `build_hamiltonian()` output at each N
+(see `tests/test_benchmark_reference.py`, marked `slow` and excluded
+from the default test run):
 
-| N   | qubits | matrix dim | time (sparse) |
-|-----|--------|------------|----------------|
-| 16  | 8      | 256        | 0.37s          |
-| 30  | 9      | 512        | 1.29s          |
-| 50  | 11     | 2048       | 9.37s          |
-| 100 | 13     | 8192       | 94.8s          |
+| N (oscillators) | qubits | Pauli terms | paulikit time | PennyLane time  | speedup |
+|------------------|--------|-------------|----------------|------------------|---------|
+| 16               | 8      | 15360       | 0.0586s        | 6.7369s          | 115x    |
+| 30               | 9      | 112384      | 0.4019s        | 48.3211s         | 120x    |
+| 50               | 11     | 1261568     | 6.2213s        | >590s (aborted)  | >95x    |
+| 100              | 13     | 20299776    | 126.3250s      | not attempted    | —       |
 
-`paulikit.algorithms.fwht`'s own timing at N=30 (via
-`paulikit benchmark`) is roughly 0.48s using the full dense coefficient
-array (no sparsity exploitation yet), already faster than the
-PennyLane sparse reference despite that difference — though this isn't
-yet an apples-to-apples comparison; see `PLAN.md` for the planned
-systematic benchmarking.
+Both implementations agree exactly on term count at every N where
+PennyLane finished (a correctness check, not just a performance one).
+The N=50 PennyLane run was killed by a 10-minute timeout without
+completing; N=100 wasn't attempted with PennyLane given that. See
+`PLAN.md` Section 3.4 for the full discussion, including why an
+earlier draft of this table (using a synthetic proxy matrix rather
+than the real Hamiltonian) understated PennyLane's actual cost on
+this problem.
+
+`paulikit`'s own N=100 time (126.3s) is worth noting honestly: the
+current implementation computes the full dense $2^n \times 2^n$
+coefficient array regardless of input sparsity, so it does
+significantly more work than necessary at large N. Exploiting the
+Hamiltonian's actual sparsity is the next natural optimization target.
 
 
 ## Status
 
-Phase 1 (original pure-Python FWHT implementation) is complete and
-correctness-verified. Next: systematic benchmarking across N values
-and profiling (cProfile/snakeviz, line_profiler, py-spy) to identify
-whether/what needs a native (C) port — see `PLAN.md` and the parent
-repository's task list for current progress.
+Phase 1 (original pure-Python FWHT implementation) and initial
+benchmarking against PennyLane are complete. Next: profiling
+(cProfile/snakeviz, line_profiler, py-spy) to identify whether/what
+needs a native (C) port — see `PLAN.md` and the parent repository's
+task list for current progress.
 
 
 ## License
