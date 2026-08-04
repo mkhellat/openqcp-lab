@@ -22,7 +22,7 @@ indexed by bitmasks x, z in [0, 2**n):
 (qubit j corresponds to bit (n-1-j) of x and z, matching the row/column
 order produced by a left-to-right ``numpy.kron`` chain).
 
-The matrix element <p| X**x Z**z |q> equals
+The matrix element ``<p| X**x Z**z |q>`` equals
 ``(-1)**popcount(q & z)`` when ``p == q ^ x``, and 0 otherwise. So the
 Frobenius inner product coefficient is:
 

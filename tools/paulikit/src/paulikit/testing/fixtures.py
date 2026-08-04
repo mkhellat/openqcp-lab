@@ -53,7 +53,7 @@ class DecompositionFixture:
         expected_terms: Mapping from Pauli-string label (e.g. "IXZ",
             read left-to-right as qubit 0, 1, 2, ...) to its real
             coefficient in the decomposition. Only nonzero terms
-            (|coefficient| > 1e-10) are included.
+            (``abs(coefficient) > 1e-10``) are included.
     """
 
     name: str

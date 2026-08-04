@@ -48,11 +48,17 @@ dev = [
     "line_profiler",
     "py-spy",
 ]
+docs = [
+    "sphinx>=7",
+    "furo",
+    "myst-parser>=2",
+    "sphinx-autodoc-typehints>=2",
+]
 
 [project.urls]
 Homepage = "https://codeberg.org/mkhellat/openqcp-lab"
 Repository = "https://codeberg.org/mkhellat/openqcp-lab"
-"Plan / research notes" = "https://codeberg.org/mkhellat/openqcp-lab/src/branch/main/coupled_harmonic_oscillators/paulikit/PLAN.md"
+"Plan / research notes" = "https://codeberg.org/mkhellat/openqcp-lab/src/branch/main/tools/paulikit/PLAN.md"
 
 [project.scripts]
 paulikit = "paulikit.cli:main"
