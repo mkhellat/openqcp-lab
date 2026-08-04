@@ -16,14 +16,14 @@ Before reproducing results, ensure you have:
 
 ### Coupled Harmonic Oscillators
 
-**Notebook:** `coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D_N_2.ipynb`
+**Notebook:** `tutorials/coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D_N_2.ipynb`
 
 **Generated Figures:**
 - `figures/hs_n_2.png` - Hamiltonian simulation results (generated in Cell 49)
 - `figures/ar_n_2.png` - Analytical solution comparison (generated in Cell 59)
 
 **To Reproduce:**
-1. Navigate to the `coupled_harmonic_oscillators/` directory
+1. Navigate to the `tutorials/coupled_harmonic_oscillators/` directory
 2. Run the notebook `N_coupled_harmonic_oscillators_1_D_N_2.ipynb`
 3. The plots will be displayed using `plt.show()`
 4. To save figures, add `plt.savefig('figures/filename.png')` before
@@ -43,17 +43,17 @@ Several notebooks generate `.qmod` (quantum model) files:
 
 ### Coupled Harmonic Oscillators
 - **Files:** `N-2-dt-*.qmod` and `N-2-dt-*.qprog` (where `*` is the time step)
-- **Location:** `coupled_harmonic_oscillators/` directory
+- **Location:** `tutorials/coupled_harmonic_oscillators/` directory
 - **Generated in:** Cell containing `write_qmod(qmod, f"N-2-dt-{t}")`
 
 ### Quantum Fourier Transform
 - **File:** `qft-expvalue.qmod`
-- **Location:** `quantum_fourier_transform_abelian/` directory
+- **Location:** `tutorials/quantum_fourier_transform_abelian/` directory
 - **Generated in:** Cell containing `write_qmod(create_model(main), "qft-expvalue")`
 
 ### Non-Unitary Quantum Computing (LCU)
 - **File:** `lcu-2x2.qmod`
-- **Location:** `nonunitary_quantum_computing/` directory
+- **Location:** `tutorials/nonunitary_quantum_computing/` directory
 - **Generated in:** Cell containing `write_qmod(quantum_model, "lcu-2x2")`
 
 **Note:** These `.qmod` files are generated when the corresponding cells are
@@ -65,16 +65,16 @@ to save and reuse quantum circuit models.
 The notebooks are designed to be independent and can be run in any order.
 However, if you want to follow a logical learning progression:
 
-1. **Quantum Fourier Transform** (`quantum_fourier_transform_abelian/`) -
+1. **Quantum Fourier Transform** (`tutorials/quantum_fourier_transform_abelian/`) -
    Fundamental concepts
-2. **Quantum Walk** (`quantum_walk/`) - Graph-based algorithms
-3. **Non-Unitary Quantum Computing** (`nonunitary_quantum_computing/`) -
+2. **Quantum Walk** (`tutorials/quantum_walk/`) - Graph-based algorithms
+3. **Non-Unitary Quantum Computing** (`tutorials/nonunitary_quantum_computing/`) -
    Advanced techniques
-4. **Minimize Expectation Value** (`minimize_expectation_value/`) -
+4. **Minimize Expectation Value** (`tutorials/minimize_expectation_value/`) -
    Optimization basics
-5. **Quantum Variational Algorithms** (`quantum_variational_algorithms/`) -
+5. **Quantum Variational Algorithms** (`tutorials/quantum_variational_algorithms/`) -
    VQE and QUBO
-6. **Coupled Harmonic Oscillators** (`coupled_harmonic_oscillators/`) -
+6. **Coupled Harmonic Oscillators** (`tutorials/coupled_harmonic_oscillators/`) -
    Hamiltonian simulation
 
 ## Troubleshooting

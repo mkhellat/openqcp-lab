@@ -34,11 +34,11 @@ symbolically (SymPy), which is fine for small $N$ but does not scale
 past roughly $N=4$ in practice. Scaling this to larger $N$ (target
 $N=30$, stretch $N=100+$) is an active performance-engineering effort,
 developed as a standalone installable package rather than inline
-notebook code: see [`../tools/paulikit`](../tools/paulikit), which
+notebook code: see [`../../tools/paulikit`](../../tools/paulikit), which
 implements a fast, original Pauli decomposition algorithm (Fast
 Walsh-Hadamard Transform based, O(N² log N)) with its own correctness
 tests, benchmarks, and command-line interface. See
-[`../tools/paulikit/PLAN.md`](../tools/paulikit/PLAN.md) for the full
+[`../../tools/paulikit/PLAN.md`](../../tools/paulikit/PLAN.md) for the full
 research background and phased plan.
 
 

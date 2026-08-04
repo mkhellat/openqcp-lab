@@ -5,7 +5,7 @@ Status: draft, scaffolding phase. Last updated: 2026-08-04.
 
 ## 1. Problem statement
 
-`coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D.ipynb`
+`tutorials/coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D.ipynb`
 implements a quantum algorithm for Hamiltonian simulation of N coupled
 classical oscillators (based on
 [Exponential Quantum Speedup in Simulating Coupled Classical Oscillators](https://journals.aps.org/prx/abstract/10.1103/PhysRevX.13.041041)).
@@ -221,9 +221,9 @@ Surveyed this session, informing methodology (not code reuse):
 ## 5. Phased plan
 
 ### Phase 0 — Scaffolding (this document + directory structure)
-- `coupled_harmonic_oscillators/paulikit/README.md` — package overview.
-- `coupled_harmonic_oscillators/paulikit/PLAN.md` — this document.
-- `coupled_harmonic_oscillators/paulikit/pyproject.toml` — PEP 621
+- `tools/paulikit/README.md` — package overview.
+- `tools/paulikit/PLAN.md` — this document.
+- `tools/paulikit/pyproject.toml` — PEP 621
   package metadata; `paulikit` is installable (`pip install -e .`)
   with a `paulikit` console-script entry point, separate from the
   parent repository's plain `requirements.txt` approach used by the

@@ -94,27 +94,29 @@ Good luck and have fun using these tutorials!
 
 ## Tutorials
 
-- [( 00 ) - Quantum Fourier Transform - Abelian groups case](quantum_fourier_transform_abelian)  
+All tutorial notebooks live under [`tutorials/`](tutorials).
+
+- [( 00 ) - Quantum Fourier Transform - Abelian groups case](tutorials/quantum_fourier_transform_abelian)  
   Learn the mathematical foundations of QFT over finite Abelian groups
   and its applications in phase estimation and Hadamard test.
 
-- [( 01 ) - Quantum Machine Learning - minimize expectation value](minimize_expectation_value)  
+- [( 01 ) - Quantum Machine Learning - minimize expectation value](tutorials/minimize_expectation_value)  
   Optimize variational quantum circuits using gradient descent to minimize
   expectation values of quantum observables.
 
-- [( 02 ) - Discrete-Time Quantum Walk - path graph](quantum_walk)  
+- [( 02 ) - Discrete-Time Quantum Walk - path graph](tutorials/quantum_walk)  
   Implement quantum walk operators on graphs using coin and shift operators
   for a path graph with 16 nodes.
 
-- [( 03 ) - Non-Unitary Quantum Computing - lcu](nonunitary_quantum_computing)  
+- [( 03 ) - Non-Unitary Quantum Computing - lcu](tutorials/nonunitary_quantum_computing)  
   Represent and manipulate non-unitary operations using Linear Combination
   of Unitaries (LCU) decomposition.
 
-- [( 04 ) - Quantum Optimization - qubo and vqe](quantum_variational_algorithms)  
+- [( 04 ) - Quantum Optimization - qubo and vqe](tutorials/quantum_variational_algorithms)  
   Solve Quadratic Unconstrained Binary Optimization (QUBO) problems using
   Variational Quantum Eigensolvers (VQE).
 
-- [( 05 ) - Quantum Simulation - coupled harmonic oscillators](coupled_harmonic_oscillators)  
+- [( 05 ) - Quantum Simulation - coupled harmonic oscillators](tutorials/coupled_harmonic_oscillators)  
   Simulate the dynamics of coupled classical harmonic oscillators using
   quantum Hamiltonian simulation with exponential speedup.
 
