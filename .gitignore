@@ -7,6 +7,10 @@
 **/test.ipynb
 **/Untitled.ipynb
 
+# Local investigation/reference material (e.g. library-internals
+# inspection) that isn't part of the polished tutorials
+notes/
+
 # Python bytecode
 __pycache__/
 *.py[cod]
