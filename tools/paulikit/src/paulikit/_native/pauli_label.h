@@ -17,6 +17,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Writes exactly n_qubits ASCII characters (one of 'I','X','Y','Z')
  * followed by a null terminator into `out`. Caller owns `out` and
  * must ensure it has room for at least (n_qubits + 1) bytes. Does not
@@ -40,5 +44,9 @@ void pauli_label_batch(
     int n_qubits,
     char *out
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PAULIKIT_PAULI_LABEL_H */

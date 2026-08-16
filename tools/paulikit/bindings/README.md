@@ -203,5 +203,65 @@ that may change the relative picture, since it targets throughput at
 the C level rather than the Python-unpacking layer these numbers are
 currently bottlenecked on for CFFI/ctypes/SWIG.
 
+## oneTBB parallelization (task #29)
+
+Per PLAN.md Phase 3a, once a binding technique is retained (Cython,
+per the summary table above), the batch kernel is parallelized with
+oneTBB. `src/paulikit/_native/pauli_label_parallel.cpp` adds
+`pauli_label_batch_parallel` - identical contract to the serial
+`pauli_label_batch`, using `tbb::parallel_for` over a
+`tbb::blocked_range` of terms (embarrassingly parallel: each term's
+label is independent, no synchronization needed since every thread
+writes to a disjoint slice of the output buffer). `pauli_label.h`
+gained `extern "C"` guards so its C symbols stay callable with plain
+C linkage when compiled as C++ (required because the whole Cython
+extension is now built as one `language="c++"` unit, per
+`bindings/cython/setup.py`). The serial `pauli_label.c` kernel is
+untouched - it remains the correctness baseline.
+
+**Correctness:** a standalone C++ test
+(`src/paulikit/_native/test_pauli_label_parallel.cpp`, run via
+`make test-native`) compares the parallel kernel's output against the
+serial kernel byte-for-byte across several `n_terms`/`n_qubits`/seed
+combinations - not spot checks. The Cython `pauli_label_batch_parallel`
+entry point is separately verified against the pure-Python reference
+at production `n_qubits` (8, 11, 13), 5000 random terms each - zero
+mismatches, same as every other binding.
+
+**Standalone C++ kernel benchmark** (8 cores, `n_terms=1,261,568`,
+`n_qubits=11` - matching the N=50 matched-benchmark size, raw
+in-memory arrays, no Python involved): **3.9-4.1x speedup**
+(repeated runs), below PLAN.md's ~7x/8-core reference point from the
+FWHT paper. Plausible explanation, not yet confirmed further: this
+kernel is memory-bandwidth-bound (each term does a handful of
+bit-shifts and one dict-free table lookup per qubit, writing
+`n_qubits` bytes) rather than compute-bound, so it's expected to
+scale worse with core count than a genuinely compute-heavy kernel
+like the FWHT paper's own workload.
+
+**Important negative-ish finding: through the actual Python
+boundary, the parallelization barely helps (1.1-1.25x, and a
+regression at N=16).** Isolated by holding `n_terms` fixed and
+varying `n_qubits` down to 1 (near-zero C-side work): the timing
+barely changes between serial and parallel at `n_qubits=1`
+(0.0201s vs 0.0175s for 1.26M terms), which means **the Python-level
+cost of building a 1.26M-element list of Python `str` objects
+(`out[i*n_qubits:(i+1)*n_qubits].decode("ascii")` per term) already
+dominates the wall-clock time end to end - parallelizing the C-side
+label computation can't move a needle it isn't the bottleneck for.**
+This is consistent with (and a further confirmation of) the Phase 2
+profiling finding that per-term Python-object construction, not raw
+computation, is where most of this workload's cost lives - it's just
+moved one level down the stack now that the character-computation
+loop itself is in C.
+
+**Implication for Phase 4 (not started):** if further speedup on the
+label-generation step is wanted, the next target is the batch
+Python-list-construction step itself (e.g. returning a NumPy
+fixed-width string array instead of a Python list, deferring
+`str` construction until/unless a caller actually needs individual
+Python strings), not further parallelizing the character-computation
+loop, which is already fast enough to not be the bottleneck.
+
 See `../profiling/README.md` for the Phase 2 profiling data this
 comparison builds on.

@@ -18,8 +18,15 @@ NATIVE_DIR = Path(__file__).resolve().parent.parent.parent / "src" / "paulikit" 
 
 extension = Extension(
     name="pauli_label_cy",
-    sources=["pauli_label_cy.pyx", str(NATIVE_DIR / "pauli_label.c")],
+    sources=[
+        "pauli_label_cy.pyx",
+        str(NATIVE_DIR / "pauli_label.c"),
+        str(NATIVE_DIR / "pauli_label_parallel.cpp"),
+    ],
     include_dirs=[str(NATIVE_DIR), np.get_include()],
+    libraries=["tbb"],
+    language="c++",
+    extra_compile_args=["-std=c++17"],
 )
 
 setup(

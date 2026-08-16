@@ -15,6 +15,7 @@ PYTHON  ?= python3
 PIP     ?= $(PYTHON) -m pip
 PYTEST  ?= pytest
 CC      ?= cc
+CXX     ?= c++
 
 .PHONY: help install install-docs test test-native docs clean
 
@@ -43,6 +44,11 @@ test-native:
 		src/paulikit/_native/pauli_label.c \
 		src/paulikit/_native/test_pauli_label.c
 	/tmp/paulikit_test_pauli_label
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -o /tmp/paulikit_test_pauli_label_parallel \
+		src/paulikit/_native/pauli_label.c \
+		src/paulikit/_native/pauli_label_parallel.cpp \
+		src/paulikit/_native/test_pauli_label_parallel.cpp -ltbb
+	/tmp/paulikit_test_pauli_label_parallel
 
 docs: install-docs
 	$(MAKE) -C docs html SPHINXBUILD="$(PYTHON) -m sphinx"

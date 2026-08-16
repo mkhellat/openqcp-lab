@@ -30,6 +30,7 @@ dist/
 *.pyd
 *.o
 tools/paulikit/bindings/cython/pauli_label_cy.c
+tools/paulikit/bindings/cython/pauli_label_cy.cpp
 tools/paulikit/bindings/cffi/_pauli_label_cffi.c
 tools/paulikit/bindings/swig/pauli_label_wrap.c
 tools/paulikit/bindings/swig/pauli_label_swig.py

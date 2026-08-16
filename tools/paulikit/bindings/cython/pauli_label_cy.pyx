@@ -11,6 +11,10 @@ mirroring the pure-Python reference's two use cases:
   strings, calling into the C batch kernel once rather than once per
   term (see PLAN.md Phase 3a: avoiding per-call FFI overhead at
   1.26M+ terms is the actual point of the batch kernel).
+- ``pauli_label_batch_parallel(x_masks, z_masks, n_qubits)`` - same
+  contract as ``pauli_label_batch``, but calls the oneTBB-parallelized
+  C++ kernel (src/paulikit/_native/pauli_label_parallel.cpp, task
+  #29) instead of the serial one.
 """
 
 import numpy as np
@@ -22,6 +26,15 @@ cnp.import_array()
 cdef extern from "pauli_label.h":
     void c_pauli_label "pauli_label"(uint32_t x_mask, uint32_t z_mask, int n_qubits, char *out)
     void c_pauli_label_batch "pauli_label_batch"(
+        const uint32_t *x_masks,
+        const uint32_t *z_masks,
+        int64_t n_terms,
+        int n_qubits,
+        char *out,
+    )
+
+cdef extern from "pauli_label_parallel.h":
+    void c_pauli_label_batch_parallel "pauli_label_batch_parallel"(
         const uint32_t *x_masks,
         const uint32_t *z_masks,
         int64_t n_terms,
@@ -56,6 +69,29 @@ def pauli_label_batch(cnp.ndarray[uint32_t, ndim=1] x_masks,
     cdef bytes buf = bytes(n_terms * n_qubits)
     cdef char *out = buf
     c_pauli_label_batch(<uint32_t *>x_c.data, <uint32_t *>z_c.data, n_terms, n_qubits, out)
+
+    result = [None] * n_terms
+    cdef int64_t i
+    for i in range(n_terms):
+        result[i] = out[i * n_qubits: (i + 1) * n_qubits].decode("ascii")
+    return result
+
+
+def pauli_label_batch_parallel(cnp.ndarray[uint32_t, ndim=1] x_masks,
+                                cnp.ndarray[uint32_t, ndim=1] z_masks,
+                                int n_qubits):
+    """Same contract as pauli_label_batch, using the oneTBB-parallel
+    C++ kernel instead of the serial C one."""
+    if x_masks.shape[0] != z_masks.shape[0]:
+        raise ValueError("x_masks and z_masks must have the same length")
+
+    cdef int64_t n_terms = x_masks.shape[0]
+    cdef cnp.ndarray[uint32_t, ndim=1] x_c = np.ascontiguousarray(x_masks, dtype=np.uint32)
+    cdef cnp.ndarray[uint32_t, ndim=1] z_c = np.ascontiguousarray(z_masks, dtype=np.uint32)
+
+    cdef bytes buf = bytes(n_terms * n_qubits)
+    cdef char *out = buf
+    c_pauli_label_batch_parallel(<uint32_t *>x_c.data, <uint32_t *>z_c.data, n_terms, n_qubits, out)
 
     result = [None] * n_terms
     cdef int64_t i
