@@ -23,6 +23,13 @@ build/
 dist/
 *.egg
 
+# Compiled C-extension binding artifacts (paulikit Phase 3, tools/paulikit/bindings/)
+# - source .pyx/.c hand-written files are versioned; Cython-generated
+#   .c and the compiled shared objects are not.
+*.so
+*.pyd
+tools/paulikit/bindings/cython/pauli_label_cy.c
+
 # Sphinx build output (paulikit and any future packages' docs/)
 _build/
 

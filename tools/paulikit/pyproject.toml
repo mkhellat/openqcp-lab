@@ -47,6 +47,7 @@ dev = [
     "snakeviz",
     "line_profiler",
     "py-spy",
+    "cython>=3.0",
 ]
 docs = [
     "sphinx>=7",
