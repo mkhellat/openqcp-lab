@@ -1,0 +1,17 @@
+#!/bin/sh
+# Compiles pauli_label.c into a plain shared library for ctypes to
+# dlopen (Phase 3a, binding 3/4). Unlike Cython/CFFI, ctypes has no
+# compiled-extension build step of its own - it just loads a shared
+# object built however you like, so this is the minimal `cc` command
+# that does that job.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+native_dir="$script_dir/../../src/paulikit/_native"
+
+cc -std=c99 -O2 -shared -fPIC \
+    -I "$native_dir" \
+    -o "$script_dir/libpauli_label.so" \
+    "$native_dir/pauli_label.c"
+
+echo "Built $script_dir/libpauli_label.so"

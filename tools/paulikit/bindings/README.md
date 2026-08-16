@@ -96,5 +96,43 @@ per-element Python-object overhead. This is a real, reproducible
 difference in wrapper-code cost, not a difference in the underlying C
 kernel (which is bit-for-bit identical between the two bindings).
 
+## ctypes (`ctypes/`)
+
+Stdlib-only, no separate Python-extension build step - but ctypes
+only `dlopen()`s an already-built shared library, so a plain `cc`
+invocation is still needed first:
+
+```bash
+cd bindings/ctypes
+./build_pauli_label_shared   # compiles libpauli_label.so
+```
+
+`pauli_label_ctypes.py` loads `libpauli_label.so` and exposes the
+same `pauli_label`/`pauli_label_batch` signatures as the other
+bindings.
+
+**Correctness:** identical verification suite as Cython/CFFI -
+exhaustive `n_qubits` 1-4, 50,000 random cases at production sizes,
+batch cross-check. All pass, zero mismatches.
+
+**Benchmark** (same methodology as above):
+
+| N (oscillators) | qubits | terms | pure Python | ctypes batch | speedup |
+|---|---|---|---|---|---|
+| 16 | 8 | 15,360 | 0.0332s | 0.0048s | 7.0x |
+| 30 | 9 | 112,384 | 0.2433s | 0.0267s | 9.1x |
+| 50 | 11 | 1,261,568 | 3.3944s | 0.3051s | 11.1x |
+
+**End-to-end impact at N=100:** 37.512s `fwht_pauli_coefficients` +
+5.768s ctypes label generation = ~43.3s (vs. 126.3s all-Python
+baseline) - a **2.9x end-to-end speedup**. In the same range as CFFI
+(2.6x) and, at this scale, edges slightly ahead of it - both well
+behind Cython's 3.1x/26-35x, for the same reason noted in the CFFI
+section: the batch-unpacking loop back into Python `str` objects
+(here, slicing `ctypes.create_string_buffer.raw` + `.decode()` per
+term) carries more per-element overhead than Cython's typed-loop
+direct indexing. The underlying C kernel and call pattern are
+otherwise the same across all three bindings so far.
+
 See `../profiling/README.md` for the Phase 2 profiling data this
 comparison builds on.
