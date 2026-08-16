@@ -134,5 +134,74 @@ term) carries more per-element overhead than Cython's typed-loop
 direct indexing. The underlying C kernel and call pattern are
 otherwise the same across all three bindings so far.
 
+## SWIG (`swig/`)
+
+Requires the `swig` package (`sudo pacman -S swig`; not a Python
+package, so it isn't in `dev` extras). Build:
+
+```bash
+cd bindings/swig
+python3 setup.py build_ext --inplace
+```
+
+Produces `_pauli_label_swig.cpython-<tag>.so` (gitignored) plus
+SWIG-generated `pauli_label_wrap.c` and `pauli_label_swig.py`
+(both gitignored - regenerated from `pauli_label.i` on every build,
+never hand-edited). `pauli_label_swig_wrapper.py` is the hand-written
+Python module exposing the same `pauli_label`/`pauli_label_batch`
+signatures as the other three bindings.
+
+**This binding needed real typemap work**, unlike the other three:
+neither C function in `pauli_label.h` maps onto SWIG's default
+argument handling, since both write into a caller-supplied buffer
+via a raw `char *` parameter rather than returning a value. `pauli_label.i`
+hand-writes: (1) an `argout` typemap so `pauli_label_str` allocates a
+small stack buffer internally and returns a Python `str`, and (2)
+`Py_buffer`-based `in` typemaps so `pauli_label_batch_raw` accepts
+NumPy arrays and a writable Python buffer directly, without SWIG
+owning any allocation - matching the C kernel's actual
+no-allocation contract. This is a concrete instance of the
+"three-language complexity cost" / "heaviest boilerplate" trade-off
+PLAN.md's Section 4 tooling survey predicted for SWIG going in -
+confirmed here, not assumed.
+
+**Correctness:** identical verification suite as the other three
+bindings - exhaustive `n_qubits` 1-4, 50,000 random cases at
+production sizes, batch cross-check. All pass, zero mismatches.
+
+**Benchmark** (same methodology as above):
+
+| N (oscillators) | qubits | terms | pure Python | SWIG batch | speedup |
+|---|---|---|---|---|---|
+| 16 | 8 | 15,360 | 0.0337s | 0.0053s | 6.4x |
+| 30 | 9 | 112,384 | 0.2429s | 0.0351s | 6.9x |
+| 50 | 11 | 1,261,568 | 3.4679s | 0.5305s | 6.5x |
+
+**End-to-end impact at N=100:** 35.734s `fwht_pauli_coefficients` +
+6.600s SWIG label generation = ~42.3s (vs. 126.3s all-Python
+baseline) - a **3.0x end-to-end speedup**, essentially tied with
+ctypes (2.9x) and CFFI (2.6x), all behind Cython's 3.1x - despite
+SWIG requiring substantially more binding-code effort (hand-written
+typemaps) than any of the other three to get there.
+
+## Summary across all four bindings
+
+| binding | label-gen speedup (N=50) | end-to-end speedup (N=100) | binding effort |
+|---|---|---|---|
+| Cython | 26.2x | 3.1x | Low - typed Python-like syntax, no typemaps needed |
+| CFFI | 7.8x | 2.6x | Low - declarative `cdef`-style header, small wrapper |
+| ctypes | 11.1x | 2.9x | Low - stdlib only, manual `argtypes`/`restype` |
+| SWIG | 6.5x | 3.0x | High - hand-written typemaps required for buffer args |
+
+Cython is the clear winner on raw label-generation speed (its
+typed-loop unpacking avoids the per-term Python-object overhead all
+three C-binding techniques otherwise share) and ties for best
+end-to-end result, for the lowest binding effort of the four. See
+task #28 for the final decision on which binding `paulikit` ships
+with, once oneTBB parallelization (task #29) is also factored in -
+that may change the relative picture, since it targets throughput at
+the C level rather than the Python-unpacking layer these numbers are
+currently bottlenecked on for CFFI/ctypes/SWIG.
+
 See `../profiling/README.md` for the Phase 2 profiling data this
 comparison builds on.
