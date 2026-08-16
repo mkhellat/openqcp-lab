@@ -259,14 +259,68 @@ Surveyed this session, informing methodology (not code reuse):
   anything) needs a native port — no guessing.
 
 ### Phase 3 — C porting experiment (only for confirmed hot loops)
-- Port the smallest correct C kernel needed to address the profiled
-  bottleneck.
-- Bind it back to Python via, in this order, as a structured
-  comparison exercise: Cython, then CFFI, then ctypes, then SWIG —
-  building the same kernel each time and comparing raw performance,
-  binding overhead, and build/tooling complexity.
-- Parallelize the C kernel with oneTBB once a correct serial version
-  exists, targeting the ~7x/8-core speedup reported in the FWHT paper.
+
+Phase 2 profiling (`tools/paulikit/profiling/README.md`, task #16,
+2026-08-16) found two distinct, additive costs, addressed as two
+sequenced sub-phases rather than one conflated "port the hot loop"
+exercise:
+
+#### Phase 3a — `pauli_label` C port (scoped 2026-08-16)
+The confirmed bottleneck at N=50: `pauli_label`'s per-term,
+per-qubit Python loop is ~60% of `fwht_pauli_terms`'s cumulative
+time (4.9s self time out of 11.7s total), called once per nonzero
+coefficient. Smallest, most self-contained kernel to port — pure
+integer bit-twiddling + string building, no NumPy/array semantics to
+bridge, making it a clean first exercise for the binding-technique
+comparison.
+- **Kernel signature (C):**
+  `void pauli_label(uint32_t x_mask, uint32_t z_mask, int n_qubits, char *out)`
+  — writes `n_qubits` ASCII characters (`IXYZ`) plus a null
+  terminator into a caller-supplied buffer. No allocation inside the
+  kernel; the batch-call wrapper (see below) owns buffer allocation
+  once per array rather than once per term, avoiding the Python-level
+  per-call overhead.
+- **Batch entry point:** a second function taking arrays of `x`/`z`
+  masks (as already produced by `np.nonzero` in
+  `fwht_pauli_terms`) and `n_terms`, writing all labels into one
+  contiguous output buffer — batching the FFI call itself is part of
+  the point, since 1.26M individual Python->C calls would reintroduce
+  per-call overhead as the new bottleneck.
+- **Correctness gate:** must reproduce `pauli_label`'s existing output
+  exactly for every `(x, z)` pair already covered by
+  `tests/test_fixtures.py` / `tests/test_fwht.py`'s N=2, N=4 cases,
+  plus a property-based round-trip check (label -> re-derived x/z
+  bitmask -> same label) across all `2**n_qubits` values at small n.
+- **Binding order (structured comparison, one working version per
+  technique before moving to the next):** Cython, then CFFI, then
+  ctypes, then SWIG. Each variant benchmarked at the same matched-N
+  values (16, 30, 50, 100) as the existing PennyLane comparison, with
+  results (raw call overhead, build complexity, LOC) recorded in a
+  Phase 3a results table before deciding which binding technique the
+  package actually ships with.
+- **Parallelization:** once a correct serial version exists in
+  whichever binding technique is retained, parallelize the batch
+  entry point with oneTBB (each term's label is independent — trivial
+  data parallelism), targeting the FWHT paper's ~7x/8-core reference
+  point.
+- **Out of scope for 3a:** the dense-array-vs-sparsity issue below
+  (Phase 3b) — do not conflate the two kernels in one C module.
+
+#### Phase 3b — Sparsity-aware `fwht_pauli_coefficients` (scoped, not yet profiled in detail)
+Section 3's benchmark table shows `paulikit`'s own N=100 time
+(126.3s) is disproportionately worse than its N=16/N=30 speedup
+ratio would predict, because `fwht_pauli_coefficients` always
+computes the *full* dense `2**n x 2**n` coefficient array — at
+N=100 (13 qubits), ~67M coefficients computed to find ~20.3M nonzero
+(30% density, consistent with the N=50 measurement:
+4,194,304 computed vs. 1,261,568 nonzero). This is an algorithmic
+cost (unnecessary work), not a per-call Python overhead like 3a, so
+it needs its own profiling pass at N=100 (too slow to iterate on
+directly per Phase 2's N=50 choice — may need a smaller
+representative sparse case instead) before scoping a specific fix.
+Do not start this until Phase 3a is complete and reviewed, per
+[[feedback_atomic_commits_dual_push]]-style sequencing (one unit of
+work approved and shipped before the next starts).
 
 ### Phase 4 — Comparison and write-up
 - Assemble a final results table/plot: naive SymPy (small N only) vs.
