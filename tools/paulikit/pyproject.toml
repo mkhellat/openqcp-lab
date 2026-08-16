@@ -48,6 +48,7 @@ dev = [
     "line_profiler",
     "py-spy",
     "cython>=3.0",
+    "cffi>=1.16",
 ]
 docs = [
     "sphinx>=7",

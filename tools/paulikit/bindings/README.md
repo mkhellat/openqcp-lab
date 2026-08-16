@@ -52,5 +52,49 @@ N=50) and shows that once labeling is no longer the bottleneck, the
 dense-array-vs-sparsity issue (Phase 3b) becomes the dominant cost at
 large N, exactly as scoped in PLAN.md.
 
+## CFFI (`cffi/`)
+
+Build (API mode - compiles a real extension via `set_source`, not
+ABI mode's dlopen-a-prebuilt-.so approach, for a fairer comparison
+against Cython's also-compiled extension):
+
+```bash
+cd bindings/cffi
+python3 build_pauli_label_cffi.py
+```
+
+Produces `_pauli_label_cffi.cpython-<tag>.so` (gitignored). The
+low-level generated extension (`_pauli_label_cffi`) is wrapped by
+`pauli_label_cffi.py`, a small hand-written Python module exposing
+the same `pauli_label`/`pauli_label_batch` signatures as the Cython
+binding, for a like-for-like comparison.
+
+**Correctness:** identical verification suite as Cython (exhaustive
+`n_qubits` 1-4, 50,000 random cases at production sizes, batch
+cross-check) - all pass, zero mismatches.
+
+**Benchmark** (same methodology as Cython's table above):
+
+| N (oscillators) | qubits | terms | pure Python | CFFI batch | speedup |
+|---|---|---|---|---|---|
+| 16 | 8 | 15,360 | 0.0378s | 0.0053s | 7.2x |
+| 30 | 9 | 112,384 | 0.3051s | 0.0415s | 7.4x |
+| 50 | 11 | 1,261,568 | 3.3028s | 0.4215s | 7.8x |
+
+**End-to-end impact at N=100:** 40.578s `fwht_pauli_coefficients` +
+7.228s CFFI label generation = ~47.8s (vs. 126.3s all-Python baseline)
+- a **2.6x end-to-end speedup**, real but noticeably less than
+Cython's 3.1x.
+
+**Why CFFI is slower than Cython here:** the C call itself is
+presumably comparable, but `pauli_label_cffi.py`'s batch wrapper has
+to unpack the raw C buffer back into Python `str` objects one term at
+a time via `ffi.buffer()` slicing + `bytes()` + `.decode()`, whereas
+the Cython wrapper does the equivalent unpacking with `cdef`-typed
+loop variables and direct buffer indexing - considerably less
+per-element Python-object overhead. This is a real, reproducible
+difference in wrapper-code cost, not a difference in the underlying C
+kernel (which is bit-for-bit identical between the two bindings).
+
 See `../profiling/README.md` for the Phase 2 profiling data this
 comparison builds on.
