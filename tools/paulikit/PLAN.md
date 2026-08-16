@@ -1,6 +1,8 @@
 # Pauli Decomposition Performance Engineering — Plan
 
-Status: draft, scaffolding phase. Last updated: 2026-08-04.
+Status: Phases 0-3a complete. Phase 3b (sparsity-aware
+`fwht_pauli_coefficients`) and Phase 4 (final write-up) not started.
+Last updated: 2026-08-16.
 
 
 ## 1. Problem statement
@@ -265,7 +267,7 @@ Phase 2 profiling (`tools/paulikit/profiling/README.md`, task #16,
 sequenced sub-phases rather than one conflated "port the hot loop"
 exercise:
 
-#### Phase 3a — `pauli_label` C port (scoped 2026-08-16)
+#### Phase 3a — `pauli_label` C port (scoped 2026-08-16, COMPLETE 2026-08-16)
 The confirmed bottleneck at N=50: `pauli_label`'s per-term,
 per-qubit Python loop is ~60% of `fwht_pauli_terms`'s cumulative
 time (4.9s self time out of 11.7s total), called once per nonzero
@@ -273,38 +275,44 @@ coefficient. Smallest, most self-contained kernel to port — pure
 integer bit-twiddling + string building, no NumPy/array semantics to
 bridge, making it a clean first exercise for the binding-technique
 comparison.
-- **Kernel signature (C):**
-  `void pauli_label(uint32_t x_mask, uint32_t z_mask, int n_qubits, char *out)`
-  — writes `n_qubits` ASCII characters (`IXYZ`) plus a null
-  terminator into a caller-supplied buffer. No allocation inside the
-  kernel; the batch-call wrapper (see below) owns buffer allocation
-  once per array rather than once per term, avoiding the Python-level
-  per-call overhead.
-- **Batch entry point:** a second function taking arrays of `x`/`z`
-  masks (as already produced by `np.nonzero` in
-  `fwht_pauli_terms`) and `n_terms`, writing all labels into one
-  contiguous output buffer — batching the FFI call itself is part of
-  the point, since 1.26M individual Python->C calls would reintroduce
-  per-call overhead as the new bottleneck.
-- **Correctness gate:** must reproduce `pauli_label`'s existing output
-  exactly for every `(x, z)` pair already covered by
-  `tests/test_fixtures.py` / `tests/test_fwht.py`'s N=2, N=4 cases,
-  plus a property-based round-trip check (label -> re-derived x/z
-  bitmask -> same label) across all `2**n_qubits` values at small n.
-- **Binding order (structured comparison, one working version per
-  technique before moving to the next):** Cython, then CFFI, then
-  ctypes, then SWIG. Each variant benchmarked at the same matched-N
-  values (16, 30, 50, 100) as the existing PennyLane comparison, with
-  results (raw call overhead, build complexity, LOC) recorded in a
-  Phase 3a results table before deciding which binding technique the
-  package actually ships with.
-- **Parallelization:** once a correct serial version exists in
-  whichever binding technique is retained, parallelize the batch
-  entry point with oneTBB (each term's label is independent — trivial
-  data parallelism), targeting the FWHT paper's ~7x/8-core reference
-  point.
-- **Out of scope for 3a:** the dense-array-vs-sparsity issue below
-  (Phase 3b) — do not conflate the two kernels in one C module.
+
+**Results summary** (full detail in `bindings/README.md`):
+- C kernel (`src/paulikit/_native/pauli_label.c`): both single-term
+  and batch entry points, verified exhaustively (n_qubits 1-4) and
+  against 100K+ random cases at production n_qubits (5-13) — zero
+  mismatches against the Python reference throughout.
+- All four bindings (Cython, CFFI, ctypes, SWIG) built, verified, and
+  benchmarked at matched N (16/30/50/100). **Cython won on both raw
+  speed (26.2x label-gen speedup at N=50, vs. 6.5-11.1x for the
+  other three) and binding effort (lowest of the four; SWIG needed
+  hand-written typemaps for the buffer-argument signatures, the
+  highest-effort of the four as PLAN.md's Section 4 survey
+  predicted)** — retained as the binding paulikit ships with.
+- End-to-end impact at N=100: swapping in the Cython batch label
+  call cuts `fwht_pauli_terms`-equivalent time from the all-Python
+  126.3s baseline to ~40.2s (3.1x), leaving
+  `fwht_pauli_coefficients`'s dense-array computation (38.6s) as the
+  new dominant cost — exactly Phase 3b's scope below.
+- oneTBB parallelization added (`pauli_label_batch_parallel`,
+  `tbb::parallel_for` over independent terms). Standalone C++
+  benchmark: 3.9-4.1x on 8 cores (below the ~7x/8-core reference
+  point below, plausibly because this kernel is memory-bandwidth-
+  rather than compute-bound). **Through the actual Python boundary,
+  parallelization barely helps (1.1-1.25x)** — isolated to the
+  ~1.26M-element Python list-of-`str` construction already
+  dominating wall-clock time, confirming (one level further down the
+  stack) the same per-term Python-object-construction cost Phase 2
+  profiling originally found. Next lever, if pursued, is avoiding
+  per-term `str` construction entirely (e.g. a NumPy fixed-width
+  string array), not further parallelizing the C loop.
+- **Out of scope for 3a, as planned:** the dense-array-vs-sparsity
+  issue below (Phase 3b) was not touched — kept in a separate kernel
+  as scoped.
+
+Original scope notes (kernel signature, batch entry point, binding
+order, correctness gate) are preserved in git history (see the
+Phase 3a commits) rather than duplicated here now that the phase is
+complete.
 
 #### Phase 3b — Sparsity-aware `fwht_pauli_coefficients` (scoped, not yet profiled in detail)
 Section 3's benchmark table shows `paulikit`'s own N=100 time
@@ -318,9 +326,9 @@ cost (unnecessary work), not a per-call Python overhead like 3a, so
 it needs its own profiling pass at N=100 (too slow to iterate on
 directly per Phase 2's N=50 choice — may need a smaller
 representative sparse case instead) before scoping a specific fix.
-Do not start this until Phase 3a is complete and reviewed, per
-[[feedback_atomic_commits_dual_push]]-style sequencing (one unit of
-work approved and shipped before the next starts).
+Do not start until reviewed and explicitly requested — Phase 3a
+(above) is now complete as of 2026-08-16, so this is the next
+candidate phase, not yet started.
 
 ### Phase 4 — Comparison and write-up
 - Assemble a final results table/plot: naive SymPy (small N only) vs.
