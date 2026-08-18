@@ -69,8 +69,15 @@ total.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
+
+try:
+    from paulikit._native import pauli_label_native as _native
+except ImportError:
+    _native = None
 
 
 _POPCOUNT_BYTE_LUT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
@@ -290,21 +297,65 @@ def fwht_pauli_terms(
     coefficients = fwht_pauli_coefficients(operator)
 
     x_nonzero, z_nonzero = np.nonzero(np.abs(coefficients) > atol)
+    labels = _pauli_label_batch(x_nonzero, z_nonzero, n_qubits)
+
     if assume_hermitian:
         real_terms: dict[str, float] = {}
-        for x, z in zip(x_nonzero.tolist(), z_nonzero.tolist()):
+        for label, x, z in zip(labels, x_nonzero.tolist(), z_nonzero.tolist()):
             c = coefficients[x, z]
             if abs(c.imag) > max(atol, 1e-6 * abs(c)):
                 raise ValueError(
-                    f"term {pauli_label(x, z, n_qubits)!r} has non-negligible "
+                    f"term {label!r} has non-negligible "
                     f"imaginary part {c.imag!r} - operator may not be Hermitian; "
                     "pass assume_hermitian=False to decompose it anyway"
                 )
-            real_terms[pauli_label(x, z, n_qubits)] = float(c.real)
+            real_terms[label] = float(c.real)
         return real_terms
 
     complex_terms: dict[str, complex] = {
-        pauli_label(x, z, n_qubits): complex(coefficients[x, z])
-        for x, z in zip(x_nonzero.tolist(), z_nonzero.tolist())
+        label: complex(coefficients[x, z])
+        for label, x, z in zip(labels, x_nonzero.tolist(), z_nonzero.tolist())
     }
     return complex_terms
+
+
+_WARNED_NO_NATIVE = False
+
+
+def _pauli_label_batch(
+    x_indices: NDArray[np.integer], z_indices: NDArray[np.integer], n_qubits: int
+) -> list[str]:
+    """Batch IXYZ labels for parallel arrays of (x, z) indices.
+
+    Uses the compiled ``pauli_label_native`` extension when available
+    (built from the same C kernel benchmarked in Phase 3a - see
+    ``bindings/README.md``); falls back to the pure-Python
+    ``pauli_label`` loop otherwise, since paulikit must stay
+    pip-installable without a C++ toolchain (see PLAN.md's packaging
+    note). The fallback is NOT silent: paulikit's whole purpose is
+    fast Pauli decomposition, so running the slow path unknowingly
+    would defeat the point of the package - a warning fires once per
+    process the first time the fallback is actually used.
+    """
+    if _native is not None:
+        x_masks = np.asarray(x_indices, dtype=np.uint32)
+        z_masks = np.asarray(z_indices, dtype=np.uint32)
+        return _native.pauli_label_batch(x_masks, z_masks, n_qubits)
+
+    global _WARNED_NO_NATIVE
+    if not _WARNED_NO_NATIVE:
+        warnings.warn(
+            "paulikit's compiled pauli_label fast path is not available "
+            "(built with -Dnative=disabled, or a C++ compiler/oneTBB were "
+            "missing at build time) - using the pure-Python pauli_label "
+            "loop, which is substantially slower for large term counts. "
+            "Rebuild paulikit with a C++ compiler and oneTBB available "
+            "(see PLAN.md's packaging note) to get the compiled fast path.",
+            stacklevel=3,
+        )
+        _WARNED_NO_NATIVE = True
+
+    return [
+        pauli_label(int(x), int(z), n_qubits)
+        for x, z in zip(x_indices.tolist(), z_indices.tolist())
+    ]
