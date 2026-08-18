@@ -73,8 +73,18 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+_POPCOUNT_BYTE_LUT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+
+
 def _popcount_array(values: NDArray[np.integer], n_bits: int) -> NDArray[np.integer]:
     """Vectorized population count for integers in [0, 2**n_bits).
+
+    Uses an 8-bit lookup table over successive byte slices rather than
+    a bit-serial Python-level loop over ``n_bits`` (see
+    ``phase3b/README.md`` Section 3 - this constant-factor win is
+    unconditional, independent of any sparsity assumption, and was
+    confirmed via profiling to be one of the dense implementation's
+    non-negligible costs at N=50/100).
 
     Args:
         values: Integer numpy array.
@@ -84,11 +94,10 @@ def _popcount_array(values: NDArray[np.integer], n_bits: int) -> NDArray[np.inte
         An integer array of the same shape as ``values``, containing
         the number of set bits in each element.
     """
-    values = values.copy()
-    count = np.zeros_like(values)
-    for _ in range(n_bits):
-        count += values & 1
-        values = values >> 1
+    values = values.astype(np.uint32)
+    count = np.zeros(values.shape, dtype=np.int64)
+    for shift in range(0, n_bits, 8):
+        count += _POPCOUNT_BYTE_LUT[(values >> shift) & 0xFF]
     return count
 
 
@@ -167,22 +176,38 @@ def fwht_pauli_coefficients(
         )
 
     operator = np.asarray(operator, dtype=complex)
-    q_indices = np.arange(dim)
-    x_indices = np.arange(dim)[:, np.newaxis]
-    p_indices = q_indices[np.newaxis, :] ^ x_indices  # p_indices[x, q] = q ^ x
 
-    # Step 1: XOR-index gather. gathered[x, q] = operator[q ^ x, q].
-    gathered = operator[p_indices, q_indices[np.newaxis, :]]
+    # Step 1: XOR-index gather, restricted to the operator's nonzero
+    # entries. gathered[x, q] = operator[q ^ x, q] is nonzero only when
+    # p = q ^ x is a nonzero entry of operator, i.e. x = p ^ q. Only
+    # scattering those (x, q) cells - rather than gathering the full
+    # dense (dim, dim) array via fancy indexing - avoids O(dim**2) work
+    # for the O(N)-nonzero Hamiltonians this package targets. See
+    # ``phase3b/README.md`` for the profiling/design work behind this
+    # (an operator-sparsity-independent all-dense fallback would still
+    # be correct here, but measurably slower on sparse input and no
+    # faster on dense input).
+    p_nz, q_nz = np.nonzero(operator)
+    x_nz = p_nz ^ q_nz
+    active_x, inverse = np.unique(x_nz, return_inverse=True)
+    n_active = len(active_x)
 
-    # Step 2: Walsh-Hadamard Transform of each row (each fixed x).
-    transformed = _walsh_hadamard_transform_rows(gathered)
+    gathered_active = np.zeros((n_active, dim), dtype=complex)
+    gathered_active[inverse, q_nz] = operator[p_nz, q_nz]
 
-    # Step 3: phase-factor multiplication.
+    # Step 2: Walsh-Hadamard Transform of each active row (each fixed
+    # x with at least one nonzero gathered entry). Rows with no
+    # nonzero entries transform to all-zero and are skipped entirely.
+    transformed_active = _walsh_hadamard_transform_rows(gathered_active)
+
+    # Step 3: phase-factor multiplication, computed only for active x.
     z_indices = np.arange(dim)[np.newaxis, :]
-    xz_and = x_indices & z_indices
+    xz_and = active_x[:, np.newaxis] & z_indices
     phase = 1j ** _popcount_array(xz_and, n_qubits)
-    coefficients = transformed * np.conj(phase) / dim
+    active_coefficients = transformed_active * np.conj(phase) / dim
 
+    coefficients = np.zeros((dim, dim), dtype=complex)
+    coefficients[active_x] = active_coefficients
     return coefficients
 
 
