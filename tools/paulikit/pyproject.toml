@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["meson-python>=0.16", "Cython>=3.0", "numpy>=1.24"]
+build-backend = "mesonpy"
 
 [project]
 name = "paulikit"
@@ -9,9 +9,8 @@ description = "Performance-engineering tools for Pauli decomposition of Hermitia
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE*"]
 authors = [
-    { name = "Mohammadreza Khellat", email = "mkhellat@gmail.com" },
+    { name = "Mohammadreza Khellat", email = "mkhellat@beavernets.com" },
 ]
 keywords = [
     "quantum-computing",
@@ -64,9 +63,6 @@ Repository = "https://codeberg.org/mkhellat/openqcp-lab"
 
 [project.scripts]
 paulikit = "paulikit.cli:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
