@@ -1,8 +1,7 @@
 # Pauli Decomposition Performance Engineering — Plan
 
-Status: Phases 0-3a complete. Phase 3b (sparsity-aware
-`fwht_pauli_coefficients`) and Phase 4 (final write-up) not started.
-Last updated: 2026-08-16.
+Status: Phases 0-3b complete. Phase 4 (final write-up) not started.
+Last updated: 2026-08-18.
 
 
 ## 1. Problem statement
@@ -314,21 +313,64 @@ order, correctness gate) are preserved in git history (see the
 Phase 3a commits) rather than duplicated here now that the phase is
 complete.
 
-#### Phase 3b — Sparsity-aware `fwht_pauli_coefficients` (scoped, not yet profiled in detail)
+#### Phase 3b — Sparsity-aware `fwht_pauli_coefficients` (scoped 2026-08-16, COMPLETE 2026-08-18)
 Section 3's benchmark table shows `paulikit`'s own N=100 time
 (126.3s) is disproportionately worse than its N=16/N=30 speedup
 ratio would predict, because `fwht_pauli_coefficients` always
 computes the *full* dense `2**n x 2**n` coefficient array — at
 N=100 (13 qubits), ~67M coefficients computed to find ~20.3M nonzero
 (30% density, consistent with the N=50 measurement:
-4,194,304 computed vs. 1,261,568 nonzero). This is an algorithmic
-cost (unnecessary work), not a per-call Python overhead like 3a, so
-it needs its own profiling pass at N=100 (too slow to iterate on
-directly per Phase 2's N=50 choice — may need a smaller
-representative sparse case instead) before scoping a specific fix.
-Do not start until reviewed and explicitly requested — Phase 3a
-(above) is now complete as of 2026-08-16, so this is the next
-candidate phase, not yet started.
+4,194,304 computed vs. 1,261,568 nonzero).
+
+**Profiling first (task #30):** measured, on the real
+`build_hamiltonian()` output, what fraction of the FWHT's `dim` rows
+are entirely zero and how many nonzero entries an active row has.
+Result: the operator itself is sparse (O(N) nonzeros), but the WHT
+*rows* are not uniformly sparse — 47-86% of rows have at least one
+nonzero entry, depending on N. This ruled out the initially expected
+"headline" fix (replacing the O(dim log dim) WHT butterfly per row
+with an O(k*dim) sparse-impulse identity, k = nonzeros/row =~4) since
+active-row count stays too close to `dim` for that trade to win; full
+exploration (8 attempted variants, several regressions) is recorded
+in `phase3b/README.md` and `phase3b/explore/`.
+
+**Implemented fix** (`src/paulikit/algorithms/fwht.py`): avoid all
+O(dim^2) dense-array construction that the original implementation
+did unconditionally regardless of sparsity:
+- Skip the O(dim^2) full gather (`operator[p_indices, q_indices]`)
+  entirely; scatter the operator's actual nonzero entries directly
+  into an `(n_active_rows, dim)` array instead of a `(dim, dim)` one.
+- Run the existing dense WHT butterfly only on active rows (all-zero
+  rows are skipped, not computed-then-discarded).
+- Compute the phase factor only for active rows.
+- Replace `_popcount_array`'s bit-serial Python loop with an 8-bit
+  lookup-table popcount — a general win, independent of sparsity,
+  that also benefits any future dense-input use case.
+
+Exact algorithm (not an approximation): verified against the full
+existing test suite (25/25 passing, `tests/test_fwht.py` +
+`tests/test_fixtures.py`) and against fixture/PennyLane cross-checks
+at N=2/4/16/30 with no change to the public API or return contract.
+
+**Results** (full detail in `phase3b/README.md` Section 5):
+
+| N (oscillators) | `fwht_pauli_coefficients` (old dense) | (new) | speedup | `fwht_pauli_terms` end-to-end (old) | (new) | speedup |
+|---|---|---|---|---|---|---|
+| 50  | 1.971s  | 0.636s  | 3.1x  | 6.2213s   | 5.4957s   | 1.13x |
+| 100 | 35.47s  | 17.56s  | 2.0x  | 126.3250s | 107.2403s | 1.18x |
+
+Term counts match Section 3.4's PennyLane-cross-checked figures
+exactly at every N (15360/112384/1261568/20299776) — a correctness
+confirmation, not just a performance measurement.
+
+**Honest scope note:** the end-to-end `fwht_pauli_terms` speedup
+(~1.13-1.18x) is smaller than the coefficients-only speedup
+(2.0-3.3x) because `fwht_pauli_terms` still uses the pure-Python
+`pauli_label` loop — it is not yet wired to Phase 3a's Cython kernel.
+Actually integrating the C-ported `pauli_label` into
+`fwht_pauli_terms` (rather than leaving it as a standalone,
+separately-benchmarked kernel) is a distinct, not-yet-scoped
+follow-on, noted here rather than silently left implicit.
 
 ### Phase 4 — Comparison and write-up
 - Assemble a final results table/plot: naive SymPy (small N only) vs.
