@@ -60,3 +60,7 @@ config.mk
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Private paulikit performance-engineering research notes (not for
+# the public repo - see tools/paulikit/PLAN.md for the published plan)
+tools/paulikit/PRIVATE_PERF_PLAN.md
