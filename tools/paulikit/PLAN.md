@@ -1,6 +1,6 @@
 # Pauli Decomposition Performance Engineering — Plan
 
-Status: Phases 0-3b complete. Phase 4 (final write-up) not started.
+Status: Phases 0-3c complete. Phase 4 (final write-up) not started.
 Last updated: 2026-08-18.
 
 
@@ -363,14 +363,84 @@ Term counts match Section 3.4's PennyLane-cross-checked figures
 exactly at every N (15360/112384/1261568/20299776) — a correctness
 confirmation, not just a performance measurement.
 
-**Honest scope note:** the end-to-end `fwht_pauli_terms` speedup
-(~1.13-1.18x) is smaller than the coefficients-only speedup
-(2.0-3.3x) because `fwht_pauli_terms` still uses the pure-Python
-`pauli_label` loop — it is not yet wired to Phase 3a's Cython kernel.
-Actually integrating the C-ported `pauli_label` into
-`fwht_pauli_terms` (rather than leaving it as a standalone,
-separately-benchmarked kernel) is a distinct, not-yet-scoped
-follow-on, noted here rather than silently left implicit.
+**Honest scope note (resolved by Phase 3c below, 2026-08-18):** the
+end-to-end `fwht_pauli_terms` speedup (~1.13-1.18x) was smaller than
+the coefficients-only speedup (2.0-3.3x) because `fwht_pauli_terms`
+still used the pure-Python `pauli_label` loop — it was not wired to
+Phase 3a's Cython kernel. That integration is Phase 3c.
+
+#### Phase 3c — Wire the native kernel into `fwht_pauli_terms`, and adopt meson-python (2026-08-18, COMPLETE)
+
+Two changes, done together since the packaging decision blocked the
+integration decision:
+
+**1. Build-system migration: setuptools -> meson-python.** paulikit
+now uses the same build backend NumPy and SciPy use (verified via
+their current docs/source, not assumed). The Cython `pauli_label`
+kernel from Phase 3a (previously a standalone comparison artifact
+under `bindings/cython/`) is now packaged inside the library itself
+as `paulikit._native.pauli_label_native`, built via `meson.build` +
+a Meson `native` feature option (`meson.options`): `auto` (default,
+builds it if a C++ toolchain, Cython, and oneTBB are all found),
+`enabled` (fail the build if they're missing), or `disabled` (force
+pure-Python-only). `pyproject.toml`'s `[build-system] requires` now
+lists `meson-python`, `Cython`, and `numpy` unconditionally — PEP
+517/518's `requires` list has no standard mechanism for conditional
+build dependencies, so this is a deliberate, accepted trade: Cython
+and NumPy (both pure-Python-installable, no C toolchain needed just
+to have them) are now always required to build from source, while
+the actual heavy requirement — a C++ compiler and oneTBB — stays
+gated by the `native` feature option. Verified both configurations
+build and pass the full test suite: default (`auto`, extension
+built and importable) and `-Dnative=disabled` (pure-Python-only,
+extension correctly reports as unavailable).
+
+This is a deliberate step toward, but not yet completion of, the
+NumPy/SciPy packaging model — the extension is still optional with a
+pure-Python fallback, not a hard requirement, because paulikit has no
+prebuilt-wheel CI yet (a plain `pip install` from source would
+otherwise require a C++ toolchain + oneTBB for every user). **This
+is explicitly a temporary compromise, tracked for near-term
+resolution, not indefinitely deferred** — adopting prebuilt wheels
+(cibuildwheel/manylinux-style CI) so the extension can become a hard
+requirement is the next packaging milestone once there's bandwidth
+for the CI investment.
+
+**2. Wiring:** `fwht_pauli_terms` now calls a new internal
+`_pauli_label_batch` helper that uses
+`paulikit._native.pauli_label_native.pauli_label_batch` when the
+compiled extension is importable, falling back to the original
+per-term pure-Python `pauli_label` loop otherwise. The fallback is
+**not silent**: since paulikit's entire purpose is fast Pauli
+decomposition, running the slow path unknowingly would defeat the
+point of the package, so a `UserWarning` fires (once per process,
+not once per call) the first time the fallback path is actually
+used, naming the rebuild steps needed to get the fast path.
+
+**Results** (matched N, same synthetic Hamiltonian generator as
+Phase 1/3a/3b):
+
+| N (oscillators) | `fwht_pauli_terms` end-to-end: Phase 1 baseline | Phase 3b (sparse coeffs, Python labels) | Phase 3c (native labels) | speedup vs. Phase 1 | speedup vs. Phase 3b |
+|---|---|---|---|---|---|
+| 50  | 6.2213s   | 5.4957s   | 2.1535s | 2.9x | 2.6x |
+| 100 | 126.3250s | 107.2403s | 43.5629s | 2.9x | 2.5x |
+
+Term counts match exactly at every N (15360/112384/1261568/20299776)
+across all three implementations — a correctness confirmation, not
+just a performance measurement. Full existing test suite (25/25)
+passes with the native kernel wired in and, separately, with it
+disabled (fallback path).
+
+**Honest scope note:** this closes most, but not all, of the gap
+between the coefficients-only speedup and the end-to-end speedup —
+`fwht_pauli_coefficients` itself (Phase 3b's scope) is still 2.0-3.1x
+faster than its own original baseline, while end-to-end is now
+2.9x faster than the ORIGINAL Phase 1 baseline (a fair comparison,
+since both label generation and coefficient computation improved).
+Remaining end-to-end cost breakdown at N=100 (43.6s total) not yet
+re-profiled after this change — a natural next profiling target if
+further speedup is pursued, rather than assuming where the new
+bottleneck is.
 
 ### Phase 4 — Comparison and write-up
 - Assemble a final results table/plot: naive SymPy (small N only) vs.
