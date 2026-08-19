@@ -253,8 +253,8 @@ construction for empty rows (2.0-3.1x on that function alone). Phase
 above), closing most of the remaining gap. Term counts match exactly
 across all versions at every N — a correctness re-confirmation, not
 just a performance comparison. Full detail, including the design
-exploration behind Phase 3b's sparsity fix, is in `PLAN.md` Sections
-5's Phase 3b/3c write-ups and `phase3b/README.md`.
+exploration behind Phase 3b's sparsity fix, is in `PLAN.md`'s Section
+5 (Phase 3b/3c write-ups) and `phase3b/README.md`.
 
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the
