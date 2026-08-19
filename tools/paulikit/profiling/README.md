@@ -1,5 +1,15 @@
 # Phase 2 profiling results
 
+**Historical record, not current state:** this profiling run predates
+Phase 3a/3b/3c. `pauli_label` has since been ported to C and wired in
+(Phase 3a/3c, see `../bindings/README.md`), and
+`fwht_pauli_coefficients` has since been made sparsity-aware (Phase
+3b, see `../phase3b/README.md`) — both directly address the hot spots
+this profiling run identifies below. Kept as-is because it's the
+actual evidence those phases were scoped against; re-profiling the
+current, already-optimized code is a natural next step (see PLAN.md
+Phase 3c's "Honest scope note") but hasn't been done yet.
+
 Follows [PLAN.md](../PLAN.md) Section 5, Phase 2: `cProfile` +
 `snakeviz` for an initial pass, `line_profiler` for per-line detail on
 whatever cProfile flags as hot, `py-spy` as a no-instrumentation
