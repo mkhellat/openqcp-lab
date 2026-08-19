@@ -228,11 +228,31 @@ earlier draft of this table (using a synthetic proxy matrix rather
 than the real Hamiltonian) understated PennyLane's actual cost on
 this problem.
 
-`paulikit`'s own N=100 time (126.3s) is worth noting honestly: the
-current implementation computes the full dense $2^n \times 2^n$
-coefficient array regardless of input sparsity, so it does
-significantly more work than necessary at large N. Exploiting the
-Hamiltonian's actual sparsity is the next natural optimization target.
+`paulikit`'s own N=100 time in the table above (126.3s) was the
+original Phase 1 pure-Python baseline — it densely computed the full
+$2^n \times 2^n$ coefficient array regardless of input sparsity, and
+generated Pauli-string labels with a per-term, per-qubit Python loop.
+Both of those were subsequently identified as the actual bottlenecks
+(via profiling, not guesswork) and fixed:
+
+| N (oscillators) | Phase 1 (baseline) | Phase 3b (sparse coefficients) | Phase 3c (+ native labels) | speedup vs. Phase 1 |
+|------------------|---------------------|----------------------------------|-------------------------------|----------------------|
+| 50               | 6.2213s             | 5.4957s                          | 2.1535s                       | 2.9x                |
+| 100              | 126.3250s           | 107.2403s                        | 43.5629s                      | 2.9x                |
+
+Phase 3b made `fwht_pauli_coefficients` skip the O(dim²) dense-array
+construction for empty rows (2.0-3.1x on that function alone). Phase
+3c wired in the native `pauli_label` kernel (see "Native extension"
+above), closing most of the remaining gap. Term counts match exactly
+across all versions at every N — a correctness re-confirmation, not
+just a performance comparison. Full detail, including the design
+exploration behind Phase 3b's sparsity fix, is in `PLAN.md` Sections
+5's Phase 3b/3c write-ups and `phase3b/README.md`.
+
+Exploiting Hamiltonian sparsity further (rather than the current
+skip-empty-rows approach) and migrating to prebuilt wheels so the
+native kernel becomes a hard requirement are the next optimization
+targets — see `PLAN.md` Phase 4.
 
 
 ## Status
