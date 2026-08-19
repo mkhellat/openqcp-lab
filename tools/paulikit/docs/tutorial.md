@@ -10,13 +10,19 @@ signatures, see the {doc}`API reference <api/index>`.
 
 ```bash
 cd tools/paulikit   # from the openqcp-lab repository root
-pip install -e .
+pip install -e . --no-build-isolation
 ```
 
 Everything in this tutorial works with just the core install (`numpy`
 is the only runtime dependency). The command-line examples below
 assume the `paulikit` console script is on your `PATH`, which the
 install above sets up automatically.
+
+The install above also compiles a native (Cython/C++) label-generation
+kernel if a C++ toolchain and oneTBB are available, for faster
+`fwht_pauli_terms` — falling back to pure Python automatically
+otherwise. See the project README's "Native extension" section for
+details; nothing in this tutorial depends on which path is active.
 
 ## 1. Building a Hamiltonian
 
