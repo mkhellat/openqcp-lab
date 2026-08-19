@@ -145,4 +145,6 @@ just a performance measurement.
 not yet wired to Phase 3a's Cython kernel (that integration - actually
 using the C-ported `pauli_label` inside `fwht_pauli_terms` - is a
 distinct, not-yet-done step; Phase 3a only built and benchmarked the
-kernel/bindings standalone).
+kernel/bindings standalone). **Done since: Phase 3c (`PLAN.md`) wired
+that kernel in, taking end-to-end N=100 to 43.6s, ~2.9x vs. the Phase
+1 baseline.**
