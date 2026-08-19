@@ -135,13 +135,16 @@ console command wraps the same functionality:
 ```console
 $ paulikit decompose --n-oscillators 4 --show-terms
 N=4 oscillators, 4 qubits, 16x16 padded Hamiltonian
-Decomposition time: 0.0005s
+Decomposition time: 0.0039s
 Nonzero Pauli terms: 56
   IXII: -0.5470915958155509
   IXIZ: 0.015053558406667805
   IXZI: 0.02983035390312644
   ...
 ```
+
+(Timing will vary; term count and coefficient values are the
+reproducible part.)
 
 `paulikit decompose` builds a synthetic Hamiltonian internally (a
 fixed, deterministic — not physically calibrated — set of spring
@@ -156,11 +159,14 @@ parameters for real work.
 $ paulikit benchmark --n-oscillators 2 4 8 16 30
     N  qubits    dim    terms   time (s)
     2       3      8       12     0.0004
-    4       4     16       56     0.0004
-    8       6     64      928     0.0043
-   16       8    256    15360     0.0850
-   30       9    512   112384     0.4867
+    4       4     16       56     0.0003
+    8       6     64      928     0.0018
+   16       8    256    15360     0.0286
+   30       9    512   112384     0.1451
 ```
+
+(Timings vary run to run and by machine; term counts are the part
+worth checking against your own run.)
 
 `paulikit regenerate-fixtures` recomputes the expected Pauli terms
 used by the test suite's correctness fixtures, using PennyLane as an
