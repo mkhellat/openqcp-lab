@@ -142,8 +142,18 @@ src/paulikit/
                             independently-verified expected Pauli
                             decompositions, for use by any algorithm's
                             tests.
+    _native/                Optional compiled extension
+                            (`pauli_label_native`, Cython/C++, wraps
+                            `pauli_label.c`/`pauli_label_parallel.cpp`)
+                            used by `algorithms/fwht.py` when available,
+                            with a pure-Python fallback otherwise — see
+                            "Native extension" above and PLAN.md Phase 3c.
     cli.py                  Command-line interface wiring the above
                             together into subcommands.
+    meson.build             Per-directory Meson build rules (one per
+                            subpackage above, plus a top-level
+                            `meson.build` and `meson.options` at the
+                            repository root of this package).
 tests/
     test_fixtures.py        Self-consistency checks for the fixtures.
     test_fwht.py             Correctness tests for algorithms/fwht.py.
