@@ -10,9 +10,9 @@ together into runnable subcommands.
 
 Usage
 -----
-Once installed (``pip install -e .`` from the package root, or
-``pip install paulikit`` once published), the ``paulikit`` console
-script is available directly::
+Once installed (``pip install -e . --no-build-isolation`` from the
+package root, or ``pip install paulikit`` once published), the
+``paulikit`` console script is available directly::
 
     paulikit --help
     paulikit decompose --help
