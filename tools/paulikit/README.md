@@ -257,11 +257,17 @@ targets — see `PLAN.md` Phase 4.
 
 ## Status
 
-Phase 1 (original pure-Python FWHT implementation) and initial
-benchmarking against PennyLane are complete. Next: profiling
-(cProfile/snakeviz, line_profiler, py-spy) to identify whether/what
-needs a native (C) port — see `PLAN.md` and the parent repository's
-task list for current progress.
+Phases 0-3c are complete: the original pure-Python FWHT implementation
+and PennyLane benchmarking (Phase 1), profiling to find real hot spots
+(Phase 2), a native `pauli_label` kernel with four bindings compared
+(Phase 3a), a sparsity-aware `fwht_pauli_coefficients` (Phase 3b), and
+migrating the build to meson-python with the native kernel wired into
+the main `fwht_pauli_terms` pipeline (Phase 3c) — together a 2.9x
+end-to-end speedup over the Phase 1 baseline at N=50/100 (see
+"Reference baseline" above). Next: Phase 4 (final comparison/write-up)
+and migrating to prebuilt wheels so the native extension becomes a
+hard requirement rather than an optional fallback — see `PLAN.md` and
+the parent repository's task list for current progress.
 
 
 ## License
