@@ -1,7 +1,9 @@
 # Pauli Decomposition Performance Engineering — Plan
 
-Status: Phases 0-3c complete. Phase 4 (final write-up) not started.
-Last updated: 2026-08-18.
+Status: Phases 0-3c complete. Phase 4 (final write-up) and Phase 5
+(prebuilt wheels + hard-require the native extension) not started;
+Phase 5 scoped 2026-08-19.
+Last updated: 2026-08-19.
 
 
 ## 1. Problem statement
@@ -451,6 +453,112 @@ bottleneck is.
   module once a production-ready decomposition function exists (a
   separate, later integration step — not assumed as part of this
   plan).
+
+### Phase 5 — Prebuilt wheels, then make the native extension a hard requirement (scoped 2026-08-19, not started)
+
+Phase 3c's optional-extension-with-fallback model was explicitly
+scoped as a **temporary compromise**, not the end state: paulikit's
+whole purpose is to be a fast Pauli decomposer, so shipping a pure-
+Python fallback as a permanent default undercuts that. The NumPy/SciPy
+model — the compiled extension is a hard requirement, made viable by
+prebuilt binary wheels so `pip install` never needs a local C++
+toolchain — is the actual target. This phase is the CI investment that
+was deferred in Phase 3c pending "bandwidth."
+
+**Why this wasn't trivial to just do in Phase 3c:** the extension
+links `pauli_label_parallel.cpp` unconditionally
+(`src/paulikit/_native/meson.build`), so oneTBB is a hard link-time
+dependency of the compiled `.so`/`.pyd`, not something that can be
+quietly dropped. None of manylinux, macOS, or Windows GitHub/Codeberg
+runners ship oneTBB preinstalled, so building real wheels means
+fetching it per-platform as part of the build, not just running
+`cibuildwheel` out of the box.
+
+**Scope decision (2026-08-19):** build the full cross-platform matrix
+now rather than Linux-only — Linux (manylinux, oneTBB via the
+container's package manager), macOS (Homebrew), Windows (vcpkg) — across
+the Python versions this package already claims to support (3.10–3.13,
+per `pyproject.toml`'s classifiers). This is more CI surface area to
+debug than a Linux-only first cut, but matches the actual target model
+and avoids doing this scoping exercise twice.
+
+**Plan:**
+1. **`before-all`/`before-build` provisioning per platform** in a
+   `cibuildwheel` config (`[tool.cibuildwheel]` in `pyproject.toml`):
+   - Linux (manylinux2014/manylinux_2_28): `yum install tbb-devel` (or
+     equivalent) inside the container before the build step.
+   - macOS: `brew install tbb`, with `TBB_ROOT`/`CMAKE_PREFIX_PATH`
+     (or the meson equivalent — `PKG_CONFIG_PATH`) pointed at the
+     Homebrew prefix so `dependency('tbb')` resolves.
+   - Windows: `vcpkg install tbb` (or the oneAPI base toolkit's TBB
+     component), with `CMAKE_TOOLCHAIN_FILE`/include-lib paths wired
+     into the meson cross/native file cibuildwheel generates.
+2. **CI workflow files, both platforms** (per the "both GitHub Actions
+   + Codeberg" decision):
+   - `.github/workflows/wheels.yml` — the standard
+     `pypa/cibuildwheel` GitHub Action, matrixed over
+     `{ubuntu-latest, macos-latest, windows-latest}`, triggered on tags
+     and manually (`workflow_dispatch`) so wheel builds aren't run on
+     every push.
+   - A Codeberg-side equivalent (Forgejo/Woodpecker Actions — exact
+     syntax to be confirmed once this phase starts, since Forgejo
+     Actions' cibuildwheel support is less standardized than GitHub's;
+     may need a hand-rolled `cibuildwheel` invocation rather than a
+     marketplace action). If Forgejo Actions turns out not to support
+     the required runner OSes (macOS/Windows) at all, that's a real
+     constraint to document here, not silently work around — Codeberg
+     may end up Linux-wheels-only even if GitHub covers the full
+     matrix, and that asymmetry should be stated plainly rather than
+     glossed over.
+3. **Verify wheels are correct**, not just "the build didn't error":
+   run the full test suite (`pytest`, not just import-and-exit) inside
+   each built wheel via `cibuildwheel`'s `test-command`/`test-requires`
+   hooks, on each platform — the existing 25-test suite plus a direct
+   check that `paulikit._native.pauli_label_native` actually imports
+   (catching a wheel that "succeeds" but silently fell back to no
+   extension, which would be a much worse regression than today's
+   honest optional-fallback model).
+4. **Only after wheels build and verify successfully on all targeted
+   platforms**, flip the packaging model:
+   - `pyproject.toml`: remove `native` from being a `meson.options`
+     *feature* with an `auto`/`disabled` escape hatch for end users —
+     keep the option for from-source builds/development, but stop
+     treating "falls back silently" as acceptable for a `pip install
+     paulikit` from PyPI (i.e. PyPI-published wheels always include the
+     extension; source builds may still opt out via `-Dnative=disabled`
+     for development/unsupported-platform cases, matching how NumPy
+     itself still allows some source-build flexibility even though its
+     wheels are unconditional).
+   - `src/paulikit/algorithms/fwht.py`'s `_pauli_label_batch`: decide
+     whether the pure-Python fallback path is removed entirely once
+     wheels are the primary install path, or kept as a documented
+     escape hatch for unsupported platforms/source builds — **an open
+     question for this phase, not decided yet**; leaning toward keeping
+     a fallback for source builds specifically (some platform will
+     always be unsupported by the wheel matrix) while making the
+     `UserWarning` more prominent, rather than a hard `ImportError`,
+     since a working-but-slow package is still more useful to a
+     resource-constrained researcher than a package that refuses to
+     install at all.
+   - Update `README.md`'s "Native extension" section, `docs/tutorial.md`,
+     and `docs/index.md`/toctree accordingly once the model actually
+     changes — do not describe the hard-requirement model in the docs
+     before the wheels exist and are verified (matches this project's
+     "verify, don't guess" / no-overselling discipline established in
+     Phase 3b).
+5. **PyPI publishing** itself (`twine upload` / trusted publishing via
+   GitHub Actions `pypa/gh-action-pypi-publish`) is a separate decision
+   from wheel-building CI and is explicitly **not** bundled into this
+   phase — building and testing wheels in CI doesn't obligate
+   publishing them anywhere; that's a distinct, later call once wheels
+   are proven reliable across the matrix.
+
+**Explicitly out of scope for this phase:** ARM/aarch64 wheel variants
+(cibuildwheel supports them, but they add QEMU-emulation build time and
+aren't needed yet since no current use case has been raised for
+non-x86_64 deployment); free-threaded (3.13t) wheel variants (numpy/
+Cython ecosystem support for free-threading is still maturing as of
+this writing).
 
 
 ## 6. Explicitly out of scope
