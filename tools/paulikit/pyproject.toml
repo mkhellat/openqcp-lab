@@ -77,3 +77,46 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.cibuildwheel]
+# Phase 5 (PLAN.md): build wheels with the native extension always
+# included, so paulikit's compiled fast path stops being an opt-in
+# users have to know to ask for. Only x86_64 targeted for now (see
+# PLAN.md Phase 5's "explicitly out of scope": no aarch64/ARM, no
+# free-threaded builds yet).
+build = "cp310-* cp311-* cp312-* cp313-*"
+skip = "*-musllinux* *_i686"
+archs = ["auto64"]
+test-requires = ["pytest>=7"]
+test-command = "pytest {package}/tests -m 'not slow'"
+# The native extension must actually be present in the wheel, not
+# silently fall back - a wheel that "succeeds" but built without the
+# extension would be a worse regression than today's honest
+# optional-fallback source-build model (see PLAN.md Phase 5, item 3).
+before-test = "python -c \"from paulikit._native import pauli_label_native\""
+
+[tool.cibuildwheel.linux]
+# oneTBB isn't in the manylinux_2_28 (AlmaLinux 8) base image; install
+# it via dnf before the build starts. tbb-devel provides both the
+# shared library and the pkg-config file meson's dependency('tbb')
+# looks for first.
+before-all = "dnf install -y tbb-devel"
+
+[tool.cibuildwheel.macos]
+# Homebrew's tbb formula's pkg-config support is not confirmed as of
+# writing (see PLAN.md Phase 5) - CMAKE_PREFIX_PATH is set as a
+# fallback for meson's dependency() call, which tries pkg-config then
+# CMake config files. UNVERIFIED: this whole section is a first
+# attempt, not yet validated by an actual CI run - expect to iterate
+# once real macOS runner output is available.
+before-all = "brew install tbb"
+environment = { CMAKE_PREFIX_PATH = "/opt/homebrew:/usr/local", PKG_CONFIG_PATH = "/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig" }
+
+[tool.cibuildwheel.windows]
+# vcpkg's tbb port ships CMake config files under lib/cmake/TBB (no
+# confirmed pkg-config support), so CMAKE_PREFIX_PATH is the load-
+# bearing variable here, not PKG_CONFIG_PATH. UNVERIFIED, same caveat
+# as macOS above - vcpkg's install location and exact triplet may need
+# adjustment once this actually runs in CI.
+before-all = "vcpkg install tbb:x64-windows"
+environment = { CMAKE_PREFIX_PATH = "C:\\vcpkg\\installed\\x64-windows" }
