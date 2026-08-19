@@ -4,11 +4,22 @@ Per [PLAN.md](../PLAN.md) Phase 3a, the `pauli_label` C kernel
 (`src/paulikit/_native/pauli_label.c`) is bound to Python four
 separate ways, in this order: Cython, CFFI, ctypes, SWIG. Each
 subdirectory here is an independent, standalone build against the
-same C sources - none of this is wired into the main `paulikit`
-package build yet. That decision happens once all four are built and
-benchmarked (task #28 in the repo task list).
+same C sources, kept as a historical comparison record - Cython won
+(see "Summary across all four bindings" below) and is the binding
+`paulikit` actually ships with, built via `meson.build` as
+`paulikit._native.pauli_label_native` and wired into
+`fwht_pauli_terms` (Phase 3c, `src/paulikit/algorithms/fwht.py`'s
+`_pauli_label_batch` helper) - see the README's "Native extension"
+section and `PLAN.md` Phase 3c. The CFFI/ctypes/SWIG variants here
+remain standalone comparison artifacts only, not built by the package.
 
 ## Cython (`cython/`)
+
+**Note:** this standalone copy is kept for the historical comparison
+record only. The shipped copy paulikit actually builds and imports is
+`src/paulikit/_native/pauli_label_native.pyx`, built via meson (see
+top-level "Note" above) - the two `.pyx` sources are near-identical,
+diverging only in the module docstring.
 
 Build in place:
 
