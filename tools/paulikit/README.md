@@ -10,6 +10,13 @@ symbolic brute-force approach allows.
 See [`PLAN.md`](PLAN.md) for the full research background, phased
 plan, and design rationale.
 
+To use the library, start with Installation and Usage below, or the
+step-by-step tutorial ([`docs/tutorial.md`](docs/tutorial.md)). For
+the physical motivation and the algorithm's mathematical derivation,
+see [`docs/background.md`](docs/background.md) and
+[`docs/theory.md`](docs/theory.md); for non-Hermitian operators
+specifically, see [`docs/non_hermitian.md`](docs/non_hermitian.md).
+
 
 ## Problem
 

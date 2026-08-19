@@ -6,10 +6,10 @@
 :caption: Contents
 :hidden:
 
+tutorial
 background
 theory
 non_hermitian
-tutorial
 plan
 api/index
 ```
