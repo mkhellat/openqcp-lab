@@ -495,21 +495,51 @@ and avoids doing this scoping exercise twice.
      into the meson cross/native file cibuildwheel generates.
 2. **CI workflow files, both platforms** (per the "both GitHub Actions
    + Codeberg" decision):
-   - `.github/workflows/wheels.yml` — the standard
-     `pypa/cibuildwheel` GitHub Action, matrixed over
+   - `.github/workflows/paulikit-wheels.yml` (done, commit `d11f61c`)
+     — the standard `pypa/cibuildwheel` GitHub Action, matrixed over
      `{ubuntu-latest, macos-latest, windows-latest}`, triggered on tags
      and manually (`workflow_dispatch`) so wheel builds aren't run on
      every push.
-   - A Codeberg-side equivalent (Forgejo/Woodpecker Actions — exact
-     syntax to be confirmed once this phase starts, since Forgejo
-     Actions' cibuildwheel support is less standardized than GitHub's;
-     may need a hand-rolled `cibuildwheel` invocation rather than a
-     marketplace action). If Forgejo Actions turns out not to support
-     the required runner OSes (macOS/Windows) at all, that's a real
-     constraint to document here, not silently work around — Codeberg
-     may end up Linux-wheels-only even if GitHub covers the full
-     matrix, and that asymmetry should be stated plainly rather than
-     glossed over.
+   - **Codeberg side (investigated 2026-08-21): full matrix is not
+     possible, by design, not just "not yet configured."** Confirmed
+     via Codeberg's own docs (`docs.codeberg.org/ci/actions/` and
+     `codeberg.org/actions/meta`): Codeberg's hosted Forgejo Actions
+     runners are **Linux amd64 only** (`codeberg-tiny/small/medium`,
+     2/5/10 min max runtime respectively, plus `-lazy` variants for
+     delay-tolerant jobs). This isn't a resourcing gap to wait out —
+     upstream Forgejo Runner itself has no official macOS or Windows
+     support at all, for a stated project-philosophy reason (Forgejo
+     commits to free/libre software only; officially supporting a
+     proprietary OS runner would require the project itself to run and
+     test against that OS). A community Windows-runner port exists but
+     is unofficial/unsupported. Separately, even the 10-minute cap on
+     Codeberg's largest hosted tier is likely too tight for a real
+     `cibuildwheel` build (compiling a C++ extension against oneTBB
+     across cp310-cp313) regardless of the OS question.
+     **Decision: Codeberg gets a Linux-only wheel-build workflow**
+     (`codeberg-medium` runner, manylinux via `cibuildwheel` same as
+     the Linux leg of the GitHub matrix), and this asymmetry is
+     documented plainly in the README/release process rather than
+     worked around — macOS/Windows wheels are GitHub-only. Revisit
+     only if Forgejo Runner ships official macOS/Windows support
+     upstream, or if Codeberg's hosted runtime caps are raised enough
+     to make it moot.
+     **Done:** `.forgejo/workflows/paulikit-wheels.yml`. Two further
+     adjustments required for the Codeberg environment specifically,
+     beyond just dropping macOS/Windows: (a) `codeberg-medium`'s
+     10-minute cap makes a single `cibuildwheel` job covering all of
+     cp310-cp313 risky, so the workflow matrixes one job per Python
+     version (`CIBW_BUILD` pinned per job) instead of the GitHub
+     workflow's single combined job; (b) actions are referenced via
+     fully-qualified `https://data.forgejo.org/actions/...@vN` URLs
+     (Forgejo's own recommendation over short-form refs, since a
+     relying admin-configurable default mirror URL is a real footgun),
+     and `cibuildwheel` itself is invoked as a plain `pip install` +
+     CLI step rather than via `pypa/cibuildwheel`'s marketplace action,
+     since that action's availability on Forgejo's action mirror
+     wasn't confirmed and installing via pip sidesteps the question
+     entirely. Genuinely unverified until a real run: no tag pushed,
+     no manual dispatch triggered yet — same caveat as the GitHub side.
 3. **Verify wheels are correct**, not just "the build didn't error":
    run the full test suite (`pytest`, not just import-and-exit) inside
    each built wheel via `cibuildwheel`'s `test-command`/`test-requires`
