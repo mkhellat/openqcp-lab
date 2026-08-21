@@ -1,0 +1,47 @@
+name: paulikit wheels (Linux)
+
+# Codeberg-side counterpart to .github/workflows/paulikit-wheels.yml, per
+# tools/paulikit/PLAN.md Phase 5. Linux-only: Codeberg's hosted Forgejo
+# Actions runners are amd64 Linux only (no macOS/Windows, and upstream
+# Forgejo Runner has no official support for either) - see PLAN.md Phase 5,
+# item 2 for the full investigation. macOS/Windows wheels remain
+# GitHub-only.
+#
+# Matrixed one job per CPython version rather than cibuildwheel's usual
+# single "build everything" invocation: codeberg-medium caps jobs at 10
+# minutes, and building a compiled C++/oneTBB extension across cp310-cp313
+# in one job would likely exceed that.
+
+on:
+  push:
+    tags:
+      - "paulikit-v*"
+  workflow_dispatch: {}
+
+jobs:
+  build_wheels:
+    name: Build cp${{ matrix.pyversion }} wheel (Linux)
+    runs-on: codeberg-medium
+    strategy:
+      fail-fast: false
+      matrix:
+        pyversion: ["310", "311", "312", "313"]
+
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install cibuildwheel
+        run: pip install cibuildwheel==4.2.0
+
+      - name: Build wheel
+        working-directory: tools/paulikit
+        env:
+          CIBW_BUILD: "cp${{ matrix.pyversion }}-manylinux_x86_64"
+        run: python -m cibuildwheel --output-dir wheelhouse
+
+      - uses: https://data.forgejo.org/actions/upload-artifact@v4
+        with:
+          name: paulikit-wheels-linux-cp${{ matrix.pyversion }}
+          path: tools/paulikit/wheelhouse/*.whl
