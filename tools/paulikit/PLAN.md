@@ -1,11 +1,15 @@
 # Pauli Decomposition Performance Engineering — Plan
 
 Status: Phases 0-3c complete. Phase 4 (final write-up), Phase 5
-(prebuilt wheels + hard-require the native extension), and Phase 6
+(prebuilt wheels + hard-require the native extension), Phase 6
 (sparse output for `fwht_pauli_coefficients` - fixes a real cache-
 locality/robustness bug found via profiling, see
-`profiling/cache_locality/README.md`) are all scoped but not started.
-Phase 5 scoped 2026-08-19; Phase 6 scoped 2026-08-25.
+`profiling/cache_locality/README.md`), and Phase 7 (remaining items
+from the 2026-08-25 Gemini-transcript review: TBB false sharing/
+partitioner tuning - conditional on TBB re-entering the hot path,
+statistical rigor for perf measurements, PyPI publishing strategy)
+are all scoped but not started. Phase 5 scoped 2026-08-19; Phase 6
+and Phase 7 scoped 2026-08-25.
 Last updated: 2026-08-25.
 
 
@@ -810,6 +814,85 @@ for the two existing dense-contract tests and any caller not yet
 migrated. Not yet designed in detail - the concrete parameter
 name/shape and default value are open, to be settled at
 implementation time, not assumed here.
+
+
+### Phase 7 — Items from the 2026-08-25 Gemini-transcript review (scoped 2026-08-25, not started)
+
+**Context.** The user shared a Google AI Mode chat about paulikit
+(exported to PDF, no export/copy method existed) that raised five
+distinct technical threads. All five were explicitly agreed as
+separate work items requiring individual research-then-plan-then-
+approve-then-execute treatment, not a single blended effort. Item 3
+(cache locality) was prioritized first and fully investigated - see
+`profiling/cache_locality/README.md` and this document's Phase 6. The
+other four are tracked here so they aren't silently dropped the way
+items 7.1/7.2 initially were (caught only when the user asked directly
+"do you remember those items? are all in memory/plan?").
+
+**7.1 — False sharing in the TBB-parallel kernel
+(`pauli_label_parallel.cpp`).** Whether concurrent worker threads
+write to adjacent memory that shares a cache line, causing invisible
+cross-thread invalidation traffic. **Explicitly conditional on TBB
+actually being in the hot path** - `tbb_not_actually_used_finding.md`
+and `tbb_evaluation_findings.md` (Phase 6) both confirm it currently
+is not, and measured no cache-locality effect either way at the
+current pipeline structure. Investigating false sharing in dead code
+would be premature optimization of something that doesn't run. Revisit
+only if Phase 6's redesign (or any future change) actually wires TBB
+back into `fwht_pauli_terms`'s call path - at that point, this becomes
+a real, checkable question (e.g. via `perf c2c` or manual cache-line-
+padding experiments on the per-thread output buffers in
+`pauli_label_parallel.cpp`), not before.
+
+**7.2 — TBB partitioner/grain-size choice for sparse, uneven
+workloads.** Whether the current partitioner (default, unexamined) is
+well-suited to Phase 3b's sparsity-aware row-skipping, which makes the
+per-row workload uneven (some rows short-circuit, some don't). Same
+conditionality as 7.1: not worth tuning a partitioner for a kernel
+that isn't called. If Phase 6 or a later phase reintroduces TBB to a
+genuinely uneven workload, benchmark `simple_partitioner` vs.
+`auto_partitioner` vs. explicit grain sizes against
+`profiling/cache_locality/`'s existing methodology before picking one
+- don't assume the default is right just because it wasn't wrong when
+nothing depended on it.
+
+**7.3 — Statistical rigor for `perf`-based measurements.** Already
+tracked under Phase 6's "Follow-up items" above (min/max or stddev
+reporting, an explicit outlier-handling rule, reconsidering the
+3-runs-per-N default) - not duplicated here, but this is where that
+item's origin (item 4 of the five) is recorded for traceability. This
+one is NOT conditional on anything else - it strengthens every finding
+already on record and should be picked up opportunistically, e.g.
+alongside Phase 6's own "prototype and measure" step, rather than
+waiting for a dedicated session.
+
+**7.4 — PyPI publishing and write-up strategy.** Currently only a
+one-line deferral in Phase 5 ("PyPI publishing itself... is a separate
+decision"). Needs actual scoping as its own decision point before
+Phase 5 is considered complete: concrete sub-questions not yet
+answered - (a) trusted publishing via GitHub Actions vs. manual
+`twine upload`; (b) version-numbering scheme and whether `0.1.0` ships
+as the first PyPI release or whether a pre-1.0 milestone is set first;
+(c) whether publishing happens per-tag automatically or is a manual,
+reviewed step each time; (d) what "ready to publish" means concretely
+(Phase 4's write-up done? Phase 5's wheels validated on a real CI run,
+not just written? Phase 6's cache-locality fix merged, given N=150
+currently OOMs?) - i.e. should Phase 7.4 itself wait until Phases 4-6
+are actually done, not just scoped. This item is explicitly a
+**planning** task, not an execution task, until those sub-questions
+are answered with the user.
+
+**Suggested order, not a hard sequence:** Phase 6 (already in
+progress, cache locality was item 3 and prioritized first) → Phase
+7.3 (cheap, strengthens existing findings, no dependencies) → Phase
+7.4's planning sub-questions (needed before Phase 5 can be called
+done regardless of 7.1/7.2) → Phase 7.1/7.2 only if/when TBB
+re-enters the hot path (currently no known trigger for this - don't
+schedule work against a hypothetical). Per the user's stated
+preference, items can be tackled strictly in order or interleaved as
+each session's context allows - same approach as folding the TBB
+evaluation into Phase 6 rather than treating phases as rigidly
+sequential.
 
 
 ## 6. Explicitly out of scope
