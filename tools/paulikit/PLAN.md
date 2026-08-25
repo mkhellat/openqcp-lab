@@ -741,14 +741,41 @@ serial `pauli_label_batch` kernel (Phase 3a found parallelizing this
 specific loop barely helped, since Python string construction
 dominated wall-clock time, not the C loop). Touching the native/TBB
 kernel is not motivated by any finding in this investigation and
-would be scope creep - though if Phase 6's sparse-representation
-redesign changes the shape of the label-generation work, whether TBB
-parallelization becomes worthwhile *then* is a fair question to
-revisit during that phase's measurement step, not decided here either
-way. Also out of scope: addressing the OpenBLAS thread-pool noise
-itself (`stall_floor_mystery_solved.md`) - that's an
+would be scope creep.
+
+**Update 2026-08-25 - TBB directly measured, not just inferred:**
+per explicit instruction, the TBB-parallel kernel was tested end-to-end
+with the full cache-locality methodology (N=25/50/100) *before*
+starting this phase's implementation work, rather than leaving the
+"would TBB help a redesigned pipeline" question open. Result: no
+measurable effect on wall time, cache-miss ratio, LLC-miss ratio, or
+stall percentages at any N - see
+`profiling/cache_locality/tbb_evaluation_findings.md`. This closes the
+question for the *current* pipeline structure. It remains a fair
+question to revisit only if Phase 6's own prototyping surfaces a new
+hot loop TBB could plausibly parallelize - not as a default
+assumption, and not motivated by anything found so far. Also out of
+scope: addressing the OpenBLAS thread-pool noise itself
+(`stall_floor_mystery_solved.md`) - that's an
 environment/measurement-methodology concern, not a paulikit code
 change.
+
+**API-shape decision (user, 2026-08-25):** Option B (change
+`fwht_pauli_coefficients`'s return type - see step 1 above), but not
+as a one-way breaking replacement. The user was explicit: *"since I am
+extremely skeptical that going for sparse matrix instead of dense
+could potentially degrade performance dramatically, let's do it in a
+way that it is easily reversible or even create it as an option! we
+could do the calcs either with dense or with sparse matrices. I am
+more inclined towards the optional deployment."* This modifies step 1
+above: the implementation should expose both a dense and a sparse
+output mode (e.g. a keyword argument, not two separate functions,
+to keep one code path to maintain and test), with the sparse mode
+becoming Phase 6's actual fix and the dense mode preserved verbatim
+for the two existing dense-contract tests and any caller not yet
+migrated. Not yet designed in detail - the concrete parameter
+name/shape and default value are open, to be settled at
+implementation time, not assumed here.
 
 
 ## 6. Explicitly out of scope
