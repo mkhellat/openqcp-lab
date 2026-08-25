@@ -119,10 +119,12 @@ guidelines to help you get started.
 
 - **Python Code:** Follow PEP 8 style guidelines where applicable
 - **Notebooks:** Follow the structure outlined in `NOTEBOOK_TEMPLATE.md`
-- **Tools (`tools/`):** Each tool is its own installable package with
-  its own `pyproject.toml`, dependencies, and test suite - don't add
-  its dependencies to the top-level `requirements.txt`, which is
-  scoped to the tutorial notebooks
+- **Tools (`tools/`):** Each tool is independent, installable software
+  in its own right - not tutorial support code, even when it
+  originated from a tutorial's need. Each has its own `pyproject.toml`,
+  dependencies, and test suite - don't add its dependencies to the
+  top-level `requirements.txt`, which is scoped to the tutorial
+  notebooks
 - **Documentation:** Update README files when adding new features,
   notebooks, or tools
 - **Dependencies:** Add new tutorial-notebook dependencies to

@@ -1,8 +1,13 @@
 # openqcp-lab
 
-A collection of educational Jupyter notebooks focused on quantum
-algorithms, plus standalone tools developed in support of them (see
-[Tools](#tools) below).
+A quantum-computing research and engineering lab with two tracks:
+[educational tutorials](#tutorials) (Jupyter notebooks teaching
+quantum algorithms) and [tools](#tools) (independent, installable
+software — including original algorithmic and performance-engineering
+work — developed in this project). Tools are sometimes motivated by a
+tutorial's scaling needs and sometimes not; either way they're
+developed, tested, and versioned as real software in their own right,
+not as tutorial support material.
 
 ## Environment Setup
 
@@ -122,16 +127,25 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
 
 ## Tools
 
-Standalone, installable Python packages developed in support of the
-tutorials above, kept separate from the notebooks themselves since
-they're independently versioned software rather than lesson material.
+Standalone, installable Python packages, kept separate from the
+tutorial notebooks since they're independently versioned software
+rather than lesson material. Each originates and evolves on its own
+terms — some start from a tutorial's practical need, others don't —
+but none of them are tutorial support code; they're developed, tested,
+and (where applicable) benchmarked as software in their own right.
 
-- [`paulikit`](tools/paulikit) — performance-engineering tools for
-  Pauli decomposition of Hermitian and non-Hermitian operators.
-  Built to scale module ( 05 )'s Hamiltonian simulation beyond its
-  original symbolic decomposition's practical limit (~N=4). Install
-  with `pip install -e tools/paulikit` and see that package's own
-  README for usage.
+- [`paulikit`](tools/paulikit) — an original, independently-derived
+  Fast Walsh-Hadamard Transform algorithm for Pauli decomposition of
+  Hermitian and non-Hermitian operators, with a Cython/C++ native
+  kernel (oneTBB-parallelized) and a `meson-python` build matching
+  NumPy/SciPy's own model. Measured 115-120x faster than PennyLane's
+  `qml.pauli_decompose` on identical real-world inputs (see that
+  package's README for the full benchmark table and methodology).
+  Originated from module ( 05 )'s Hamiltonian-simulation tutorial
+  hitting its symbolic decomposition's practical scaling limit
+  (~N=4), but has since grown well past being tutorial-support code.
+  Install with `pip install -e tools/paulikit` and see that package's
+  own README for usage.
 
 ## GNU GPL v3+
 
