@@ -1,9 +1,12 @@
 # Pauli Decomposition Performance Engineering — Plan
 
-Status: Phases 0-3c complete. Phase 4 (final write-up) and Phase 5
-(prebuilt wheels + hard-require the native extension) not started;
-Phase 5 scoped 2026-08-19.
-Last updated: 2026-08-19.
+Status: Phases 0-3c complete. Phase 4 (final write-up), Phase 5
+(prebuilt wheels + hard-require the native extension), and Phase 6
+(sparse output for `fwht_pauli_coefficients` - fixes a real cache-
+locality/robustness bug found via profiling, see
+`profiling/cache_locality/README.md`) are all scoped but not started.
+Phase 5 scoped 2026-08-19; Phase 6 scoped 2026-08-25.
+Last updated: 2026-08-25.
 
 
 ## 1. Problem statement
@@ -589,6 +592,153 @@ aren't needed yet since no current use case has been raised for
 non-x86_64 deployment); free-threaded (3.13t) wheel variants (numpy/
 Cython ecosystem support for free-threading is still maturing as of
 this writing).
+
+
+### Phase 6 — Sparse output for `fwht_pauli_coefficients` (scoped 2026-08-25, not started)
+
+**Motivation.** A fundamental (not TBB-limited) cache-locality
+investigation, per the user's explicit direction, was carried out in
+`profiling/cache_locality/` (see that directory's `README.md` for the
+full trail - eight findings docs, all with reproducible, checked-in
+scripts). It identified a real, measured, robustness-relevant bug,
+independent of TBB/compiler flags/threading:
+
+- `fwht_pauli_coefficients` (`src/paulikit/algorithms/fwht.py`,
+  currently lines 202-218) computes its result sparsely (only active
+  rows, per Phase 3b's optimization - genuinely preserved, not
+  regressed by anything below) but then **materializes a full dense
+  `(dim, dim)` complex128 array** (`coefficients = np.zeros((dim,
+  dim), ...)`, then scatters the sparse rows into it).
+- `fwht_pauli_terms` immediately **re-scans that entire dense array**
+  (`np.nonzero(np.abs(coefficients) > atol)`) to find the same
+  nonzero rows `fwht_pauli_coefficients` already knew about via
+  `active_x`/`n_active` one function call earlier.
+- Measured impact: cache-miss ratio and memory-stall cycles both
+  scale cleanly with how far this dense array exceeds cache size
+  (`profiling/cache_locality/steady_state_scaling_findings.md`:
+  ~23% at N=25 where it fits in L3, up to ~58.5% at N=100 where it's
+  128x over). At N=150, this **OOM-killed the investigation's dev
+  machine** (15 GiB RAM) on the current, unmodified code, without
+  even completing one decompose call
+  (`profiling/cache_locality/n150_oom_finding.md`) - this is not
+  merely a performance nicety, it's a real crash risk at realistic
+  problem sizes.
+
+**Prior art - this was already anticipated, not a new idea.** Phase
+3b's own exploration work already prototyped this exact fix and
+explicitly deferred it. `phase3b/explore/08_v5_active_rows_only.py`'s
+docstring (2026-08-18, predating this investigation by a week):
+*"Returns a dense (dim,dim) array for API compat with the existing
+dense function (Phase 3b step: keep the output contract identical for
+now; a later step could return the sparse form directly to
+`fwht_pauli_terms` without ever densifying)."* That "later step" is
+this phase.
+
+**The explicit tension to resolve, not assume away (user's direct
+instruction, 2026-08-25):** there is a real, unproven risk that
+trading the dense array for sparse iteration could *move* a cost
+rather than remove it - e.g. if the sparse representation forces
+scattered, irregular memory access in `fwht_pauli_terms`'s label-
+generation/dict-construction step where the dense version currently
+gets contiguous, vectorizable `np.nonzero`/fancy-indexing access. Any
+fix must be measured against both (a) the cache-locality metrics in
+`profiling/cache_locality/` and (b) Phase 3b's own sparsity-of-
+*computation* gains (2.0-3.1x on `fwht_pauli_coefficients`, see
+`phase3b/README.md`) - it is not acceptable to "fix" cache locality by
+quietly re-introducing dense, O(dim²) work somewhere else in the
+pipeline, or by degrading Phase 3b's already-measured win.
+
+**Compatibility surface (checked directly, not assumed):**
+`fwht_pauli_coefficients` is called by: `fwht_pauli_terms` (the only
+non-test, non-exploration caller); `tests/test_fwht.py` (6 call
+sites) - two of which
+(`test_fwht_pauli_coefficients_handles_non_hermitian_matrices`,
+`test_fwht_pauli_coefficients_reconstructs_non_hermitian_matrix`)
+treat the return value as a **dense, arbitrarily-indexable `(dim,
+dim)` array** (`fast.imag`, `coefficients[x, z]` for arbitrary `x,
+z`) - this is a real part of the function's tested public contract,
+not just an internal implementation detail, and changing it is a
+breaking API change, not a private refactor.
+`phase3b/explore/*.py` (6 files) call it only as a correctness
+reference (`ref = fwht_pauli_coefficients(padded)`) for comparing
+against exploratory sparse variants - these are historical artifacts
+(see `feedback_document_exploration_scripts` project convention) and
+not required to keep working post-change, but breaking them silently
+without a note would be sloppy.
+
+**Plan:**
+1. **Decide the API shape** before writing any implementation code:
+   - Option A: keep `fwht_pauli_coefficients`'s signature/return type
+     exactly as-is (dense array), fix *only* `fwht_pauli_terms`'s
+     redundant re-scan (it can use `active_x`/`active_coefficients`
+     directly if `fwht_pauli_coefficients` is refactored to expose
+     them, e.g. via a private helper or an optional return mode).
+     Smaller blast radius, keeps the tested dense-array contract for
+     `fwht_pauli_coefficients` intact, but leaves the *bigger* half of
+     the problem (dense array construction itself, not just the
+     re-scan) unfixed for any *other* caller of
+     `fwht_pauli_coefficients` and for the two dense-contract tests'
+     own dense-array construction cost.
+   - Option B: change `fwht_pauli_coefficients` to return a sparse
+     representation by default (breaking change - update its two
+     dense-contract tests and its docstring/type signature), with
+     `fwht_pauli_terms` consuming that sparse form directly. Larger
+     blast radius (breaking API change, PLAN.md/README.md doc
+     updates, deciding on a concrete sparse return type - e.g. a
+     `(x_indices, z_indices... )`... no, likely `(active_x,
+     active_coefficients)` matching the existing internal naming, or
+     a `scipy.sparse` type), but actually removes the dense array
+     everywhere, not just in the one call site currently profiled.
+   - This decision is **not yet made** - it should be settled with
+     the user before implementation, weighing "smaller, safer patch"
+     (A) against "actually fixes the root cause everywhere" (B). Not
+     assumed here.
+2. **Prototype and measure both real candidates** (not just reason
+   about them) using `profiling/cache_locality/`'s existing
+   infrastructure - specifically `steady_state_decompose.py` and
+   `run_steady_state_sweep.sh`/`run_openblas_comparison.sh`'s
+   conventions (in-process warm-up timing, `OPENBLAS_NUM_THREADS=1`
+   to avoid the noise documented in `stall_floor_mystery_solved.md`) -
+   before picking one. This directly addresses the
+   densification-vs-locality tension above: measure whether the
+   candidate actually reduces cache-miss ratio/mem-stall *and*
+   preserves or improves wall-clock time at N=25/50/100(/150 if
+   memory-safe post-fix), not just assume a "sparse is obviously
+   better" story.
+3. **Update the two dense-contract tests** in `tests/test_fwht.py`
+   (`test_fwht_pauli_coefficients_handles_non_hermitian_matrices`,
+   `test_fwht_pauli_coefficients_reconstructs_non_hermitian_matrix`)
+   to match whichever API shape is chosen - these are the only tests
+   that exercise `fwht_pauli_coefficients`'s dense-array contract
+   directly and must not be silently weakened or deleted just to make
+   the change easier.
+4. **Re-run the full `profiling/cache_locality/` sweep post-fix**
+   (N=25/50/100/150) and add a new findings doc comparing before/after
+   - honestly, including if the improvement is smaller than the
+   cache-miss-ratio numbers alone might suggest (per
+   `stall_cycles_n50_findings.md`'s and
+   `steady_state_scaling_findings.md`'s existing caution about
+   overclaiming from ratio metrics alone). Specifically verify N=150
+   no longer OOMs, since that's the concrete robustness claim this
+   phase is meant to fix.
+5. **Update `README.md`'s "Native extension"/benchmark sections and
+   `PLAN.md`'s status** once the fix is measured and merged - do not
+   describe the fix as done in any doc before it's implemented and
+   verified, matching this project's established no-overselling
+   discipline.
+
+**Explicitly out of scope for this phase:** re-profiling or
+re-optimizing the native Cython/C++/TBB kernel itself
+(`pauli_label_native`/`pauli_label_parallel.cpp`) -
+`profiling/cache_locality/perf_record_n50_findings.md` and
+`compiler_flags_findings.md` both found the current cache-locality
+bottleneck lives in `fwht.py`'s Python-level dense-array handling and
+NumPy's own ufunc code, not the native kernel; touching the native
+kernel is not motivated by any finding in this investigation and
+would be scope creep. Also out of scope: addressing the OpenBLAS
+thread-pool noise itself (`stall_floor_mystery_solved.md`) - that's an
+environment/measurement-methodology concern, not a paulikit code
+change.
 
 
 ## 6. Explicitly out of scope
