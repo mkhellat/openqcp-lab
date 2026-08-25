@@ -33,9 +33,18 @@ being dispatched.
 
 ## Confirmation via `OPENBLAS_NUM_THREADS=1`
 
+Reproduce with `./run_openblas_comparison.sh [N_OSCILLATORS] [REPS]`
+(defaults 25, 5 - matches the numbers below). Same fail-safe/Linux-only
+conventions as the other scripts in this directory - see
+`run_baseline_perf_stat.sh`'s header for the full reasoning.
+
+Underlying commands, for reference:
+
 ```
-export OPENBLAS_NUM_THREADS=1
 perf stat -e cycles,cycle_activity.stalls_total,cycle_activity.stalls_mem_any -- \
+  python steady_state_decompose.py --n-oscillators 25 --reps 5
+
+OPENBLAS_NUM_THREADS=1 perf stat -e cycles,cycle_activity.stalls_total,cycle_activity.stalls_mem_any -- \
   python steady_state_decompose.py --n-oscillators 25 --reps 5
 ```
 
