@@ -727,6 +727,40 @@ without a note would be sloppy.
    verified, matching this project's established no-overselling
    discipline.
 
+**Follow-up items, tracked here explicitly so they aren't lost (not
+started, not blocking Phase 6's own implementation):**
+
+- **Statistical rigor for `perf`-based measurements.** Every sweep in
+  `profiling/cache_locality/` so far reports a bare mean over 3 runs,
+  with no variance/confidence-interval reporting and no systematic
+  outlier handling. One concrete unexplained data point surfaced
+  during an earlier (superseded, non-committed) TBB comparison attempt
+  at N=25: a single run showed ~2.7x the cycles and ~5.9x the stall
+  cycles of its two sibling runs, silently excluded rather than
+  investigated at the time. Before or during Phase 6's "prototype and
+  measure" step, add: (a) reporting min/max or stddev alongside the
+  mean in findings docs, not just the mean; (b) an explicit rule for
+  what counts as an outlier and what to do with one (investigate and
+  report the cause, don't just silently average it in or drop it);
+  (c) consider whether 3 runs is enough given the variance actually
+  observed, or whether the default should increase (`run_*.sh`
+  scripts already accept a runs-per-N argument, so this is a
+  documentation/convention change, not a script rewrite). This
+  strengthens every finding already on record, not just Phase 6's
+  new ones - worth doing as its own small pass, not deferred
+  indefinitely.
+- **Revisit TBB parallelization if Phase 6's redesign changes the
+  work shape.** `tbb_evaluation_findings.md` (2026-08-25) found no
+  effect at the *current* pipeline structure - TBB parallelizes label-
+  string construction, which isn't where the dense-array cache misses
+  live. If Phase 6's sparse-representation redesign changes how much
+  work happens in or near label generation (e.g. if the sparse mode
+  processes far more active terms per call than the dense mode's
+  re-scan currently surfaces), re-run `run_tbb_comparison.sh`'s
+  methodology against the *new* pipeline shape as part of Phase 6's
+  own "prototype and measure" step (step 2 above) - a fair question
+  to re-open then, not a settled "TBB is irrelevant forever" verdict.
+
 **Explicitly out of scope for this phase:** re-profiling or
 re-optimizing the native Cython/C++/TBB kernel itself
 (`pauli_label_native`/`pauli_label_parallel.cpp`) -
