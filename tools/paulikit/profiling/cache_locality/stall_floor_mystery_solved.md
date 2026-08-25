@@ -105,6 +105,34 @@ by the (N-independent) BLAS noise floor plus a (N-dependent, but
 smaller in comparison at these N values) memory-stall contribution,
 so the sum looks approximately flat.
 
+## Update 2026-08-25: the trigger itself is now confirmed, not just inferred
+
+The original version of this doc said the thread pool was "spun up
+somewhere in NumPy's import/init path" without confirming exactly
+where or when - flagged as a real gap when directly asked "did you
+solve the mystery totally without any doubts?" (answer at the time:
+no). Traced directly via `/proc/<pid>/task` thread counts (the
+correct ground-truth measurement - Python's own `threading.active_count()`
+is blind to native OS threads spawned by a C library, which is why an
+earlier quick check with `threading` wrongly suggested no thread pool
+existed):
+
+```
+threads before any import:        1
+threads after `import numpy`:     8   <- jumps here, immediately
+threads after `import scipy`:     8
+threads after paulikit's own modules: 8   (unchanged)
+```
+
+**`import numpy` alone spawns the full 8-thread OpenBLAS pool**
+(8 = this machine's core count), as a side effect of the shared
+library loading - before any BLAS routine is ever called, and before
+any of paulikit's own code runs. Those 8 idle threads then persist
+for the rest of the process. This fully closes the mechanism: the
+"noise floor" is genuinely N-independent and call-independent - it's
+paid once, at import time, regardless of what paulikit's own code
+does afterward. No remaining doubt about the trigger.
+
 ## Recommended fix for future measurements
 
 Set `OPENBLAS_NUM_THREADS=1` (or `OPENBLAS_NUM_THREADS=0`/pin via
