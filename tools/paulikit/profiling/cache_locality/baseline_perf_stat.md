@@ -7,6 +7,20 @@ phase this belongs to once scoped.
 
 ## Method
 
+Reproduce with `./run_baseline_perf_stat.sh [N_OSCILLATORS] [N_RUNS]`
+(defaults 50, 3 - matches the results below). The script is
+**Linux-only, not POSIX-compliant** (it depends on Linux's
+`perf_events` subsystem and `/proc`, plus bash-specific syntax) - see
+the script's own header for why, and there's currently no macOS/BSD
+equivalent. It fails loudly (nonzero exit, clear error, no stray
+output files) if a precondition isn't met - e.g.
+`/proc/sys/kernel/perf_event_paranoid` too restrictive, `perf` or
+`paulikit` missing from `PATH` - rather than silently producing a
+partial or misleading result.
+
+Underlying command, for reference (the script wraps this with
+preflight checks and result-file handling):
+
 ```
 perf stat -e task-clock,cycles,instructions,cache-references,cache-misses,\
 L1-dcache-loads,L1-dcache-load-misses,LLC-loads,LLC-load-misses \

@@ -9,6 +9,17 @@ reproduce it).
 
 ## Method
 
+Reproduce with `./run_perf_record_localize.sh [N_OSCILLATORS]`
+(default 50 - matches the findings below). Same portability scope as
+`run_baseline_perf_stat.sh`: **Linux-only, not POSIX-compliant**
+(Linux `perf_events` + bash syntax), fails loudly with no stray files
+on any precondition or command failure. See that script's own header
+in `run_baseline_perf_stat.sh` for the full reasoning; a macOS/BSD
+equivalent isn't attempted here.
+
+Underlying commands, for reference (the script wraps these with
+preflight checks and timestamped, non-clobbering output filenames):
+
 ```
 perf record -g -e cache-misses -o perf_cachemiss_n50.data -- \
   paulikit decompose --n-oscillators 50
