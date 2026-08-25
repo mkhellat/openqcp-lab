@@ -145,6 +145,28 @@ one before it. Don't read only the last one; the corrections
    fail-safe conventions as the read-only scripts is a candidate
    follow-up).
 
+9. **[`stall_floor_mystery_solved.md`](stall_floor_mystery_solved.md)**
+   (updated) - the OpenBLAS finding's trigger, not just its mechanism,
+   is now directly confirmed: `import numpy` alone spawns the full
+   8-thread pool (traced via `/proc/<pid>/task`, before any BLAS call
+   and before any paulikit code runs). Prompted by being asked
+   directly whether the mystery was "solved totally without any
+   doubts" - it wasn't yet at that point, and now is.
+
+10. **[`tbb_not_actually_used_finding.md`](tbb_not_actually_used_finding.md)** -
+    corrects an assumption this whole investigation (and the earlier
+    Google AI Mode transcript that motivated it) had been carrying:
+    TBB is not actually invoked in the production decompose path
+    today. `fwht_pauli_terms` calls the *serial* label-generation
+    kernel, not the TBB-parallelized one - confirmed both by reading
+    `pauli_label_native.pyx`'s own source (which documents Phase 3a
+    already found parallelizing this specific loop barely helped) and
+    by directly sampling OS thread counts before/during/after a
+    native-kernel call (stays flat at 8 throughout, no TBB workers
+    appear). Retroactively explains finding 8's null compiler-flags
+    result even more completely: `-march=native` etc. apply to code
+    that compiles but never runs in the hot path.
+
 ## Current honest state (as of the last finding above)
 
 - **Confirmed root cause**: `fwht_pauli_coefficients` densifies a

@@ -733,10 +733,20 @@ re-optimizing the native Cython/C++/TBB kernel itself
 `profiling/cache_locality/perf_record_n50_findings.md` and
 `compiler_flags_findings.md` both found the current cache-locality
 bottleneck lives in `fwht.py`'s Python-level dense-array handling and
-NumPy's own ufunc code, not the native kernel; touching the native
+NumPy's own ufunc code, not the native kernel. Stronger than "not the
+bottleneck": `tbb_not_actually_used_finding.md` confirmed the TBB-
+parallelized entry point (`pauli_label_batch_parallel`) isn't even
+called by `fwht_pauli_terms` today - `_pauli_label_batch` calls the
+serial `pauli_label_batch` kernel (Phase 3a found parallelizing this
+specific loop barely helped, since Python string construction
+dominated wall-clock time, not the C loop). Touching the native/TBB
 kernel is not motivated by any finding in this investigation and
-would be scope creep. Also out of scope: addressing the OpenBLAS
-thread-pool noise itself (`stall_floor_mystery_solved.md`) - that's an
+would be scope creep - though if Phase 6's sparse-representation
+redesign changes the shape of the label-generation work, whether TBB
+parallelization becomes worthwhile *then* is a fair question to
+revisit during that phase's measurement step, not decided here either
+way. Also out of scope: addressing the OpenBLAS thread-pool noise
+itself (`stall_floor_mystery_solved.md`) - that's an
 environment/measurement-methodology concern, not a paulikit code
 change.
 
