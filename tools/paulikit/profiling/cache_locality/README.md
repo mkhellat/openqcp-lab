@@ -35,6 +35,7 @@ Then, from this directory:
 ./run_perf_record_localize.sh        # localizes misses to code symbols, N=50
 ./run_steady_state_sweep.sh          # cache-miss ratio + stalls across N=25/50/100/150
 ./run_openblas_comparison.sh         # isolates OpenBLAS thread-pool noise, N=25
+./run_tbb_comparison.sh              # serial vs TBB label kernel, N=25/50/100
 ```
 
 Every script validates its own preconditions (perf available,
@@ -167,6 +168,18 @@ one before it. Don't read only the last one; the corrections
     result even more completely: `-march=native` etc. apply to code
     that compiles but never runs in the hot path.
 
+11. **[`tbb_evaluation_findings.md`](tbb_evaluation_findings.md)** -
+    directly measures the TBB-parallel label kernel against the serial
+    one (production path) with the full cache-locality methodology, at
+    N=25/50/100. No measurable effect on wall time, cache-miss ratio,
+    LLC-miss ratio, or stall percentages at any N - differences are
+    within run-to-run noise with no consistent direction. Confirms
+    finding 10's correction was safe to rely on: TBB isn't just unused
+    today, it also wouldn't help cache locality if it were wired in,
+    at the current pipeline structure (it parallelizes label-string
+    construction, not the dense-array code where the misses actually
+    live). Script: `run_tbb_comparison.sh`.
+
 ## Current honest state (as of the last finding above)
 
 - **Confirmed root cause**: `fwht_pauli_coefficients` densifies a
@@ -182,6 +195,12 @@ one before it. Don't read only the last one; the corrections
   away for a "cache-friendlier" dense layout, or vice versa - any fix
   needs to be measured, not assumed, against both the cache-locality
   metrics here and Phase 3b's original sparsity-computation gains.
+- **TBB ruled out as a lever for this problem**: measured directly
+  (finding 11), not just inferred - the TBB-parallel label kernel has
+  no effect on cache-miss ratio, stall cycles, or wall time at the
+  current pipeline structure, because it parallelizes a part of the
+  pipeline (label-string construction) that isn't where the dense-array
+  cache misses live.
 - **Known confound to control for in future measurements**: OpenBLAS
   thread-pool noise. Set `OPENBLAS_NUM_THREADS=1` for any new
   `perf`-based measurement in this directory unless specifically
