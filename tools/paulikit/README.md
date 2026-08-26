@@ -219,28 +219,40 @@ were run on the *exact same* `build_hamiltonian()` output at each N
 (see `tests/test_benchmark_reference.py`, marked `slow` and excluded
 from the default test run):
 
-| N (oscillators) | qubits | Pauli terms | paulikit time | PennyLane time  | speedup |
-|------------------|--------|-------------|----------------|------------------|---------|
-| 16               | 8      | 15360       | 0.0586s        | 6.7369s          | 115x    |
-| 30               | 9      | 112384      | 0.4019s        | 48.3211s         | 120x    |
-| 50               | 11     | 1261568     | 6.2213s        | >590s (aborted)  | >95x    |
-| 100              | 13     | 20299776    | 126.3250s      | not attempted    | —       |
+| N (oscillators) | qubits | Pauli terms | paulikit time | PennyLane time    | speedup |
+|------------------|--------|-------------|----------------|--------------------|---------|
+| 16               | 8      | 15360       | 0.0124s        | 5.6914s            | 459x    |
+| 30               | 9      | 112384      | 0.0937s        | 45.9782s           | 491x    |
+| 50               | 11     | 1261568     | 1.2371s        | 749.9998s          | 606x    |
+| 100              | 13     | 20299776    | 24.6979s       | not attempted      | —       |
 
 Both implementations agree exactly on term count at every N where
 PennyLane finished (a correctness check, not just a performance one).
-The N=50 PennyLane run was killed by a 10-minute timeout without
-completing; N=100 wasn't attempted with PennyLane given that. See
-`PLAN.md` Section 3.4 for the full discussion, including why an
-earlier draft of this table (using a synthetic proxy matrix rather
-than the real Hamiltonian) understated PennyLane's actual cost on
-this problem.
+Unlike the original 2026-08-04 measurement, the N=50 PennyLane run
+here completed rather than aborting on a timeout - both this test and
+the reference implementation have since improved, and the machine load
+at measurement time affects wall-clock numbers, so treat the exact
+seconds as illustrative, not as a tight guarantee. N=100 still was not
+attempted against PennyLane: a direct attempt (2026-08-26) ran for
+over 26 minutes without finishing and was deliberately killed rather
+than left running, both to avoid an indefinite wait and because the
+machine's available memory was under real pressure by that point (see
+`profiling/cache_locality/README.md`'s swap/resource-exhaustion notes
+for what that looked like in practice). See `PLAN.md` Section 3.4 for
+the full discussion, including why an earlier draft of this table
+(using a synthetic proxy matrix rather than the real Hamiltonian)
+understated PennyLane's actual cost on this problem.
 
-`paulikit`'s own N=100 time in the table above (126.3s) was the
-original Phase 1 pure-Python baseline — it densely computed the full
-$2^n \times 2^n$ coefficient array regardless of input sparsity, and
-generated Pauli-string labels with a per-term, per-qubit Python loop.
-Both of those were subsequently identified as the actual bottlenecks
-(via profiling, not guesswork) and fixed:
+`paulikit`'s own numbers above reflect the current, Phase 6-complete
+implementation (native label kernel plus the sparse
+`fwht_pauli_coefficients` output added in Phase 6 - see
+`profiling/cache_locality/README.md`), not the Phase 1 pure-Python
+baseline this table originally reported. That baseline densely
+computed the full $2^n \times 2^n$ coefficient array regardless of
+input sparsity, and generated Pauli-string labels with a per-term,
+per-qubit Python loop. Both of those were identified as the actual
+bottlenecks (via profiling, not guesswork) and fixed across Phases
+3a-3c and 6:
 
 | N (oscillators) | Phase 1 (baseline) | Phase 3b (sparse coefficients) | Phase 3c (+ native labels) | speedup vs. Phase 1 |
 |------------------|---------------------|----------------------------------|-------------------------------|----------------------|
@@ -255,6 +267,15 @@ across all versions at every N — a correctness re-confirmation, not
 just a performance comparison. Full detail, including the design
 exploration behind Phase 3b's sparsity fix, is in `PLAN.md`'s Section
 5 (Phase 3b/3c write-ups) and `phase3b/README.md`.
+
+This table does not yet include a Phase 6 column: Phase 6 (an
+optional sparse-output mode for `fwht_pauli_coefficients`, see
+`profiling/cache_locality/README.md`) removed a different cost - the
+dense array's cache-locality/memory-footprint penalty and its
+associated OOM risk at large N, not primarily wall-clock time on
+these already-fast N=50/100 cases - so it's measured and reported
+separately once that comparison sweep completes, rather than folded
+into this table's per-phase story.
 
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the
