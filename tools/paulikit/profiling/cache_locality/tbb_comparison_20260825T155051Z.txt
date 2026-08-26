@@ -1,0 +1,500 @@
+# Machine info
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  8
+On-line CPU(s) list:                     0-7
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
+CPU family:                              6
+Model:                                   142
+Thread(s) per core:                      2
+Core(s) per socket:                      4
+Socket(s):                               1
+Stepping:                                10
+Microcode version:                       0xf6
+CPU(s) scaling MHz:                      18%
+CPU max MHz:                             4000.0000
+CPU min MHz:                             400.0000
+BogoMIPS:                                3999.93
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb pti ssbd ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust sgx bmi1 avx2 smep bmi2 erms invpcid mpx rdseed adx smap clflushopt intel_pt xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp vnmi md_clear flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               128 KiB (4 instances)
+L1i cache:                               128 KiB (4 instances)
+L2 cache:                                1 MiB (4 instances)
+L3 cache:                                8 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-7
+Vulnerability Gather data sampling:      Mitigation; Microcode
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             KVM: Mitigation: Split huge pages
+Vulnerability L1tf:                      Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable
+Vulnerability Mds:                       Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Meltdown:                  Mitigation; PTI
+Vulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Mitigation; IBRS
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; IBRS; IBPB conditional; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Mitigation; Microcode
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+
+# OPENBLAS_NUM_THREADS=1 set for every run below (see stall_floor_mystery_solved.md)
+
+=== N=25, run 1/3, SERIAL kernel ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0867s (individual: ['0.0842', '0.0844', '0.0947', '0.0831', '0.0872'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 25 --reps 5':
+
+            707.11 msec task-clock                                                            
+     2,149,074,275      cycles                                                                  (39.82%)
+     4,324,851,222      instructions                                                            (49.97%)
+        89,729,977      cache-references                                                        (50.19%)
+        16,640,784      cache-misses                                                            (50.34%)
+     1,184,926,716      L1-dcache-loads                                                         (50.50%)
+        46,621,340      L1-dcache-load-misses                                                   (50.42%)
+         9,091,406      LLC-loads                                                               (39.95%)
+         1,370,186      LLC-load-misses                                                         (39.78%)
+       510,567,896      cycle_activity.stalls_total                                             (39.79%)
+       349,036,047      cycle_activity.stalls_mem_any                                           (39.77%)
+
+       0.721710278 seconds time elapsed
+
+       0.634672000 seconds user
+       0.076705000 seconds sys
+
+
+=== N=25, run 1/3, TBB kernel ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0854s (individual: ['0.0839', '0.0874', '0.0860', '0.0841', '0.0857'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 25 --reps 5':
+
+            705.63 msec task-clock                                                            
+     2,250,753,253      cycles                                                                  (42.67%)
+     4,140,005,120      instructions                                                            (52.92%)
+        84,513,166      cache-references                                                        (52.88%)
+        17,352,024      cache-misses                                                            (51.66%)
+     1,202,922,809      L1-dcache-loads                                                         (51.00%)
+        52,145,425      L1-dcache-load-misses                                                   (49.75%)
+        10,453,103      LLC-loads                                                               (38.79%)
+         1,395,168      LLC-load-misses                                                         (38.39%)
+       620,415,303      cycle_activity.stalls_total                                             (39.05%)
+       348,018,550      cycle_activity.stalls_mem_any                                           (40.00%)
+
+       0.643898738 seconds time elapsed
+
+       0.617590000 seconds user
+       0.083613000 seconds sys
+
+
+=== N=25, run 2/3, SERIAL kernel ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0850s (individual: ['0.0865', '0.0857', '0.0834', '0.0872', '0.0824'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 25 --reps 5':
+
+            682.51 msec task-clock                                                            
+     2,127,921,235      cycles                                                                  (40.06%)
+     4,286,574,018      instructions                                                            (50.13%)
+        88,496,408      cache-references                                                        (50.20%)
+        16,286,908      cache-misses                                                            (50.19%)
+     1,192,981,087      L1-dcache-loads                                                         (50.22%)
+        52,306,697      L1-dcache-load-misses                                                   (50.10%)
+         9,275,043      LLC-loads                                                               (39.84%)
+         1,306,398      LLC-load-misses                                                         (39.84%)
+       498,641,295      cycle_activity.stalls_total                                             (40.04%)
+       345,140,718      cycle_activity.stalls_mem_any                                           (40.00%)
+
+       0.686236215 seconds time elapsed
+
+       0.618430000 seconds user
+       0.058942000 seconds sys
+
+
+=== N=25, run 2/3, TBB kernel ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0913s (individual: ['0.0901', '0.0889', '0.0918', '0.0967', '0.0891'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 25 --reps 5':
+
+            778.76 msec task-clock                                                            
+     2,372,864,483      cycles                                                                  (39.19%)
+     4,375,126,963      instructions                                                            (49.50%)
+       101,898,623      cache-references                                                        (49.78%)
+        17,904,803      cache-misses                                                            (50.79%)
+     1,191,825,521      L1-dcache-loads                                                         (51.47%)
+        53,502,230      L1-dcache-load-misses                                                   (51.77%)
+         8,972,432      LLC-loads                                                               (41.02%)
+         1,243,580      LLC-load-misses                                                         (40.32%)
+       655,812,316      cycle_activity.stalls_total                                             (39.83%)
+       371,702,590      cycle_activity.stalls_mem_any                                           (39.74%)
+
+       0.718896686 seconds time elapsed
+
+       0.683761000 seconds user
+       0.088582000 seconds sys
+
+
+=== N=25, run 3/3, SERIAL kernel ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0858s (individual: ['0.0876', '0.0873', '0.0838', '0.0892', '0.0809'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 25 --reps 5':
+
+            693.12 msec task-clock                                                            
+     2,126,235,080      cycles                                                                  (40.01%)
+     4,294,900,032      instructions                                                            (50.06%)
+        80,744,772      cache-references                                                        (50.13%)
+        15,468,382      cache-misses                                                            (50.20%)
+     1,192,382,438      L1-dcache-loads                                                         (50.24%)
+        51,199,889      L1-dcache-load-misses                                                   (50.24%)
+        10,818,332      LLC-loads                                                               (40.03%)
+         1,489,483      LLC-load-misses                                                         (39.88%)
+       500,905,916      cycle_activity.stalls_total                                             (39.84%)
+       333,723,639      cycle_activity.stalls_mem_any                                           (39.99%)
+
+       0.696798549 seconds time elapsed
+
+       0.628979000 seconds user
+       0.058530000 seconds sys
+
+
+=== N=25, run 3/3, TBB kernel ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0840s (individual: ['0.0840', '0.0861', '0.0834', '0.0847', '0.0816'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 25 --reps 5':
+
+            755.69 msec task-clock                                                            
+     2,372,202,593      cycles                                                                  (39.53%)
+     4,396,503,255      instructions                                                            (48.83%)
+        92,634,607      cache-references                                                        (48.85%)
+        17,282,924      cache-misses                                                            (48.99%)
+     1,234,477,912      L1-dcache-loads                                                         (49.23%)
+        48,998,858      L1-dcache-load-misses                                                   (50.49%)
+         8,767,019      LLC-loads                                                               (42.56%)
+         1,160,374      LLC-load-misses                                                         (42.32%)
+       657,004,969      cycle_activity.stalls_total                                             (41.62%)
+       370,008,419      cycle_activity.stalls_mem_any                                           (40.74%)
+
+       0.695132599 seconds time elapsed
+
+       0.673619000 seconds user
+       0.076370000 seconds sys
+
+
+=== N=50, run 1/3, SERIAL kernel ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.9454s (individual: ['1.9506', '1.9827', '1.9178', '1.9207', '1.9552'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 50 --reps 5':
+
+         11,848.73 msec task-clock                                                            
+    32,681,199,443      cycles                                                                  (39.91%)
+    63,875,482,960      instructions                                                            (50.09%)
+     1,413,242,584      cache-references                                                        (50.09%)
+       816,729,570      cache-misses                                                            (50.10%)
+    17,731,198,899      L1-dcache-loads                                                         (50.11%)
+       784,834,333      L1-dcache-load-misses                                                   (50.12%)
+       176,615,727      LLC-loads                                                               (39.94%)
+        78,719,125      LLC-load-misses                                                         (39.93%)
+     9,006,608,504      cycle_activity.stalls_total                                             (39.92%)
+     7,261,639,240      cycle_activity.stalls_mem_any                                           (39.91%)
+
+      11.866764026 seconds time elapsed
+
+      11.007946000 seconds user
+       0.695671000 seconds sys
+
+
+=== N=50, run 1/3, TBB kernel ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.9222s (individual: ['1.8803', '2.0294', '1.8904', '1.8749', '1.9361'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 50 --reps 5':
+
+         12,117.00 msec task-clock                                                            
+    33,598,725,922      cycles                                                                  (39.98%)
+    64,072,196,004      instructions                                                            (49.97%)
+     1,421,418,006      cache-references                                                        (50.01%)
+       811,386,768      cache-misses                                                            (50.02%)
+    17,910,501,519      L1-dcache-loads                                                         (49.98%)
+       777,629,000      L1-dcache-load-misses                                                   (50.06%)
+       176,781,093      LLC-loads                                                               (40.11%)
+        77,288,384      LLC-load-misses                                                         (40.06%)
+     9,416,388,719      cycle_activity.stalls_total                                             (40.06%)
+     7,604,744,369      cycle_activity.stalls_mem_any                                           (40.01%)
+
+      11.815022460 seconds time elapsed
+
+      11.231971000 seconds user
+       0.726449000 seconds sys
+
+
+=== N=50, run 2/3, SERIAL kernel ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.9741s (individual: ['1.8933', '2.0834', '1.9274', '1.9652', '2.0012'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 50 --reps 5':
+
+         11,994.38 msec task-clock                                                            
+    32,841,476,781      cycles                                                                  (39.91%)
+    64,167,381,903      instructions                                                            (49.89%)
+     1,411,794,772      cache-references                                                        (49.93%)
+       812,825,744      cache-misses                                                            (50.03%)
+    17,679,820,443      L1-dcache-loads                                                         (50.13%)
+       788,118,644      L1-dcache-load-misses                                                   (50.13%)
+       175,736,870      LLC-loads                                                               (40.10%)
+        77,696,951      LLC-load-misses                                                         (40.00%)
+     9,147,688,561      cycle_activity.stalls_total                                             (39.90%)
+     7,412,088,260      cycle_activity.stalls_mem_any                                           (39.91%)
+
+      12.010189963 seconds time elapsed
+
+      11.135415000 seconds user
+       0.709270000 seconds sys
+
+
+=== N=50, run 2/3, TBB kernel ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.9115s (individual: ['1.9449', '1.9517', '1.9310', '1.8488', '1.8813'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 50 --reps 5':
+
+         11,974.04 msec task-clock                                                            
+    33,687,969,479      cycles                                                                  (39.89%)
+    64,404,054,432      instructions                                                            (49.83%)
+     1,418,774,784      cache-references                                                        (49.78%)
+       814,329,325      cache-misses                                                            (49.81%)
+    17,934,538,860      L1-dcache-loads                                                         (49.94%)
+       749,511,105      L1-dcache-load-misses                                                   (50.20%)
+       178,971,540      LLC-loads                                                               (40.26%)
+        80,043,472      LLC-load-misses                                                         (40.24%)
+     9,365,623,169      cycle_activity.stalls_total                                             (40.14%)
+     7,560,927,895      cycle_activity.stalls_mem_any                                           (40.01%)
+
+      11.665820366 seconds time elapsed
+
+      11.099250000 seconds user
+       0.734655000 seconds sys
+
+
+=== N=50, run 3/3, SERIAL kernel ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.9770s (individual: ['1.9648', '2.0622', '1.9592', '1.9024', '1.9964'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 50 --reps 5':
+
+         12,034.03 msec task-clock                                                            
+    33,034,713,438      cycles                                                                  (39.91%)
+    64,199,699,188      instructions                                                            (49.90%)
+     1,434,845,980      cache-references                                                        (50.01%)
+       817,878,587      cache-misses                                                            (50.11%)
+    17,651,633,578      L1-dcache-loads                                                         (50.12%)
+       812,662,681      L1-dcache-load-misses                                                   (50.13%)
+       175,091,528      LLC-loads                                                               (40.02%)
+        77,359,784      LLC-load-misses                                                         (39.92%)
+     9,196,004,972      cycle_activity.stalls_total                                             (39.92%)
+     7,499,797,902      cycle_activity.stalls_mem_any                                           (39.90%)
+
+      12.002310066 seconds time elapsed
+
+      11.164971000 seconds user
+       0.724942000 seconds sys
+
+
+=== N=50, run 3/3, TBB kernel ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.8719s (individual: ['1.8981', '1.9521', '1.8489', '1.8411', '1.8193'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 50 --reps 5':
+
+         11,793.98 msec task-clock                                                            
+    33,381,972,834      cycles                                                                  (39.98%)
+    64,268,084,498      instructions                                                            (49.93%)
+     1,420,449,712      cache-references                                                        (49.99%)
+       820,204,589      cache-misses                                                            (50.03%)
+    17,800,194,065      L1-dcache-loads                                                         (50.02%)
+       762,976,019      L1-dcache-load-misses                                                   (50.10%)
+       175,148,066      LLC-loads                                                               (40.08%)
+        78,936,333      LLC-load-misses                                                         (40.01%)
+     9,209,870,808      cycle_activity.stalls_total                                             (40.01%)
+     7,528,738,905      cycle_activity.stalls_mem_any                                           (39.99%)
+
+      11.442938687 seconds time elapsed
+
+      10.955933000 seconds user
+       0.706465000 seconds sys
+
+
+=== N=100, run 1/3, SERIAL kernel ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 34.7101s (individual: ['34.4638', '34.6343', '34.8954', '34.8156', '34.7417'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 100 --reps 5':
+
+        209,192.81 msec task-clock                                                            
+   570,228,055,207      cycles                                                                  (40.02%)
+ 1,040,328,755,113      instructions                                                            (50.02%)
+    26,442,424,060      cache-references                                                        (50.01%)
+    15,602,467,002      cache-misses                                                            (50.01%)
+   286,645,556,923      L1-dcache-loads                                                         (50.00%)
+    15,407,725,989      L1-dcache-load-misses                                                   (49.99%)
+     3,079,621,225      LLC-loads                                                               (39.99%)
+     1,758,904,296      LLC-load-misses                                                         (39.98%)
+   177,754,481,402      cycle_activity.stalls_total                                             (39.99%)
+   140,779,978,840      cycle_activity.stalls_mem_any                                           (40.00%)
+
+     209.200050250 seconds time elapsed
+
+     189.717171000 seconds user
+      17.175917000 seconds sys
+
+
+=== N=100, run 1/3, TBB kernel ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 32.5221s (individual: ['33.5442', '34.3623', '32.9714', '30.8351', '30.8977'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 100 --reps 5':
+
+        201,626.55 msec task-clock                                                            
+   577,514,898,749      cycles                                                                  (40.01%)
+ 1,040,336,256,933      instructions                                                            (50.01%)
+    26,319,700,928      cache-references                                                        (50.00%)
+    15,542,752,273      cache-misses                                                            (50.01%)
+   287,842,892,023      L1-dcache-loads                                                         (50.01%)
+    14,858,264,169      L1-dcache-load-misses                                                   (49.99%)
+     3,086,300,821      LLC-loads                                                               (39.99%)
+     1,756,784,873      LLC-load-misses                                                         (40.00%)
+   180,172,868,940      cycle_activity.stalls_total                                             (40.00%)
+   144,194,116,999      cycle_activity.stalls_mem_any                                           (40.01%)
+
+     197.386511408 seconds time elapsed
+
+     183.099601000 seconds user
+      16.507101000 seconds sys
+
+
+=== N=100, run 2/3, SERIAL kernel ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 30.8343s (individual: ['30.4781', '30.9475', '30.8662', '30.9275', '30.9523'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 100 --reps 5':
+
+        185,655.93 msec task-clock                                                            
+   567,503,559,379      cycles                                                                  (40.00%)
+ 1,040,956,290,999      instructions                                                            (50.00%)
+    26,175,387,136      cache-references                                                        (50.01%)
+    15,300,652,666      cache-misses                                                            (50.02%)
+   286,338,405,832      L1-dcache-loads                                                         (50.01%)
+    15,535,078,254      L1-dcache-load-misses                                                   (50.00%)
+     3,162,601,455      LLC-loads                                                               (40.00%)
+     1,773,149,077      LLC-load-misses                                                         (39.99%)
+   177,179,339,513      cycle_activity.stalls_total                                             (40.00%)
+   142,795,239,417      cycle_activity.stalls_mem_any                                           (40.00%)
+
+     185.730707358 seconds time elapsed
+
+     168.085436000 seconds user
+      15.509540000 seconds sys
+
+
+=== N=100, run 2/3, TBB kernel ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 34.9029s (individual: ['30.3960', '33.5734', '33.0217', '33.1824', '44.3408'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 100 --reps 5':
+
+        215,005.99 msec task-clock                                                            
+   624,706,480,099      cycles                                                                  (40.01%)
+ 1,099,103,218,182      instructions                                                            (50.01%)
+    26,933,873,308      cache-references                                                        (50.00%)
+    15,901,610,334      cache-misses                                                            (49.98%)
+   302,753,147,767      L1-dcache-loads                                                         (49.98%)
+    15,822,154,157      L1-dcache-load-misses                                                   (49.98%)
+     3,238,173,293      LLC-loads                                                               (39.99%)
+     1,905,843,476      LLC-load-misses                                                         (40.01%)
+   201,476,123,835      cycle_activity.stalls_total                                             (40.03%)
+   158,795,762,352      cycle_activity.stalls_mem_any                                           (40.03%)
+
+     210.669859558 seconds time elapsed
+
+     185.002007000 seconds user
+      27.644549000 seconds sys
+
+
+=== N=100, run 3/3, SERIAL kernel ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 43.9065s (individual: ['50.3052', '48.1040', '43.0643', '43.0080', '35.0508'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py --n-oscillators 100 --reps 5':
+
+        257,312.48 msec task-clock                                                            
+   729,762,380,383      cycles                                                                  (40.01%)
+ 1,295,427,474,015      instructions                                                            (50.02%)
+    29,102,924,858      cache-references                                                        (50.02%)
+    16,169,966,197      cache-misses                                                            (50.02%)
+   351,507,990,048      L1-dcache-loads                                                         (50.01%)
+    18,406,999,792      L1-dcache-load-misses                                                   (49.99%)
+     3,442,687,563      LLC-loads                                                               (39.98%)
+     1,938,136,354      LLC-load-misses                                                         (39.98%)
+   231,932,815,519      cycle_activity.stalls_total                                             (39.99%)
+   175,548,449,127      cycle_activity.stalls_mem_any                                           (40.00%)
+
+     259.155549670 seconds time elapsed
+
+     191.516544000 seconds user
+      62.776261000 seconds sys
+
+
+=== N=100, run 3/3, TBB kernel ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian [TBB-parallel label kernel]
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 41.0143s (individual: ['42.3095', '46.5437', '42.1529', '39.9878', '34.0776'])
+
+ Performance counter stats for 'python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose_tbb.py --n-oscillators 100 --reps 5':
+
+        248,065.22 msec task-clock                                                            
+   704,697,601,325      cycles                                                                  (40.00%)
+ 1,234,630,835,428      instructions                                                            (49.99%)
+    28,544,142,536      cache-references                                                        (49.98%)
+    16,127,120,328      cache-misses                                                            (49.98%)
+   337,479,805,356      L1-dcache-loads                                                         (49.97%)
+    17,597,497,352      L1-dcache-load-misses                                                   (49.99%)
+     3,377,439,724      LLC-loads                                                               (40.03%)
+     1,909,843,005      LLC-load-misses                                                         (40.04%)
+   225,470,235,800      cycle_activity.stalls_total                                             (40.03%)
+   172,187,573,979      cycle_activity.stalls_mem_any                                           (40.01%)
+
+     244.345905721 seconds time elapsed
+
+     193.761897000 seconds user
+      51.450299000 seconds sys
+
+
