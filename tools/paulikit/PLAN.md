@@ -1048,40 +1048,66 @@ open:**
    function - a third construction function to keep correct/tested
    alongside the existing one, more maintenance surface than a single
    parameter for no clear benefit here.
-3. **What does `pad_to_power_of_two` do with a sparse matrix?**
-   `scipy.sparse` matrices support resizing/reindexing without
-   densifying (e.g. `csr_matrix.resize`, or constructing a new sparse
-   matrix from the original's `.nonzero()`/`.data` arrays directly at
-   the padded coordinates) - needs a concrete implementation choice
-   and its own correctness verification (padding must not change
-   which entries are nonzero or their values, only the matrix's
-   shape), not just an assumption that "scipy makes this free."
-4. **What does `fwht_pauli_coefficients` require or accept?** Its
-   Step 1 (`p_nz, q_nz = np.nonzero(operator)`) already only reads
-   nonzero entries - the expensive part today is upstream, in how
-   `operator` got to be dense in the first place, not in Step 1's own
-   logic. If the input is already `scipy.sparse`, Step 1 becomes
-   `operator.nonzero()` (a sparse-native call, no densification), and
-   the `operator = np.asarray(operator, dtype=complex)` line
-   (currently line 239, the actual ~4 GiB N=150 allocation) needs to
-   either be skipped entirely for sparse input, or replaced with a
-   sparse-preserving dtype cast (`operator.astype(complex)`, which
-   scipy.sparse supports without densifying). This is likely the
-   smallest, most mechanical piece of the whole redesign - most of the
-   complexity is upstream in questions 1-3, not here.
-5. **Backward compatibility and test impact.** `tests/test_fwht.py`'s
-   two dense-contract tests
+3. **RESOLVED: reconstruct at the padded shape via COO coordinates,
+   not `csr_matrix.resize`.** Verified directly (2026-08-26): both
+   approaches avoid densifying and give identical results
+   (`sp.coo_matrix((coo.data, (coo.row, coo.col)), shape=padded_shape)`
+   vs. `matrix.resize(padded_shape)`), but `.resize()` **mutates its
+   input in place** (confirmed: resizing one reference changes what a
+   second reference to the same object sees) - a real behavioral
+   mismatch with the existing dense `pad_to_power_of_two`, which
+   returns a new array and never touches its input. The COO
+   reconstruction is naturally non-mutating (builds a new object) and
+   preserves that contract with no extra `.copy()` needed. Both scale
+   with `nnz`, not `dim**2` - confirmed on a synthetic sparse matrix
+   sized like N=150's padded operator.
+4. **RESOLVED, with a real compatibility gap found, not just a
+   mechanical change.** Step 1's `p_nz, q_nz = np.nonzero(operator)`
+   already works correctly and cheaply on `scipy.sparse` input with
+   zero changes - verified directly: `np.nonzero()` dispatches to
+   scipy's own sparse-native `.nonzero()`, confirmed via timing on a
+   synthetic N=150-sized sparse matrix (0.0004s vs. what would be a
+   4.3 GiB densify). Two lines do need real changes: (a) the
+   `operator = np.asarray(operator, dtype=complex)` cast (current line
+   239, the actual ~4 GiB N=150 allocation) must become
+   `operator.astype(complex)` for sparse input, which scipy supports
+   without densifying (verified directly) - this branch needs an
+   `if sparse:`/`isinstance` check, not a single line that works for
+   both; (b) **a genuine compatibility gap**: sparse fancy-indexing
+   (`operator[p_nz, q_nz]`, used to build `gathered_active` at what is
+   currently line 241) returns a `numpy.matrix` of shape `(1, nnz)`,
+   not a flat `ndarray` of shape `(nnz,)` like dense indexing does -
+   confirmed directly, this is not a hypothetical edge case. Assigning
+   that shape-mismatched result into `gathered_active[inverse, q_nz]
+   = ...` needs an explicit `np.asarray(...).ravel()` (verified this
+   produces the numerically correct result; without it, NumPy's
+   broadcasting silently "succeeds" but was not checked for
+   correctness beyond not raising - do not assume broadcasting alone
+   is safe here without this fix and its own test).
+5. **RESOLVED: neither existing test file needs changes, confirmed by
+   reading both directly (2026-08-26), not assumed.**
+   `tests/test_fwht.py`'s two dense-contract tests
    (`test_fwht_pauli_coefficients_handles_non_hermitian_matrices`,
    `test_fwht_pauli_coefficients_reconstructs_non_hermitian_matrix`)
-   construct small dense matrices directly (not via
-   `build_hamiltonian`) and must keep passing unmodified, matching
-   Phase 6's own precedent of never breaking the existing dense-input
-   contract. `tests/test_benchmark_reference.py`'s existing
-   `csr_matrix(padded)` conversion (built *after* `pad_to_power_of_two`
-   returns a dense array today) would need revisiting once padding
-   itself can produce sparse output directly - is that conversion step
-   still needed, or does it become redundant/incorrect once
-   `pad_to_power_of_two` can return sparse natively?
+   construct small dense matrices directly and call
+   `pad_to_power_of_two` with no `sparse` argument - the new
+   parameter's `False` default means these keep passing completely
+   unmodified, matching Phase 6's own precedent.
+   `tests/test_benchmark_reference.py`'s `_build_padded` helper
+   likewise calls `pad_to_power_of_two` with no `sparse` argument
+   (stays dense, unaffected), and separately builds
+   `padded_sparse = sp.csr_matrix(padded)` purely to feed PennyLane
+   its preferred sparse input format - this has nothing to do with
+   paulikit's own internal sparse-input question and was a false
+   pattern-match in the original framing of this question; it is not
+   "made redundant" by Phase 8 and needs no changes. **New tests are
+   still needed**, not yet written: correctness parity between
+   `sparse=True` and `sparse=False` for `build_hamiltonian`/
+   `pad_to_power_of_two`/`fwht_pauli_coefficients` (mirroring Phase
+   6's own bit-for-bit verification discipline), and a test for the
+   `ImportError` path when `sparse=True` is requested without `scipy`
+   installed (question 1) - these are implementation-time work, not
+   further design questions.
 
 **Explicitly out of scope for this phase's initial implementation:**
 exploiting sparsity *within* `fwht_pauli_coefficients`'s WHT step
@@ -1097,12 +1123,15 @@ scoped here) are different problems with different payoffs. This
 phase targets the measured N=150 ceiling (input densification, ~4
 GiB), not a further algorithmic redesign of the WHT step.
 
-**Suggested next step, not yet started:** resolve design questions 3-5
-(sparse padding implementation, `fwht_pauli_coefficients`'s input
-handling, backward-compat/test impact) - 1-2 are settled (see above),
-and the remaining three are largely mechanical once 1-2 are fixed,
-but still need concrete answers before implementation, same as Phase
-6's own design work was settled before implementation began.
+**Status: all 5 design questions resolved 2026-08-26 (see above).**
+Ready for implementation - not yet started. Implementation should
+follow Phase 6's own verification discipline: bit-for-bit correctness
+between `sparse=True`/`sparse=False` at every step (mirroring the
+`chunk_size`/`sparse` verification already done for
+`fwht_pauli_coefficients` in Phase 6), before any performance claim is
+trusted, and a real N=150 measurement attempt once implemented -
+that's the actual test of whether this closes `n150_oom_finding.md`,
+not just a design-level expectation.
 
 
 ## 6. Explicitly out of scope
