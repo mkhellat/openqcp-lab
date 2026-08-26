@@ -180,6 +180,25 @@ one before it. Don't read only the last one; the corrections
     construction, not the dense-array code where the misses actually
     live). Script: `run_tbb_comparison.sh`.
 
+12. **[`phase6_dense_vs_sparse_findings.md`](phase6_dense_vs_sparse_findings.md)** -
+    the actual A/B measurement Phase 6's fix needed before being
+    trusted: dense vs. sparse `fwht_pauli_coefficients`/
+    `fwht_pauli_terms`, same methodology, at N=25/50/100. Corrects the
+    causal story from findings 4/6: cache-miss ratio and stall
+    percentage are statistically indistinguishable between dense and
+    sparse at every N tested (sparse is not consistently better on
+    either metric), and wall-clock speedup stays small (0-4.5%)
+    through N=100. Densification's array size correlates with N, as
+    findings 4/6 showed, but removing it does not meaningfully change
+    cache-miss ratio at these N - both paths' working sets are already
+    far outside L3, and label/dict construction (per finding 2's
+    original cProfile breakdown, ~70% of wall time at N=100) dominates
+    either way. Phase 6's real, measured benefit through N=100 is
+    memory footprint and crash-avoidance (the N=150 OOM from finding
+    5), not cache locality or wall-clock time - a materially more
+    precise claim than "sparse fixes cache locality." Script:
+    `run_phase6_comparison.sh`.
+
 ## Current honest state (as of the last finding above)
 
 - **Confirmed root cause**: `fwht_pauli_coefficients` densifies a
