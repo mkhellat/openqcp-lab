@@ -345,7 +345,7 @@ nonzero entry, depending on N. This ruled out the initially expected
 with an O(k*dim) sparse-impulse identity, k = nonzeros/row =~4) since
 active-row count stays too close to `dim` for that trade to win; full
 exploration (8 attempted variants, several regressions) is recorded
-in `phase3b/README.md` and `phase3b/explore/`.
+in `profiling/phase3b/README.md` and `profiling/phase3b/explore/`.
 
 **Implemented fix** (`src/paulikit/algorithms/fwht.py`): avoid all
 O(dim^2) dense-array construction that the original implementation
@@ -365,7 +365,7 @@ existing test suite (25/25 passing, `tests/test_fwht.py` +
 `tests/test_fixtures.py`) and against fixture/PennyLane cross-checks
 at N=2/4/16/30 with no change to the public API or return contract.
 
-**Results** (full detail in `phase3b/README.md` Section 5):
+**Results** (full detail in `profiling/phase3b/README.md` Section 5):
 
 | N (oscillators) | `fwht_pauli_coefficients` (old dense) | (new) | speedup | `fwht_pauli_terms` end-to-end (old) | (new) | speedup |
 |---|---|---|---|---|---|---|
@@ -634,7 +634,7 @@ independent of TBB/compiler flags/threading:
 
 **Prior art - this was already anticipated, not a new idea.** Phase
 3b's own exploration work already prototyped this exact fix and
-explicitly deferred it. `phase3b/explore/08_v5_active_rows_only.py`'s
+explicitly deferred it. `profiling/phase3b/explore/08_v5_active_rows_only.py`'s
 docstring (2026-08-18, predating this investigation by a week):
 *"Returns a dense (dim,dim) array for API compat with the existing
 dense function (Phase 3b step: keep the output contract identical for
@@ -652,7 +652,7 @@ gets contiguous, vectorizable `np.nonzero`/fancy-indexing access. Any
 fix must be measured against both (a) the cache-locality metrics in
 `profiling/cache_locality/` and (b) Phase 3b's own sparsity-of-
 *computation* gains (2.0-3.1x on `fwht_pauli_coefficients`, see
-`phase3b/README.md`) - it is not acceptable to "fix" cache locality by
+`profiling/phase3b/README.md`) - it is not acceptable to "fix" cache locality by
 quietly re-introducing dense, O(dim²) work somewhere else in the
 pipeline, or by degrading Phase 3b's already-measured win.
 
@@ -667,7 +667,7 @@ dim)` array** (`fast.imag`, `coefficients[x, z]` for arbitrary `x,
 z`) - this is a real part of the function's tested public contract,
 not just an internal implementation detail, and changing it is a
 breaking API change, not a private refactor.
-`phase3b/explore/*.py` (6 files) call it only as a correctness
+`profiling/phase3b/explore/*.py` (6 files) call it only as a correctness
 reference (`ref = fwht_pauli_coefficients(padded)`) for comparing
 against exploratory sparse variants - these are historical artifacts
 (see `feedback_document_exploration_scripts` project convention) and

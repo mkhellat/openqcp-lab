@@ -88,7 +88,7 @@ def _popcount_array(values: NDArray[np.integer], n_bits: int) -> NDArray[np.inte
 
     Uses an 8-bit lookup table over successive byte slices rather than
     a bit-serial Python-level loop over ``n_bits`` (see
-    ``phase3b/README.md`` Section 3 - this constant-factor win is
+    ``profiling/phase3b/README.md`` Section 3 - this constant-factor win is
     unconditional, independent of any sparsity assumption, and was
     confirmed via profiling to be one of the dense implementation's
     non-negligible costs at N=50/100).
@@ -244,7 +244,7 @@ def fwht_pauli_coefficients(
     # scattering those (x, q) cells - rather than gathering the full
     # dense (dim, dim) array via fancy indexing - avoids O(dim**2) work
     # for the O(N)-nonzero Hamiltonians this package targets. See
-    # ``phase3b/README.md`` for the profiling/design work behind this
+    # ``profiling/phase3b/README.md`` for the profiling/design work behind this
     # (an operator-sparsity-independent all-dense fallback would still
     # be correct here, but measurably slower on sparse input and no
     # faster on dense input).

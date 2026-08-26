@@ -82,7 +82,7 @@ dominant source of the cache-miss rate measured in
 
 ## Why Phase 3b's "sparsity-aware" fix didn't catch this
 
-Phase 3b (see `phase3b/README.md`, `PLAN.md`) made
+Phase 3b (see `../phase3b/README.md`, `PLAN.md`) made
 `fwht_pauli_coefficients`'s *computation* sparsity-aware (skip
 computing WHT for empty rows) but did not change its *return type* -
 it still returns (and `fwht_pauli_terms` still consumes) a dense

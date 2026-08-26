@@ -266,7 +266,7 @@ above), closing most of the remaining gap. Term counts match exactly
 across all versions at every N — a correctness re-confirmation, not
 just a performance comparison. Full detail, including the design
 exploration behind Phase 3b's sparsity fix, is in `PLAN.md`'s Section
-5 (Phase 3b/3c write-ups) and `phase3b/README.md`.
+5 (Phase 3b/3c write-ups) and `profiling/phase3b/README.md`.
 
 This table does not yet include a Phase 6 column: Phase 6 (an
 optional sparse-output mode for `fwht_pauli_coefficients`, see
