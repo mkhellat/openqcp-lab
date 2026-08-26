@@ -1007,38 +1007,47 @@ modules, all of which currently have a `numpy.ndarray`-only contract.
 This is not internal-only refactoring; it changes what callers
 construct, pass around, and receive.
 
-**Design questions to resolve before implementation (not yet
-answered):**
+**Design questions - resolved 2026-08-26 (questions 1-2), 3-5 still
+open:**
 
-1. **Does `scipy.sparse` become a hard runtime dependency, or stay
-   optional?** `scipy` is currently only a `test`-extra dependency
-   (used by `tests/test_benchmark_reference.py` to build a
-   `csr_matrix` for the PennyLane comparison, not by any runtime
-   code path). Making `fwht_pauli_coefficients` genuinely accept
-   sparse input either (a) promotes `scipy` to a hard `dependencies =
-   [...]` entry in `pyproject.toml` (simplest, but adds a real
-   dependency to a package whose only current runtime dependency is
-   `numpy`), or (b) keeps it optional with a dense fallback path (more
-   code, two paths to test and maintain, echoes the native-extension
-   optional/fallback pattern already used for `pauli_label_native` -
-   see README's "Native extension" section and the fallback-model
-   concern already tracked as a "deferred" item there). Needs an
-   explicit decision, not an assumption either way.
-2. **What does `build_hamiltonian` return?** Options: (a) always
-   return `scipy.sparse.csr_matrix` (or similar) - a breaking change
-   for any caller expecting `numpy.ndarray` (`tests/test_fwht.py`,
-   `tests/test_benchmark_reference.py`, `profiling/`'s several driver
-   scripts, `cli.py`); (b) add a `sparse: bool` parameter mirroring
-   Phase 6's own `fwht_pauli_coefficients(..., sparse=...)` pattern -
-   consistent with this project's established "optional, reversible,
-   not a one-way breaking change" convention (see Phase 6's
-   API-shape decision, driven by the user's explicit preference); (c)
-   a new, separate function (e.g. `build_hamiltonian_sparse`) leaving
-   `build_hamiltonian` untouched - simplest migration path for
-   existing callers, but a third construction function to keep
-   correct and tested alongside the existing dense one. Given this
-   project's track record on (b) with Phase 6, (b) is the leading
-   candidate but not yet decided with the user.
+1. **RESOLVED: `scipy.sparse` stays optional, via a new `sparse`
+   install extra, not a hard dependency.** `pip install paulikit`
+   keeps today's behavior (dense-only, no `scipy` pulled in); `pip
+   install paulikit[sparse]` (a new `[project.optional-dependencies]`
+   entry in `pyproject.toml`, alongside the existing `test`/`dev`/
+   `docs` extras) installs `scipy` for callers who want
+   `sparse=True`. Mirrors the existing `_native` extension's
+   `try: import ... / except ImportError` pattern in `fwht.py` (lines
+   77-80): `paulikit.hamiltonian` gets its own `_HAVE_SCIPY` flag set
+   the same way. Unlike the native extension's silent-fallback-to-
+   pure-Python behavior, calling `sparse=True` without `scipy`
+   installed must raise a clear, actionable error (e.g.
+   `ImportError("scipy is required for sparse=True - install with "
+   "'pip install paulikit[sparse]'")`) rather than silently falling
+   back to dense - the caller explicitly asked for sparse and
+   silently ignoring that request would be a correctness surprise
+   Phase 6's own `sparse=True/False` precedent doesn't have (Phase
+   6's default is `sparse=False`, so nothing there is a request that
+   can go silently unfulfilled). The `sparse` extra itself, and the
+   `_HAVE_SCIPY`/error-message pattern, need to be documented in
+   README's Installation section alongside the existing `test`/`dev`/
+   `docs` extras, not left implicit.
+2. **RESOLVED: `sparse: bool` parameter, mirroring Phase 6's own
+   `fwht_pauli_coefficients(..., sparse=...)` pattern.**
+   `build_hamiltonian(..., sparse=False)` and
+   `pad_to_power_of_two(..., sparse=False)` - default unchanged
+   (`False`, current dense behavior), optional and reversible, no
+   breaking change for any existing caller (`tests/test_fwht.py`,
+   `tests/test_benchmark_reference.py`, `profiling/`'s driver scripts,
+   `cli.py` all keep working with zero changes). Consistent with this
+   project's established convention since Phase 6's own API-shape
+   decision (driven by the user's explicit preference for optional,
+   reversible deployment over one-way breaking changes). Rejected: (a)
+   always returning `scipy.sparse` - breaking, inconsistent with
+   Phase 6's precedent; (c) a separate `build_hamiltonian_sparse`
+   function - a third construction function to keep correct/tested
+   alongside the existing one, more maintenance surface than a single
+   parameter for no clear benefit here.
 3. **What does `pad_to_power_of_two` do with a sparse matrix?**
    `scipy.sparse` matrices support resizing/reindexing without
    densifying (e.g. `csr_matrix.resize`, or constructing a new sparse
@@ -1088,11 +1097,12 @@ scoped here) are different problems with different payoffs. This
 phase targets the measured N=150 ceiling (input densification, ~4
 GiB), not a further algorithmic redesign of the WHT step.
 
-**Suggested next step, not yet started:** resolve design questions
-1-2 with the user first (dependency model, `build_hamiltonian`'s
-return-shape contract) before writing any implementation - these two
-decisions shape everything else in this phase, same as Phase 6's own
-API-shape decision was settled before implementation began.
+**Suggested next step, not yet started:** resolve design questions 3-5
+(sparse padding implementation, `fwht_pauli_coefficients`'s input
+handling, backward-compat/test impact) - 1-2 are settled (see above),
+and the remaining three are largely mechanical once 1-2 are fixed,
+but still need concrete answers before implementation, same as Phase
+6's own design work was settled before implementation began.
 
 
 ## 6. Explicitly out of scope
