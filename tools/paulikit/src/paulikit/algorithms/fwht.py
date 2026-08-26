@@ -146,7 +146,8 @@ def _walsh_hadamard_transform_rows(
 
 def fwht_pauli_coefficients(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
-) -> NDArray[np.complexfloating]:
+    sparse: bool = False,
+) -> NDArray[np.complexfloating] | tuple[NDArray[np.intp], NDArray[np.complexfloating]]:
     """Decompose an operator into Pauli-string coefficients via FWHT.
 
     Works for **any** complex ``(2**n, 2**n)`` matrix, Hermitian or
@@ -159,14 +160,37 @@ def fwht_pauli_coefficients(
         operator: A ``(2**n, 2**n)`` matrix (real or complex).
             Dimension must be an exact power of two - pad with
             ``paulikit.hamiltonian.pad_to_power_of_two`` first if not.
+        sparse: If ``False`` (default), returns the full dense
+            ``(dim, dim)`` array described below - unchanged behavior,
+            kept as the default so existing callers are unaffected. If
+            ``True``, returns only the active (nonzero-row) data
+            without ever materializing the dense array - see Returns.
+            The dense array's O(dim**2) memory/re-scan cost dwarfs L3
+            cache well before it dwarfs the operator's own sparsity
+            (confirmed via hardware performance counters, see
+            ``profiling/cache_locality/``); ``sparse=True`` is the fix
+            for callers that only need the nonzero terms, such as
+            ``fwht_pauli_terms``. Both modes compute identically up to
+            the final step - this only changes what's returned, not
+            the sparsity-aware computation itself (preserved from
+            Phase 3b either way).
 
     Returns:
-        A complex ``numpy.ndarray`` of shape ``(2**n, 2**n)`` where
-        entry ``[x, z]`` is the coefficient of the Pauli string
-        ``P(x, z)`` (see module docstring for the x/z encoding). Most
-        entries will be exactly or near zero for structured/sparse
-        input; callers that want only the nonzero terms should filter
-        by magnitude (see ``fwht_pauli_terms``).
+        If ``sparse=False``: a complex ``numpy.ndarray`` of shape
+        ``(2**n, 2**n)`` where entry ``[x, z]`` is the coefficient of
+        the Pauli string ``P(x, z)`` (see module docstring for the
+        x/z encoding). Most entries will be exactly or near zero for
+        structured/sparse input; callers that want only the nonzero
+        terms should filter by magnitude (see ``fwht_pauli_terms``).
+
+        If ``sparse=True``: a tuple ``(active_x, active_coefficients)``
+        where ``active_x`` is a 1-D integer array of the ``x`` values
+        with at least one nonzero coefficient, and
+        ``active_coefficients`` is a complex array of shape
+        ``(len(active_x), dim)`` such that
+        ``active_coefficients[i, z]`` is the coefficient of
+        ``P(active_x[i], z)``. Rows for ``x`` not in ``active_x`` are
+        implicitly all-zero and are not represented at all.
 
     Raises:
         ValueError: If ``operator`` is not square or its dimension is
@@ -212,6 +236,9 @@ def fwht_pauli_coefficients(
     xz_and = active_x[:, np.newaxis] & z_indices
     phase = 1j ** _popcount_array(xz_and, n_qubits)
     active_coefficients = transformed_active * np.conj(phase) / dim
+
+    if sparse:
+        return active_x, active_coefficients
 
     coefficients = np.zeros((dim, dim), dtype=complex)
     coefficients[active_x] = active_coefficients
@@ -294,15 +321,20 @@ def fwht_pauli_terms(
     """
     dim = operator.shape[0]
     n_qubits = int(round(np.log2(dim)))
-    coefficients = fwht_pauli_coefficients(operator)
+    active_x, active_coefficients = fwht_pauli_coefficients(operator, sparse=True)
 
-    x_nonzero, z_nonzero = np.nonzero(np.abs(coefficients) > atol)
+    # Re-scan only the active rows fwht_pauli_coefficients already
+    # identified, never the full (dim, dim) array - see
+    # profiling/cache_locality/README.md for why the dense re-scan was
+    # a measured cache-locality/robustness problem (OOMs at N=150).
+    row_idx, z_nonzero = np.nonzero(np.abs(active_coefficients) > atol)
+    x_nonzero = active_x[row_idx]
+    coefficient_values = active_coefficients[row_idx, z_nonzero]
     labels = _pauli_label_batch(x_nonzero, z_nonzero, n_qubits)
 
     if assume_hermitian:
         real_terms: dict[str, float] = {}
-        for label, x, z in zip(labels, x_nonzero.tolist(), z_nonzero.tolist()):
-            c = coefficients[x, z]
+        for label, c in zip(labels, coefficient_values.tolist()):
             if abs(c.imag) > max(atol, 1e-6 * abs(c)):
                 raise ValueError(
                     f"term {label!r} has non-negligible "
@@ -313,8 +345,7 @@ def fwht_pauli_terms(
         return real_terms
 
     complex_terms: dict[str, complex] = {
-        label: complex(coefficients[x, z])
-        for label, x, z in zip(labels, x_nonzero.tolist(), z_nonzero.tolist())
+        label: complex(c) for label, c in zip(labels, coefficient_values.tolist())
     }
     return complex_terms
 

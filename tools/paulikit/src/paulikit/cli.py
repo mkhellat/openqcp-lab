@@ -33,7 +33,7 @@ import sys
 import time
 
 from paulikit import __version__
-from paulikit.algorithms.fwht import fwht_pauli_terms
+from paulikit.algorithms.fwht import fwht_pauli_coefficients, fwht_pauli_terms
 from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
 
 
@@ -63,12 +63,32 @@ def cmd_decompose(args):
     unpadded = build_hamiltonian(n, spring_constants, masses)
     padded, n_qubits = pad_to_power_of_two(unpadded)
 
+    print(f"N={n} oscillators, {n_qubits} qubits, {padded.shape[0]}x{padded.shape[0]} "
+          f"padded Hamiltonian")
+
+    if args.sparse_output:
+        # Exercises fwht_pauli_coefficients(sparse=True) directly -
+        # the raw (active_x, active_coefficients) form fwht_pauli_terms
+        # itself now always uses internally (see PLAN.md Phase 6). This
+        # flag is for inspecting/timing that raw output shape, not a
+        # switch on fwht_pauli_terms's own algorithm.
+        start = time.perf_counter()
+        active_x, active_coefficients = fwht_pauli_coefficients(padded, sparse=True)
+        elapsed = time.perf_counter() - start
+
+        print(f"Decomposition time (sparse output): {elapsed:.4f}s")
+        print(f"Active rows: {len(active_x)} of {padded.shape[0]} possible")
+
+        if args.show_terms:
+            terms = fwht_pauli_terms(padded, atol=args.atol)
+            for label in sorted(terms):
+                print(f"  {label}: {terms[label]!r}")
+        return 0
+
     start = time.perf_counter()
     terms = fwht_pauli_terms(padded, atol=args.atol)
     elapsed = time.perf_counter() - start
 
-    print(f"N={n} oscillators, {n_qubits} qubits, {padded.shape[0]}x{padded.shape[0]} "
-          f"padded Hamiltonian")
     print(f"Decomposition time: {elapsed:.4f}s")
     print(f"Nonzero Pauli terms: {len(terms)}")
 
@@ -81,6 +101,29 @@ def cmd_decompose(args):
 
 def cmd_benchmark(args):
     """Time the FWHT decomposition across a sweep of N (oscillator count) values."""
+    if args.compare_dense_sparse:
+        print(f"{'N':>5} {'qubits':>7} {'dim':>6} {'active':>8} "
+              f"{'dense (s)':>10} {'sparse (s)':>11}")
+        for n in args.n_oscillators:
+            spring_constants = _default_spring_constants(n)
+            masses = _default_masses(n)
+            unpadded = build_hamiltonian(n, spring_constants, masses)
+            padded, n_qubits = pad_to_power_of_two(unpadded)
+
+            start = time.perf_counter()
+            dense_coefficients = fwht_pauli_coefficients(padded, sparse=False)
+            dense_elapsed = time.perf_counter() - start
+
+            start = time.perf_counter()
+            active_x, _ = fwht_pauli_coefficients(padded, sparse=True)
+            sparse_elapsed = time.perf_counter() - start
+
+            print(f"{n:>5} {n_qubits:>7} {padded.shape[0]:>6} {len(active_x):>8} "
+                  f"{dense_elapsed:>10.4f} {sparse_elapsed:>11.4f}")
+            del dense_coefficients
+
+        return 0
+
     print(f"{'N':>5} {'qubits':>7} {'dim':>6} {'terms':>8} {'time (s)':>10}")
     for n in args.n_oscillators:
         spring_constants = _default_spring_constants(n)
@@ -160,6 +203,15 @@ def build_parser():
         help="Print every nonzero Pauli term and its coefficient "
              "(omitted by default since term counts grow quickly with N)",
     )
+    decompose_parser.add_argument(
+        "--sparse-output", action="store_true",
+        help="Call fwht_pauli_coefficients(sparse=True) directly and "
+             "report its timing/active-row count, instead of the usual "
+             "label->coefficient dict via fwht_pauli_terms (which "
+             "already uses the sparse path internally either way - "
+             "this flag is for inspecting the raw sparse output shape "
+             "itself, see PLAN.md Phase 6)",
+    )
     decompose_parser.set_defaults(func=cmd_decompose)
 
     benchmark_parser = subparsers.add_parser(
@@ -180,6 +232,16 @@ def build_parser():
         "--atol", type=float, default=1e-10,
         help="Absolute coefficient threshold below which a term is "
              "dropped as zero (default: 1e-10)",
+    )
+    benchmark_parser.add_argument(
+        "--compare-dense-sparse", action="store_true",
+        help="Instead of the usual fwht_pauli_terms timing table, time "
+             "fwht_pauli_coefficients's dense (sparse=False) and sparse "
+             "(sparse=True) output modes directly, side by side, at "
+             "each N - a quick command-line way to reproduce the Phase "
+             "6 dense-vs-sparse comparison "
+             "(profiling/cache_locality/ has the full perf-counter-based "
+             "methodology; this is wall-clock timing only)",
     )
     benchmark_parser.set_defaults(func=cmd_benchmark)
 
