@@ -1,16 +1,20 @@
 # Pauli Decomposition Performance Engineering — Plan
 
-Status: Phases 0-3c complete. Phase 4 (final write-up), Phase 5
-(prebuilt wheels + hard-require the native extension), Phase 6
-(sparse output for `fwht_pauli_coefficients` - fixes a real cache-
-locality/robustness bug found via profiling, see
-`profiling/cache_locality/README.md`), and Phase 7 (remaining items
-from the 2026-08-25 Gemini-transcript review: TBB false sharing/
-partitioner tuning - conditional on TBB re-entering the hot path,
-statistical rigor for perf measurements, PyPI publishing strategy)
-are all scoped but not started. Phase 5 scoped 2026-08-19; Phase 6
-and Phase 7 scoped 2026-08-25.
-Last updated: 2026-08-25.
+Status: Phases 0-3c complete. Phase 6 (sparse output for
+`fwht_pauli_coefficients`, plus two follow-on memory-footprint fixes
+and an optional `chunk_size` tiling parameter - see Phase 6's
+"Update 2026-08-26" below) is implemented and correctness-verified;
+N=150 is not yet unblocked - the dominant remaining cost there is
+`paulikit.hamiltonian`'s dense (rather than sparse) Hamiltonian
+storage, scoped as separate follow-up work, not yet started. Phase 4
+(final write-up), Phase 5 (prebuilt wheels + hard-require the native
+extension), and Phase 7 (remaining items from the 2026-08-25
+Gemini-transcript review: TBB false sharing/partitioner tuning -
+conditional on TBB re-entering the hot path, statistical rigor for
+perf measurements, PyPI publishing strategy) are all scoped but not
+started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7 scoped
+2026-08-25.
+Last updated: 2026-08-26.
 
 
 ## 1. Problem statement
@@ -814,6 +818,83 @@ for the two existing dense-contract tests and any caller not yet
 migrated. Not yet designed in detail - the concrete parameter
 name/shape and default value are open, to be settled at
 implementation time, not assumed here.
+
+**Update 2026-08-26: `sparse` implemented and shipped; N=150 dug into
+further, two more real fixes made, and the actual remaining ceiling
+identified.**
+
+`fwht_pauli_coefficients(operator, sparse=False)` and
+`fwht_pauli_terms` are implemented as designed above (commit history
+has the details); all pre-existing tests pass unmodified, and
+bit-for-bit correctness against the old dense path was re-verified
+after every change described below, down to `chunk_size=1`.
+
+Attempting the actual N=150 measurement this fix was meant to unblock
+surfaced that the dense-output scatter wasn't the only large
+allocation in the hot path:
+
+1. `_walsh_hadamard_transform_rows` unconditionally copied its input
+   array before transforming (`transformed = array.copy()`), and its
+   per-stage butterfly loop copied both halves (`left`, `right`)
+   before combining them. Neither copy was needed by
+   `fwht_pauli_coefficients`'s only caller of this function, since it
+   never reads `gathered_active` again afterward. Fixed via a new
+   `overwrite_input` flag (default `False`, safe for any other
+   caller) and view-based (rather than copy-based) `left`/`right`
+   handling. Removed roughly 5.5 GiB of transient allocation at
+   N=150.
+2. Even with (1), one `(n_active, dim)` array was still live in memory
+   at once - fine at N≤100, tight at N=150. Following the MIT 6.172
+   lecture 1 tiling technique (loop-order/tiling slides, as suggested
+   by the user, applied here for memory-footprint reduction rather
+   than cache reuse - each row transforms independently with no
+   cross-row reduction to preserve), added an optional `chunk_size`
+   parameter to both `fwht_pauli_coefficients` and `fwht_pauli_terms`:
+   active rows are processed in bounded row-blocks, bounding peak
+   memory to roughly `chunk_size * dim` complex entries instead of
+   `n_active * dim`. Exposed via `--chunk-size` on the `decompose` and
+   `benchmark` CLI subcommands. Verified bit-for-bit identical to the
+   unchunked path at multiple chunk sizes including the degenerate
+   `chunk_size=1`.
+
+**The actual N=150 ceiling, found while testing (1) and (2) together:**
+none of the above was the dominant cost. The coupled-oscillator
+Hamiltonian (`paulikit.hamiltonian.build_hamiltonian`) is built and
+stored as a dense `numpy.ndarray` despite being extremely sparse in
+practice - at N=150 it is `11475x11475` with only 45,000 nonzero
+entries (0.034% density), yet costs 1.05 GiB dense. Padded to
+`16384x16384` and upcast to `complex128` inside
+`fwht_pauli_coefficients` (`operator = np.asarray(operator,
+dtype=complex)`), this becomes a ~4 GiB allocation that happens
+*before* any of the Pauli-decomposition algorithm runs - dwarfing
+everything fixed in this update and making chunking's benefit moot at
+N=150 until this is addressed.
+
+**Not yet done, scoped as follow-up work (not started):**
+
+- **Sparse-Hamiltonian redesign.** `build_hamiltonian`/
+  `pad_to_power_of_two` would need to produce (or
+  `fwht_pauli_coefficients` would need to directly accept) a
+  `scipy.sparse` matrix, so the operator never gets densified in the
+  first place. This is a real architectural change - it touches the
+  public shape of `paulikit.hamiltonian`'s API and
+  `fwht_pauli_coefficients`'s input contract, not just an internal
+  optimization - and needs its own scoping/design pass before
+  implementation, not a quick patch. This is the actual fix for the
+  N=150 OOM; everything landed in this update is real and worth
+  keeping, but insufficient on its own to unblock N=150.
+- **Auto-tuned `chunk_size`.** Currently a manual, undocumented-default
+  knob (`None` = no chunking). Picking a good automatic default (e.g.
+  targeting a fixed memory budget per chunk) is deliberately deferred
+  until the sparse-Hamiltonian redesign above removes the 4 GiB
+  operator-densification wall - tuning `chunk_size` against today's
+  pipeline would be tuning around a bottleneck that's about to be
+  removed, producing a heuristic calibrated against the wrong
+  problem.
+- N=150 dense-vs-sparse cache-locality write-up (N=25/50/100 findings
+  already measured, not yet written up as a formal findings doc - see
+  the "Follow-up items" list below, unchanged from before this
+  update).
 
 
 ### Phase 7 — Items from the 2026-08-25 Gemini-transcript review (scoped 2026-08-25, not started)

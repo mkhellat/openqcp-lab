@@ -73,20 +73,24 @@ def cmd_decompose(args):
         # flag is for inspecting/timing that raw output shape, not a
         # switch on fwht_pauli_terms's own algorithm.
         start = time.perf_counter()
-        active_x, active_coefficients = fwht_pauli_coefficients(padded, sparse=True)
+        active_x, active_coefficients = fwht_pauli_coefficients(
+            padded, sparse=True, chunk_size=args.chunk_size
+        )
         elapsed = time.perf_counter() - start
 
         print(f"Decomposition time (sparse output): {elapsed:.4f}s")
         print(f"Active rows: {len(active_x)} of {padded.shape[0]} possible")
 
         if args.show_terms:
-            terms = fwht_pauli_terms(padded, atol=args.atol)
+            terms = fwht_pauli_terms(
+                padded, atol=args.atol, chunk_size=args.chunk_size
+            )
             for label in sorted(terms):
                 print(f"  {label}: {terms[label]!r}")
         return 0
 
     start = time.perf_counter()
-    terms = fwht_pauli_terms(padded, atol=args.atol)
+    terms = fwht_pauli_terms(padded, atol=args.atol, chunk_size=args.chunk_size)
     elapsed = time.perf_counter() - start
 
     print(f"Decomposition time: {elapsed:.4f}s")
@@ -132,7 +136,7 @@ def cmd_benchmark(args):
         padded, n_qubits = pad_to_power_of_two(unpadded)
 
         start = time.perf_counter()
-        terms = fwht_pauli_terms(padded, atol=args.atol)
+        terms = fwht_pauli_terms(padded, atol=args.atol, chunk_size=args.chunk_size)
         elapsed = time.perf_counter() - start
 
         print(f"{n:>5} {n_qubits:>7} {padded.shape[0]:>6} {len(terms):>8} {elapsed:>10.4f}")
@@ -212,6 +216,16 @@ def build_parser():
              "this flag is for inspecting the raw sparse output shape "
              "itself, see PLAN.md Phase 6)",
     )
+    decompose_parser.add_argument(
+        "--chunk-size", type=int, default=None,
+        help="Process active rows in blocks of at most this size instead "
+             "of one (n_active, dim) array all at once, bounding peak "
+             "memory to roughly chunk_size * dim complex entries - needed "
+             "at large N where the whole-array approach exhausts memory "
+             "(default: None, i.e. no chunking; see PLAN.md Phase 6 "
+             "follow-up on N=150). Not yet auto-tuned - pick a value, or "
+             "omit this flag if N is small enough not to need it.",
+    )
     decompose_parser.set_defaults(func=cmd_decompose)
 
     benchmark_parser = subparsers.add_parser(
@@ -242,6 +256,13 @@ def build_parser():
              "6 dense-vs-sparse comparison "
              "(profiling/cache_locality/ has the full perf-counter-based "
              "methodology; this is wall-clock timing only)",
+    )
+    benchmark_parser.add_argument(
+        "--chunk-size", type=int, default=None,
+        help="Passed through to fwht_pauli_terms - see decompose "
+             "--chunk-size's help. Ignored when --compare-dense-sparse is "
+             "set (that path calls fwht_pauli_coefficients directly "
+             "without chunking).",
     )
     benchmark_parser.set_defaults(func=cmd_benchmark)
 

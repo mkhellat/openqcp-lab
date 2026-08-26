@@ -277,6 +277,38 @@ these already-fast N=50/100 cases - so it's measured and reported
 separately once that comparison sweep completes, rather than folded
 into this table's per-phase story.
 
+Two further memory-footprint fixes landed after Phase 6, still aimed
+at the N=150 OOM rather than at wall-clock time on smaller N:
+
+- `_walsh_hadamard_transform_rows` no longer force-copies its input; a
+  new `overwrite_input` flag lets `fwht_pauli_coefficients` (which owns
+  its gathered array exclusively) transform in place, and the
+  per-stage butterfly loop no longer pre-copies both halves before
+  combining them. Together these removed roughly 5.5 GiB of transient
+  allocation at N=150.
+- `fwht_pauli_coefficients` and `fwht_pauli_terms` gained an optional
+  `chunk_size` parameter: active rows are processed in bounded blocks
+  instead of one `(n_active, dim)` array all at once, bounding peak
+  memory to roughly `chunk_size * dim` complex entries. This is the
+  tiling technique from MIT 6.172 ("Performance Engineering of
+  Software Systems") lecture 1, applied here to shrink working-set
+  size rather than to improve cache reuse specifically, since each row
+  transforms independently. `--chunk-size` is exposed on both the
+  `decompose` and `benchmark` CLI subcommands. It is a manual knob for
+  now, not auto-tuned - see the open item below.
+
+Investigating N=150 with chunking surfaced a much larger, separate
+bottleneck that neither fix touches: the coupled-oscillator
+Hamiltonian is built and stored as a **dense** `numpy.ndarray` even
+though it is extremely sparse in practice (at N=150, only 0.034% of
+entries are nonzero), and `fwht_pauli_coefficients` upcasts that dense
+array to `complex128` before doing anything else - roughly 4 GiB at
+N=150, dwarfing every fix described above. Actually fixing N=150
+requires the Hamiltonian to stay sparse (e.g. `scipy.sparse`) from
+construction through to `fwht_pauli_coefficients`'s input - a real
+architectural change, scoped separately (see `PLAN.md`'s Phase 6
+follow-ups), not attempted in this round.
+
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the
 native kernel becomes a hard requirement are the next optimization
