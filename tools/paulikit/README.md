@@ -306,8 +306,9 @@ array to `complex128` before doing anything else - roughly 4 GiB at
 N=150, dwarfing every fix described above. Actually fixing N=150
 requires the Hamiltonian to stay sparse (e.g. `scipy.sparse`) from
 construction through to `fwht_pauli_coefficients`'s input - a real
-architectural change, scoped separately (see `PLAN.md`'s Phase 6
-follow-ups), not attempted in this round.
+architectural change, scoped separately as `PLAN.md` Phase 8 (design
+questions written up, not yet answered or implemented), not attempted
+in this round.
 
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the

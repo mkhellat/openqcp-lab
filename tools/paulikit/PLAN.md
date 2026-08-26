@@ -6,14 +6,15 @@ and an optional `chunk_size` tiling parameter - see Phase 6's
 "Update 2026-08-26" below) is implemented and correctness-verified;
 N=150 is not yet unblocked - the dominant remaining cost there is
 `paulikit.hamiltonian`'s dense (rather than sparse) Hamiltonian
-storage, scoped as separate follow-up work, not yet started. Phase 4
-(final write-up), Phase 5 (prebuilt wheels + hard-require the native
-extension), and Phase 7 (remaining items from the 2026-08-25
-Gemini-transcript review: TBB false sharing/partitioner tuning -
-conditional on TBB re-entering the hot path, statistical rigor for
-perf measurements, PyPI publishing strategy) are all scoped but not
-started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7 scoped
-2026-08-25.
+storage, now scoped as Phase 8 (design questions written up, not yet
+answered with the user or implemented). Phase 4 (final write-up),
+Phase 5 (prebuilt wheels + hard-require the native extension), and
+Phase 7 (remaining items from the 2026-08-25 Gemini-transcript
+review: TBB false sharing/partitioner tuning - conditional on TBB
+re-entering the hot path, statistical rigor for perf measurements,
+PyPI publishing strategy) are all scoped but not started. Phase 5
+scoped 2026-08-19; Phase 6 and Phase 7 scoped 2026-08-25; Phase 8
+scoped 2026-08-26.
 Last updated: 2026-08-26.
 
 
@@ -974,6 +975,124 @@ preference, items can be tackled strictly in order or interleaved as
 each session's context allows - same approach as folding the TBB
 evaluation into Phase 6 rather than treating phases as rigidly
 sequential.
+
+
+### Phase 8 — Sparse-Hamiltonian construction and input (scoped 2026-08-26, not started)
+
+**Motivation.** Phase 6's two follow-on memory-footprint fixes
+(overwrite-in-place WHT, `chunk_size` row-tiling - see Phase 6's
+"Update 2026-08-26") surfaced the actual N=150 memory ceiling, and it
+is upstream of everything Phase 6 or its follow-ons touch:
+`paulikit.hamiltonian.build_hamiltonian` constructs and returns a
+dense `numpy.ndarray`, even though the coupled-oscillator Hamiltonian
+is extremely sparse in practice - at N=150, `11475x11475` with only
+45,000 nonzero entries (0.034% density), yet costs 1.05 GiB dense.
+`pad_to_power_of_two` preserves that density (padding a dense array
+with more dense zeros), and `fwht_pauli_coefficients` then upcasts the
+padded `16384x16384` array to `complex128`
+(`operator = np.asarray(operator, dtype=complex)`) - a ~4 GiB
+allocation that happens before any Pauli-decomposition algorithm code
+runs, dwarfing every fix made in Phase 6 and its follow-ons. Chunking
+`fwht_pauli_coefficients`'s internal computation (Phase 6's
+`chunk_size`) cannot help with this, because the bottleneck is the
+*input* to that function, not anything inside it.
+
+**Why this is a real architectural change, not a quick patch.** Unlike
+Phase 6 (which changed only `fwht_pauli_coefficients`'s internals and
+added an optional return-shape/knob), fixing this means the operator
+must stay sparse from construction (`build_hamiltonian`) through
+padding (`pad_to_power_of_two`) to the point where
+`fwht_pauli_coefficients` reads it - three public functions across two
+modules, all of which currently have a `numpy.ndarray`-only contract.
+This is not internal-only refactoring; it changes what callers
+construct, pass around, and receive.
+
+**Design questions to resolve before implementation (not yet
+answered):**
+
+1. **Does `scipy.sparse` become a hard runtime dependency, or stay
+   optional?** `scipy` is currently only a `test`-extra dependency
+   (used by `tests/test_benchmark_reference.py` to build a
+   `csr_matrix` for the PennyLane comparison, not by any runtime
+   code path). Making `fwht_pauli_coefficients` genuinely accept
+   sparse input either (a) promotes `scipy` to a hard `dependencies =
+   [...]` entry in `pyproject.toml` (simplest, but adds a real
+   dependency to a package whose only current runtime dependency is
+   `numpy`), or (b) keeps it optional with a dense fallback path (more
+   code, two paths to test and maintain, echoes the native-extension
+   optional/fallback pattern already used for `pauli_label_native` -
+   see README's "Native extension" section and the fallback-model
+   concern already tracked as a "deferred" item there). Needs an
+   explicit decision, not an assumption either way.
+2. **What does `build_hamiltonian` return?** Options: (a) always
+   return `scipy.sparse.csr_matrix` (or similar) - a breaking change
+   for any caller expecting `numpy.ndarray` (`tests/test_fwht.py`,
+   `tests/test_benchmark_reference.py`, `profiling/`'s several driver
+   scripts, `cli.py`); (b) add a `sparse: bool` parameter mirroring
+   Phase 6's own `fwht_pauli_coefficients(..., sparse=...)` pattern -
+   consistent with this project's established "optional, reversible,
+   not a one-way breaking change" convention (see Phase 6's
+   API-shape decision, driven by the user's explicit preference); (c)
+   a new, separate function (e.g. `build_hamiltonian_sparse`) leaving
+   `build_hamiltonian` untouched - simplest migration path for
+   existing callers, but a third construction function to keep
+   correct and tested alongside the existing dense one. Given this
+   project's track record on (b) with Phase 6, (b) is the leading
+   candidate but not yet decided with the user.
+3. **What does `pad_to_power_of_two` do with a sparse matrix?**
+   `scipy.sparse` matrices support resizing/reindexing without
+   densifying (e.g. `csr_matrix.resize`, or constructing a new sparse
+   matrix from the original's `.nonzero()`/`.data` arrays directly at
+   the padded coordinates) - needs a concrete implementation choice
+   and its own correctness verification (padding must not change
+   which entries are nonzero or their values, only the matrix's
+   shape), not just an assumption that "scipy makes this free."
+4. **What does `fwht_pauli_coefficients` require or accept?** Its
+   Step 1 (`p_nz, q_nz = np.nonzero(operator)`) already only reads
+   nonzero entries - the expensive part today is upstream, in how
+   `operator` got to be dense in the first place, not in Step 1's own
+   logic. If the input is already `scipy.sparse`, Step 1 becomes
+   `operator.nonzero()` (a sparse-native call, no densification), and
+   the `operator = np.asarray(operator, dtype=complex)` line
+   (currently line 239, the actual ~4 GiB N=150 allocation) needs to
+   either be skipped entirely for sparse input, or replaced with a
+   sparse-preserving dtype cast (`operator.astype(complex)`, which
+   scipy.sparse supports without densifying). This is likely the
+   smallest, most mechanical piece of the whole redesign - most of the
+   complexity is upstream in questions 1-3, not here.
+5. **Backward compatibility and test impact.** `tests/test_fwht.py`'s
+   two dense-contract tests
+   (`test_fwht_pauli_coefficients_handles_non_hermitian_matrices`,
+   `test_fwht_pauli_coefficients_reconstructs_non_hermitian_matrix`)
+   construct small dense matrices directly (not via
+   `build_hamiltonian`) and must keep passing unmodified, matching
+   Phase 6's own precedent of never breaking the existing dense-input
+   contract. `tests/test_benchmark_reference.py`'s existing
+   `csr_matrix(padded)` conversion (built *after* `pad_to_power_of_two`
+   returns a dense array today) would need revisiting once padding
+   itself can produce sparse output directly - is that conversion step
+   still needed, or does it become redundant/incorrect once
+   `pad_to_power_of_two` can return sparse natively?
+
+**Explicitly out of scope for this phase's initial implementation:**
+exploiting sparsity *within* `fwht_pauli_coefficients`'s WHT step
+itself (i.e. a sparse-matrix-aware Walsh-Hadamard Transform algorithm,
+rather than a dense butterfly applied to a small number of gathered
+rows) - Phase 3b already found the *active-row* count (not the raw
+nonzero-entry count) is the real constraint on how sparse the WHT
+step's own computation can be (see `profiling/phase3b/README.md`
+Section 1: 47-86% of rows are active even for genuinely sparse
+Hamiltonians), so a sparse-*input* fix (this phase) and a
+sparse-*algorithm* fix (a separate, larger research question, not
+scoped here) are different problems with different payoffs. This
+phase targets the measured N=150 ceiling (input densification, ~4
+GiB), not a further algorithmic redesign of the WHT step.
+
+**Suggested next step, not yet started:** resolve design questions
+1-2 with the user first (dependency model, `build_hamiltonian`'s
+return-shape contract) before writing any implementation - these two
+decisions shape everything else in this phase, same as Phase 6's own
+API-shape decision was settled before implementation began.
 
 
 ## 6. Explicitly out of scope
