@@ -110,6 +110,7 @@ def _popcount_array(values: NDArray[np.integer], n_bits: int) -> NDArray[np.inte
 
 def _walsh_hadamard_transform_rows(
     array: NDArray[np.complexfloating],
+    overwrite_input: bool = False,
 ) -> NDArray[np.complexfloating]:
     """Apply the unnormalized Walsh-Hadamard Transform along axis 1.
 
@@ -123,22 +124,35 @@ def _walsh_hadamard_transform_rows(
         array: A 2D complex array of shape ``(rows, dim)`` where
             ``dim`` is a power of two. Each row is transformed
             independently.
+        overwrite_input: If ``False`` (default), ``array`` is copied
+            first so the caller's array is left untouched - safe for
+            any caller. If ``True``, the transform is applied directly
+            to ``array`` (still returned, for API symmetry with the
+            ``False`` case) without an extra full-size copy; only pass
+            ``True`` when the caller no longer needs ``array`` in its
+            original form after this call (e.g. it was gathered solely
+            to be transformed) - at N=150 this copy alone is ~2.73GiB,
+            found to be the dominant memory bottleneck for large N,
+            upstream of and separate from the dense-output cost
+            ``fwht_pauli_coefficients(..., sparse=True)`` avoids.
 
     Returns:
-        A new array of the same shape with the transform applied to
-        each row.
+        An array of the same shape with the transform applied to each
+        row - a new array if ``overwrite_input=False``, otherwise
+        ``array`` itself (mutated in place).
     """
-    transformed = array.copy()
+    transformed = array if overwrite_input else array.copy()
     dim = array.shape[1]
     span = 1
     while span < dim:
         transformed = transformed.reshape(
             transformed.shape[0], dim // (2 * span), 2, span
         )
-        left = transformed[:, :, 0, :].copy()
-        right = transformed[:, :, 1, :].copy()
-        transformed[:, :, 0, :] = left + right
-        transformed[:, :, 1, :] = left - right
+        left = transformed[:, :, 0, :]
+        right = transformed[:, :, 1, :]
+        left, right = left + right, left - right
+        transformed[:, :, 0, :] = left
+        transformed[:, :, 1, :] = right
         transformed = transformed.reshape(transformed.shape[0], dim)
         span *= 2
     return transformed
@@ -147,6 +161,7 @@ def _walsh_hadamard_transform_rows(
 def fwht_pauli_coefficients(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     sparse: bool = False,
+    chunk_size: int | None = None,
 ) -> NDArray[np.complexfloating] | tuple[NDArray[np.intp], NDArray[np.complexfloating]]:
     """Decompose an operator into Pauli-string coefficients via FWHT.
 
@@ -174,6 +189,21 @@ def fwht_pauli_coefficients(
             the final step - this only changes what's returned, not
             the sparsity-aware computation itself (preserved from
             Phase 3b either way).
+        chunk_size: Only used when ``sparse=True``. If ``None``
+            (default), all active rows are gathered and transformed at
+            once (one ``(n_active, dim)`` array live in memory - fine
+            for moderate N). If set to a positive integer, active rows
+            are processed in blocks of at most ``chunk_size`` rows, so
+            peak memory scales with ``chunk_size * dim`` rather than
+            ``n_active * dim`` - the tiling technique from MIT 6.172
+            lecture 1 (block the computation to bound working-set
+            size), applied here for memory-footprint reduction rather
+            than cache reuse, since each row transforms independently
+            (see ``_walsh_hadamard_transform_rows``) with no cross-row
+            reduction to preserve. Trades some Python-loop overhead
+            for the ability to complete at N where the whole-array
+            approach runs out of memory (see
+            ``profiling/cache_locality/`` Phase 6 N=150 findings).
 
     Returns:
         If ``sparse=False``: a complex ``numpy.ndarray`` of shape
@@ -223,16 +253,61 @@ def fwht_pauli_coefficients(
     active_x, inverse = np.unique(x_nz, return_inverse=True)
     n_active = len(active_x)
 
+    z_indices = np.arange(dim)[np.newaxis, :]
+
+    if sparse and chunk_size is not None:
+        if chunk_size < 1:
+            raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
+        # Tiled variant: process active_x in row-blocks of at most
+        # chunk_size, so at most one (chunk_size, dim) array is live
+        # at a time instead of one (n_active, dim) array - see the
+        # chunk_size docstring entry above. inverse is sorted first so
+        # each chunk's nonzero entries (p_nz[lo:hi], q_nz[lo:hi]) are
+        # a contiguous slice, found via searchsorted on chunk
+        # boundaries - avoiding an O(nnz) boolean mask per chunk.
+        order = np.argsort(inverse, kind="stable")
+        sorted_inverse = inverse[order]
+        sorted_p_nz = p_nz[order]
+        sorted_q_nz = q_nz[order]
+
+        active_coefficients = np.empty((n_active, dim), dtype=complex)
+        for chunk_start in range(0, n_active, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, n_active)
+            lo = int(np.searchsorted(sorted_inverse, chunk_start))
+            hi = int(np.searchsorted(sorted_inverse, chunk_end))
+
+            gathered_chunk = np.zeros((chunk_end - chunk_start, dim), dtype=complex)
+            gathered_chunk[
+                sorted_inverse[lo:hi] - chunk_start, sorted_q_nz[lo:hi]
+            ] = operator[sorted_p_nz[lo:hi], sorted_q_nz[lo:hi]]
+
+            transformed_chunk = _walsh_hadamard_transform_rows(
+                gathered_chunk, overwrite_input=True
+            )
+
+            chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
+            phase = 1j ** _popcount_array(chunk_x & z_indices, n_qubits)
+            active_coefficients[chunk_start:chunk_end] = (
+                transformed_chunk * np.conj(phase) / dim
+            )
+
+        return active_x, active_coefficients
+
     gathered_active = np.zeros((n_active, dim), dtype=complex)
     gathered_active[inverse, q_nz] = operator[p_nz, q_nz]
 
     # Step 2: Walsh-Hadamard Transform of each active row (each fixed
     # x with at least one nonzero gathered entry). Rows with no
     # nonzero entries transform to all-zero and are skipped entirely.
-    transformed_active = _walsh_hadamard_transform_rows(gathered_active)
+    # overwrite_input=True: gathered_active is never read again after
+    # this call, so transforming it in place avoids a second full-size
+    # copy (~2.73GiB at N=150) that was otherwise the dominant memory
+    # cost in this function - see _walsh_hadamard_transform_rows.
+    transformed_active = _walsh_hadamard_transform_rows(
+        gathered_active, overwrite_input=True
+    )
 
     # Step 3: phase-factor multiplication, computed only for active x.
-    z_indices = np.arange(dim)[np.newaxis, :]
     xz_and = active_x[:, np.newaxis] & z_indices
     phase = 1j ** _popcount_array(xz_and, n_qubits)
     active_coefficients = transformed_active * np.conj(phase) / dim
@@ -276,6 +351,7 @@ def fwht_pauli_terms(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     atol: float = 1e-10,
     assume_hermitian: bool = True,
+    chunk_size: int | None = None,
 ) -> dict[str, complex] | dict[str, float]:
     """Decompose an operator into a label -> coefficient dict.
 
@@ -309,6 +385,11 @@ def fwht_pauli_terms(
             Hermitian and non-Hermitian input, since a Hermitian
             operator's Pauli coefficients are real to begin with (the
             imaginary parts are then just zero, not dropped).
+        chunk_size: Passed through to ``fwht_pauli_coefficients`` - see
+            its docstring. ``None`` (default) processes all active
+            rows at once; a positive integer bounds peak memory to
+            roughly ``chunk_size * dim`` complex entries, needed for
+            large N where the whole-array approach exhausts memory.
 
     Returns:
         A dict mapping Pauli-string label (e.g. ``"IXZ"``) to its
@@ -321,7 +402,9 @@ def fwht_pauli_terms(
     """
     dim = operator.shape[0]
     n_qubits = int(round(np.log2(dim)))
-    active_x, active_coefficients = fwht_pauli_coefficients(operator, sparse=True)
+    active_x, active_coefficients = fwht_pauli_coefficients(
+        operator, sparse=True, chunk_size=chunk_size
+    )
 
     # Re-scan only the active rows fwht_pauli_coefficients already
     # identified, never the full (dim, dim) array - see
