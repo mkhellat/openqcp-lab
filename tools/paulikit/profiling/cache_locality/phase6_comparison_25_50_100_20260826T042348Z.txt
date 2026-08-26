@@ -1,0 +1,499 @@
+# Machine info
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  8
+On-line CPU(s) list:                     0-7
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
+CPU family:                              6
+Model:                                   142
+Thread(s) per core:                      2
+Core(s) per socket:                      4
+Socket(s):                               1
+Stepping:                                10
+Microcode version:                       0xf6
+CPU(s) scaling MHz:                      65%
+CPU max MHz:                             4000.0000
+CPU min MHz:                             400.0000
+BogoMIPS:                                3999.93
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb pti ssbd ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust sgx bmi1 avx2 smep bmi2 erms invpcid mpx rdseed adx smap clflushopt intel_pt xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp vnmi md_clear flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               128 KiB (4 instances)
+L1i cache:                               128 KiB (4 instances)
+L2 cache:                                1 MiB (4 instances)
+L3 cache:                                8 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-7
+Vulnerability Gather data sampling:      Mitigation; Microcode
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             KVM: Mitigation: Split huge pages
+Vulnerability L1tf:                      Mitigation; PTE Inversion; VMX conditional cache flushes, SMT vulnerable
+Vulnerability Mds:                       Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Meltdown:                  Mitigation; PTI
+Vulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Mitigation; IBRS
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; IBRS; IBPB conditional; STIBP conditional; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Mitigation; Microcode
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+
+# OPENBLAS_NUM_THREADS=1 set for every run below
+=== N=25, run 1/3, DENSE (pre-Phase-6) ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0640s (individual: ['0.0720', '0.0644', '0.0616', '0.0593', '0.0627'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 25 --reps 5':
+
+            575.20 msec task-clock                                                            
+     1,648,046,496      cycles                                                                  (40.28%)
+     2,769,046,829      instructions                                                            (50.38%)
+        89,950,545      cache-references                                                        (50.47%)
+        21,373,994      cache-misses                                                            (50.49%)
+       772,070,506      L1-dcache-loads                                                         (50.21%)
+        45,227,576      L1-dcache-load-misses                                                   (49.96%)
+         9,313,429      LLC-loads                                                               (39.64%)
+         1,513,411      LLC-load-misses                                                         (39.63%)
+       504,554,384      cycle_activity.stalls_total                                             (39.88%)
+       349,426,290      cycle_activity.stalls_mem_any                                           (40.10%)
+
+       0.583238730 seconds time elapsed
+
+       0.496508000 seconds user
+       0.074795000 seconds sys
+
+
+=== N=25, run 1/3, SPARSE (Phase 6 fix) ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0611s (individual: ['0.0614', '0.0625', '0.0626', '0.0588', '0.0602'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 25 --reps 5':
+
+            535.91 msec task-clock                                                            
+     1,582,719,883      cycles                                                                  (39.76%)
+     2,840,498,501      instructions                                                            (49.79%)
+        82,641,573      cache-references                                                        (49.97%)
+        16,288,937      cache-misses                                                            (50.17%)
+       779,184,688      L1-dcache-loads                                                         (50.49%)
+        43,609,877      L1-dcache-load-misses                                                   (50.59%)
+         9,732,362      LLC-loads                                                               (40.36%)
+         1,234,479      LLC-load-misses                                                         (40.08%)
+       456,396,809      cycle_activity.stalls_total                                             (39.83%)
+       293,481,533      cycle_activity.stalls_mem_any                                           (39.51%)
+
+       0.543234653 seconds time elapsed
+
+       0.458594000 seconds user
+       0.073567000 seconds sys
+
+
+=== N=25, run 2/3, DENSE (pre-Phase-6) ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0606s (individual: ['0.0610', '0.0619', '0.0610', '0.0605', '0.0585'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 25 --reps 5':
+
+            534.38 msec task-clock                                                            
+     1,569,805,437      cycles                                                                  (40.43%)
+     2,819,309,229      instructions                                                            (50.05%)
+       110,084,574      cache-references                                                        (48.07%)
+        18,143,551      cache-misses                                                            (48.27%)
+       786,415,900      L1-dcache-loads                                                         (48.18%)
+        47,076,055      L1-dcache-load-misses                                                   (48.01%)
+         8,620,171      LLC-loads                                                               (40.48%)
+           971,836      LLC-load-misses                                                         (42.38%)
+       440,573,353      cycle_activity.stalls_total                                             (42.53%)
+       284,663,549      cycle_activity.stalls_mem_any                                           (42.56%)
+
+       0.541189714 seconds time elapsed
+
+       0.476475000 seconds user
+       0.055341000 seconds sys
+
+
+=== N=25, run 2/3, SPARSE (Phase 6 fix) ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0612s (individual: ['0.0596', '0.0623', '0.0604', '0.0620', '0.0615'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 25 --reps 5':
+
+            533.84 msec task-clock                                                            
+     1,567,199,722      cycles                                                                  (39.97%)
+     2,828,486,838      instructions                                                            (50.09%)
+        94,095,891      cache-references                                                        (50.18%)
+        16,717,411      cache-misses                                                            (50.27%)
+       763,784,102      L1-dcache-loads                                                         (50.38%)
+        38,953,469      L1-dcache-load-misses                                                   (50.35%)
+         7,730,589      LLC-loads                                                               (40.08%)
+         1,268,559      LLC-load-misses                                                         (39.89%)
+       451,174,342      cycle_activity.stalls_total                                             (39.78%)
+       324,550,660      cycle_activity.stalls_mem_any                                           (39.94%)
+
+       0.536932309 seconds time elapsed
+
+       0.469829000 seconds user
+       0.059901000 seconds sys
+
+
+=== N=25, run 3/3, DENSE (pre-Phase-6) ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0610s (individual: ['0.0587', '0.0655', '0.0610', '0.0610', '0.0589'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 25 --reps 5':
+
+            507.96 msec task-clock                                                            
+     1,571,622,670      cycles                                                                  (39.62%)
+     2,889,800,292      instructions                                                            (49.78%)
+        90,202,796      cache-references                                                        (49.99%)
+        16,292,053      cache-misses                                                            (50.30%)
+       756,193,640      L1-dcache-loads                                                         (50.50%)
+        46,382,517      L1-dcache-load-misses                                                   (50.67%)
+         9,980,490      LLC-loads                                                               (40.22%)
+         1,264,559      LLC-load-misses                                                         (39.91%)
+       450,665,225      cycle_activity.stalls_total                                             (39.67%)
+       277,249,998      cycle_activity.stalls_mem_any                                           (39.73%)
+
+       0.512238180 seconds time elapsed
+
+       0.435243000 seconds user
+       0.069366000 seconds sys
+
+
+=== N=25, run 3/3, SPARSE (Phase 6 fix) ===
+N=25 oscillators, 9 qubits, 512x512 padded Hamiltonian
+Nonzero Pauli terms: 78336
+Steady-state mean time over 5 reps: 0.0633s (individual: ['0.0605', '0.0644', '0.0715', '0.0605', '0.0594'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 25 --reps 5':
+
+            514.59 msec task-clock                                                            
+     1,593,533,247      cycles                                                                  (40.35%)
+     2,794,983,853      instructions                                                            (50.47%)
+        93,164,313      cache-references                                                        (50.46%)
+        18,390,118      cache-misses                                                            (50.27%)
+       779,667,765      L1-dcache-loads                                                         (50.07%)
+        42,857,632      L1-dcache-load-misses                                                   (49.79%)
+         8,520,382      LLC-loads                                                               (39.67%)
+         1,453,133      LLC-load-misses                                                         (39.92%)
+       477,765,265      cycle_activity.stalls_total                                             (40.04%)
+       333,424,285      cycle_activity.stalls_mem_any                                           (40.15%)
+
+       0.517806631 seconds time elapsed
+
+       0.454409000 seconds user
+       0.057363000 seconds sys
+
+
+=== N=50, run 1/3, DENSE (pre-Phase-6) ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.4128s (individual: ['1.4409', '1.4614', '1.4860', '1.3579', '1.3179'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 50 --reps 5':
+
+          8,671.53 msec task-clock                                                            
+    22,954,681,266      cycles                                                                  (40.01%)
+    39,934,825,227      instructions                                                            (50.11%)
+     1,385,225,635      cache-references                                                        (50.12%)
+       792,613,708      cache-misses                                                            (50.13%)
+    10,896,729,809      L1-dcache-loads                                                         (50.15%)
+       700,717,722      L1-dcache-load-misses                                                   (50.04%)
+       180,154,850      LLC-loads                                                               (39.92%)
+        80,057,421      LLC-load-misses                                                         (39.91%)
+     7,912,827,300      cycle_activity.stalls_total                                             (39.90%)
+     6,414,124,022      cycle_activity.stalls_mem_any                                           (39.87%)
+
+       8.677177589 seconds time elapsed
+
+       7.837348000 seconds user
+       0.731984000 seconds sys
+
+
+=== N=50, run 1/3, SPARSE (Phase 6 fix) ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.3711s (individual: ['1.2933', '1.3332', '1.3776', '1.4305', '1.4208'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 50 --reps 5':
+
+          8,364.69 msec task-clock                                                            
+    22,480,914,020      cycles                                                                  (39.98%)
+    39,153,952,267      instructions                                                            (50.00%)
+     1,376,460,028      cache-references                                                        (50.01%)
+       787,886,542      cache-misses                                                            (50.02%)
+    10,692,607,676      L1-dcache-loads                                                         (50.04%)
+       667,955,299      L1-dcache-load-misses                                                   (50.03%)
+       171,083,398      LLC-loads                                                               (40.02%)
+        75,690,001      LLC-load-misses                                                         (40.00%)
+     7,759,459,754      cycle_activity.stalls_total                                             (39.98%)
+     6,351,066,048      cycle_activity.stalls_mem_any                                           (39.97%)
+
+       8.373979027 seconds time elapsed
+
+       7.676636000 seconds user
+       0.594124000 seconds sys
+
+
+=== N=50, run 2/3, DENSE (pre-Phase-6) ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.3693s (individual: ['1.3534', '1.3785', '1.4249', '1.3462', '1.3437'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 50 --reps 5':
+
+          8,525.16 msec task-clock                                                            
+    23,042,656,564      cycles                                                                  (40.16%)
+    39,784,092,940      instructions                                                            (50.14%)
+     1,391,609,740      cache-references                                                        (50.15%)
+       806,680,536      cache-misses                                                            (50.16%)
+    10,860,621,427      L1-dcache-loads                                                         (50.03%)
+       694,487,007      L1-dcache-load-misses                                                   (49.89%)
+       176,504,714      LLC-loads                                                               (39.90%)
+        76,700,168      LLC-load-misses                                                         (39.88%)
+     7,977,360,332      cycle_activity.stalls_total                                             (39.87%)
+     6,473,223,209      cycle_activity.stalls_mem_any                                           (40.00%)
+
+       8.530298629 seconds time elapsed
+
+       7.606145000 seconds user
+       0.761545000 seconds sys
+
+
+=== N=50, run 2/3, SPARSE (Phase 6 fix) ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.2897s (individual: ['1.2927', '1.3109', '1.2777', '1.2858', '1.2816'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 50 --reps 5':
+
+          7,894.61 msec task-clock                                                            
+    22,397,033,197      cycles                                                                  (39.88%)
+    39,323,506,303      instructions                                                            (49.86%)
+     1,358,631,549      cache-references                                                        (49.87%)
+       765,445,177      cache-misses                                                            (50.02%)
+    10,703,756,397      L1-dcache-loads                                                         (50.16%)
+       656,606,824      L1-dcache-load-misses                                                   (50.15%)
+       167,638,040      LLC-loads                                                               (40.17%)
+        74,505,131      LLC-load-misses                                                         (40.03%)
+     7,815,203,213      cycle_activity.stalls_total                                             (39.89%)
+     6,419,011,803      cycle_activity.stalls_mem_any                                           (39.89%)
+
+       7.898465629 seconds time elapsed
+
+       7.214551000 seconds user
+       0.597468000 seconds sys
+
+
+=== N=50, run 3/3, DENSE (pre-Phase-6) ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.3133s (individual: ['1.3117', '1.3239', '1.3321', '1.2873', '1.3113'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 50 --reps 5':
+
+          8,056.25 msec task-clock                                                            
+    23,098,993,982      cycles                                                                  (40.00%)
+    39,591,117,960      instructions                                                            (49.98%)
+     1,399,316,363      cache-references                                                        (49.86%)
+       797,208,401      cache-misses                                                            (49.90%)
+    10,960,334,985      L1-dcache-loads                                                         (49.91%)
+       702,587,272      L1-dcache-load-misses                                                   (50.05%)
+       176,021,141      LLC-loads                                                               (40.06%)
+        76,155,405      LLC-load-misses                                                         (40.17%)
+     8,013,179,907      cycle_activity.stalls_total                                             (40.14%)
+     6,502,351,317      cycle_activity.stalls_mem_any                                           (39.98%)
+
+       8.063817992 seconds time elapsed
+
+       7.280936000 seconds user
+       0.689835000 seconds sys
+
+
+=== N=50, run 3/3, SPARSE (Phase 6 fix) ===
+N=50 oscillators, 11 qubits, 2048x2048 padded Hamiltonian
+Nonzero Pauli terms: 1261568
+Steady-state mean time over 5 reps: 1.3729s (individual: ['1.3249', '1.3636', '1.3717', '1.4282', '1.3759'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 50 --reps 5':
+
+          8,374.26 msec task-clock                                                            
+    22,583,173,233      cycles                                                                  (39.88%)
+    39,221,853,163      instructions                                                            (49.88%)
+     1,359,048,022      cache-references                                                        (49.89%)
+       790,881,435      cache-misses                                                            (49.88%)
+    10,746,649,778      L1-dcache-loads                                                         (49.89%)
+       665,875,218      L1-dcache-load-misses                                                   (50.01%)
+       170,209,436      LLC-loads                                                               (40.16%)
+        76,239,388      LLC-load-misses                                                         (40.16%)
+     7,761,917,897      cycle_activity.stalls_total                                             (40.15%)
+     6,335,084,367      cycle_activity.stalls_mem_any                                           (40.02%)
+
+       8.380977654 seconds time elapsed
+
+       7.679320000 seconds user
+       0.595939000 seconds sys
+
+
+=== N=100, run 1/3, DENSE (pre-Phase-6) ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 26.0672s (individual: ['26.1773', '26.8243', '27.0182', '25.8945', '24.4216'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 100 --reps 5':
+
+        157,705.84 msec task-clock                                                            
+   413,727,915,257      cycles                                                                  (40.01%)
+   650,800,579,755      instructions                                                            (49.99%)
+    26,065,623,024      cache-references                                                        (49.99%)
+    15,605,719,744      cache-misses                                                            (49.97%)
+   176,441,703,985      L1-dcache-loads                                                         (49.98%)
+    14,159,720,450      L1-dcache-load-misses                                                   (49.99%)
+     3,048,788,582      LLC-loads                                                               (40.01%)
+     1,746,692,091      LLC-load-misses                                                         (40.01%)
+   157,486,130,503      cycle_activity.stalls_total                                             (40.02%)
+   123,036,807,744      cycle_activity.stalls_mem_any                                           (40.02%)
+
+     157.773768300 seconds time elapsed
+
+     137.960050000 seconds user
+      17.806588000 seconds sys
+
+
+=== N=100, run 1/3, SPARSE (Phase 6 fix) ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 23.4072s (individual: ['22.9881', '23.5488', '23.5122', '23.4903', '23.4964'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 100 --reps 5':
+
+        141,288.85 msec task-clock                                                            
+   395,557,321,382      cycles                                                                  (40.03%)
+   631,314,470,229      instructions                                                            (50.05%)
+    24,998,614,666      cache-references                                                        (50.04%)
+    14,924,701,615      cache-misses                                                            (50.03%)
+   171,659,928,876      L1-dcache-loads                                                         (50.02%)
+    13,444,922,129      L1-dcache-load-misses                                                   (49.99%)
+     2,998,052,182      LLC-loads                                                               (39.96%)
+     1,719,671,870      LLC-load-misses                                                         (39.98%)
+   152,422,089,937      cycle_activity.stalls_total                                             (39.97%)
+   121,470,390,612      cycle_activity.stalls_mem_any                                           (39.99%)
+
+     141.307359214 seconds time elapsed
+
+     125.991447000 seconds user
+      14.027011000 seconds sys
+
+
+=== N=100, run 2/3, DENSE (pre-Phase-6) ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 24.8554s (individual: ['23.6681', '24.8679', '25.5760', '25.0355', '25.1294'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 100 --reps 5':
+
+        149,108.03 msec task-clock                                                            
+   413,401,907,808      cycles                                                                  (40.05%)
+   649,491,471,946      instructions                                                            (50.04%)
+    25,962,157,204      cache-references                                                        (50.04%)
+    15,469,712,269      cache-misses                                                            (50.01%)
+   175,953,436,043      L1-dcache-loads                                                         (49.99%)
+    14,137,659,791      L1-dcache-load-misses                                                   (49.97%)
+     3,096,126,720      LLC-loads                                                               (39.97%)
+     1,772,076,568      LLC-load-misses                                                         (39.97%)
+   159,045,839,150      cycle_activity.stalls_total                                             (39.99%)
+   124,934,630,749      cycle_activity.stalls_mem_any                                           (40.01%)
+
+     149.290034771 seconds time elapsed
+
+     131.428202000 seconds user
+      16.048344000 seconds sys
+
+
+=== N=100, run 2/3, SPARSE (Phase 6 fix) ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 25.5338s (individual: ['24.3423', '25.7622', '26.6582', '25.7586', '25.1479'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 100 --reps 5':
+
+        153,270.14 msec task-clock                                                            
+   415,670,896,512      cycles                                                                  (40.02%)
+   636,471,347,986      instructions                                                            (50.02%)
+    25,677,840,482      cache-references                                                        (49.99%)
+    15,363,155,317      cache-misses                                                            (49.99%)
+   173,196,458,083      L1-dcache-loads                                                         (49.99%)
+    13,689,382,906      L1-dcache-load-misses                                                   (49.98%)
+     3,023,623,750      LLC-loads                                                               (39.99%)
+     1,779,900,206      LLC-load-misses                                                         (40.01%)
+   165,739,071,489      cycle_activity.stalls_total                                             (40.01%)
+   130,792,703,091      cycle_activity.stalls_mem_any                                           (40.01%)
+
+     153.411009564 seconds time elapsed
+
+     134.322964000 seconds user
+      16.995212000 seconds sys
+
+
+=== N=100, run 3/3, DENSE (pre-Phase-6) ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian [DENSE path]
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 25.6273s (individual: ['25.4534', '25.3121', '25.5699', '25.6784', '26.1226'])
+
+ Performance counter stats for 'python steady_state_decompose_dense.py --n-oscillators 100 --reps 5':
+
+        154,324.11 msec task-clock                                                            
+   422,813,519,269      cycles                                                                  (40.00%)
+   656,278,533,248      instructions                                                            (50.01%)
+    26,338,863,870      cache-references                                                        (49.98%)
+    15,809,324,839      cache-misses                                                            (49.98%)
+   177,854,500,126      L1-dcache-loads                                                         (50.01%)
+    14,179,829,696      L1-dcache-load-misses                                                   (50.00%)
+     3,119,663,042      LLC-loads                                                               (40.01%)
+     1,818,011,510      LLC-load-misses                                                         (40.02%)
+   164,401,864,242      cycle_activity.stalls_total                                             (40.01%)
+   129,088,909,790      cycle_activity.stalls_mem_any                                           (39.99%)
+
+     154.420157049 seconds time elapsed
+
+     134.185095000 seconds user
+      18.300624000 seconds sys
+
+
+=== N=100, run 3/3, SPARSE (Phase 6 fix) ===
+N=100 oscillators, 13 qubits, 8192x8192 padded Hamiltonian
+Nonzero Pauli terms: 20299776
+Steady-state mean time over 5 reps: 24.1945s (individual: ['24.8057', '25.2237', '23.8783', '23.5105', '23.5545'])
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 100 --reps 5':
+
+        146,745.29 msec task-clock                                                            
+   403,091,194,389      cycles                                                                  (40.00%)
+   631,944,039,524      instructions                                                            (50.02%)
+    25,363,951,036      cache-references                                                        (50.01%)
+    15,090,229,418      cache-misses                                                            (50.02%)
+   171,661,485,003      L1-dcache-loads                                                         (50.04%)
+    13,493,955,752      L1-dcache-load-misses                                                   (50.01%)
+     2,995,559,798      LLC-loads                                                               (40.00%)
+     1,732,470,324      LLC-load-misses                                                         (39.99%)
+   158,199,668,159      cycle_activity.stalls_total                                             (39.97%)
+   125,361,212,175      cycle_activity.stalls_mem_any                                           (39.97%)
+
+     146.872178549 seconds time elapsed
+
+     130.075504000 seconds user
+      14.985704000 seconds sys
+
+
