@@ -49,14 +49,17 @@ Individual rep times (N=25/50/100, 3 reps each): N=25:
 
 ## Interpretation
 
-Term count grows roughly ~16x from N=100 to N=150 (20.3M -> 91.7M),
-while mean time grows only ~4.6x (22.06s -> 101.31s) - sublinear
-relative to term-count growth, consistent with per-chunk overhead
-(gather setup, WHT dispatch) amortizing better as chunk count grows
-(20 chunks at N=100, 44 at N=150) and per-term cost inside
-`dict_build` (identified as the dominant stage in
-`full_pipeline_n150_findings.md`) staying roughly flat rather than
-growing with N.
+Term count grows ~4.51x from N=100 to N=150 (20,299,776 ->
+91,652,096), and mean time grows ~4.59x (22.064s -> 101.310s) -
+essentially **linear** in term count, not sublinear (an earlier draft
+of this document miscalculated the term-count ratio as ~16x and
+wrongly concluded sublinear scaling; corrected here - the actual
+result is that per-term cost stays flat across this range, not that
+larger N gets proportionally cheaper per term). This is consistent
+with `full_pipeline_n150_findings.md`'s finding that `dict_build`
+(the per-term Python loop) dominates total time: a per-term-dominated
+cost should scale linearly with term count, which is exactly what's
+observed.
 
 This is the first N=25/50/100/150 timing table that includes a
 successful N=150 data point at all - every earlier attempt in this
