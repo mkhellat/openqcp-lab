@@ -31,8 +31,11 @@ fixes this by keeping each chunk's result a chunk, yielding one
 Along the way, also re-measured `pauli_label_batch_parallel` (the
 existing oneTBB-parallel label kernel) at N=150-representative scale
 - see `tbb_labeling_n150_findings.md` in this directory: a real
-1.1-1.4x wall-clock win, at a modest, explicitly-recorded cache-
-locality cost, adopted per direct user decision.
+1.1-1.4x wall-clock win **in isolation**, at a modest cache-locality
+cost, adopted per direct user decision. **Update:** re-measured
+embedded in the real streaming pipeline in `full_pipeline_n150_findings.md`
+(this directory) - the effect washes out to noise at full-pipeline
+scale, since labeling is only ~7% of total time there.
 
 ## N=150 runs, in order
 

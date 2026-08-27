@@ -6,6 +6,15 @@ output) design. Prompted directly by the user, applying
 about parallelism explicitly rather than defaulting to serial or
 parallel without measurement.
 
+**Superseded in practice by [`full_pipeline_n150_findings.md`](full_pipeline_n150_findings.md):**
+this document's measurement of the label kernel *in isolation* is
+still accurate, but once embedded in the real streaming pipeline, the
+1.1-1.4x win and cache-locality cost found here both wash out to
+noise level - label generation turns out to be only ~7% of total
+pipeline time (dict construction is ~60%). Read this document for the
+isolated-kernel numbers; read the full-pipeline doc for what actually
+matters in production.
+
 ## Why re-measure at all
 
 `cache_locality/tbb_evaluation_findings.md` (2026-08-25) already

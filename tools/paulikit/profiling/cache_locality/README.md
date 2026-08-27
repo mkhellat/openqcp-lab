@@ -199,7 +199,27 @@ one before it. Don't read only the last one; the corrections
     precise claim than "sparse fixes cache locality." Script:
     `run_phase6_comparison.sh`.
 
+13. **[`../phase10/full_pipeline_n150_findings.md`](../phase10/full_pipeline_n150_findings.md)**
+    (a different directory - `profiling/phase10/`, not
+    `cache_locality/`, since it's part of Phase 10's own investigation
+    rather than this one) - after Phases 8-10 fixed the N=150 OOM this
+    investigation identified, re-measures TBB-parallel labeling
+    embedded in the real streaming pipeline (not isolated, unlike
+    finding 11). Finds dict construction, not labeling, dominates at
+    ~60% of pipeline time - a cost invisible to every finding above,
+    since none of them reached a working N=150 streaming pipeline to
+    measure it in. TBB remains a non-lever, now for a third distinct
+    reason across two investigations (finding 10: not wired in;
+    finding 11: wouldn't help the dense-array bottleneck if it were;
+    this finding: doesn't move the needle once dict construction
+    dominates).
+
 ## Current honest state (as of the last finding above)
+
+**Update 2026-08-27: the N=150 OOM this investigation identified is
+now fully resolved (PLAN.md Phases 8, 9, 10) - see
+`../phase10/README.md`.** The sections below are kept as the original
+record of *how* the root cause was found; they predate the fix.
 
 - **Confirmed root cause**: `fwht_pauli_coefficients` densifies a
   sparse result into a full `(dim, dim)` array, then
@@ -208,27 +228,29 @@ one before it. Don't read only the last one; the corrections
   exceeds cache size. This is real, robustness-relevant (see the
   N=150 OOM), and not explained away by compiler flags or TBB
   behavior.
-- **Not yet designed or implemented**: an actual fix. The open,
-  explicitly-flagged tension to resolve during design: Phase 3b's
-  sparse-*computation* optimization must not be accidentally traded
-  away for a "cache-friendlier" dense layout, or vice versa - any fix
-  needs to be measured, not assumed, against both the cache-locality
-  metrics here and Phase 3b's original sparsity-computation gains.
-- **TBB ruled out as a lever for this problem**: measured directly
-  (finding 11), not just inferred - the TBB-parallel label kernel has
-  no effect on cache-miss ratio, stall cycles, or wall time at the
-  current pipeline structure, because it parallelizes a part of the
-  pipeline (label-string construction) that isn't where the dense-array
-  cache misses live.
+- **Fix implemented and verified** (was "not yet designed or
+  implemented" as of finding 12): Phase 8 (sparse Hamiltonian
+  input) + Phase 9 (chunked-accumulator space-complexity fix) + Phase
+  10 (streaming output, `fwht_pauli_terms_iter`) together make N=150
+  complete fully under a 2 GB memory cap - see
+  `../phase10/phase10_streaming_findings.md`. The memory-usage
+  prediction below ("proportional to `n_active x dim` rather than
+  `dim^2`") held for Phases 8-9, but Phase 10 went further: streaming
+  decouples peak memory from total result size entirely, not just
+  from `dim^2`.
+- **TBB ruled out as a lever for this problem, twice, in two
+  different ways**: finding 11 measured the isolated label kernel at
+  N≤100 (no effect, since labeling was never the bottleneck there
+  either). `../phase10/full_pipeline_n150_findings.md` re-measured it
+  embedded in the real streaming pipeline at N=150 and found the same
+  null result for a different reason - labeling *is* a real, TBB-
+  parallelizable cost, but it's only ~7% of total pipeline time; **dict
+  construction (~60%) is the actual bottleneck now**, not yet
+  addressed by any phase.
 - **Known confound to control for in future measurements**: OpenBLAS
   thread-pool noise. Set `OPENBLAS_NUM_THREADS=1` for any new
   `perf`-based measurement in this directory unless specifically
   investigating BLAS behavior itself.
-- **Known machine limitation**: this investigation's dev machine
-  OOMs at N=150 with the current code. A fix should make N=150 (and
-  beyond) memory-safe by making memory usage proportional to
-  `n_active x dim` rather than `dim^2` - a prediction to verify once
-  a fix exists, not yet measured.
 
 ## Extending this investigation
 
