@@ -67,19 +67,27 @@ def cmd_decompose(args):
           f"padded Hamiltonian")
 
     if args.sparse_output:
-        # Exercises fwht_pauli_coefficients(sparse=True) directly -
-        # the raw (active_x, active_coefficients) form fwht_pauli_terms
-        # itself now always uses internally (see PLAN.md Phase 6). This
-        # flag is for inspecting/timing that raw output shape, not a
-        # switch on fwht_pauli_terms's own algorithm.
+        # Exercises fwht_pauli_coefficients(sparse=True) directly. With
+        # no --chunk-size, returns the dense-block (active_x,
+        # active_coefficients) form; with --chunk-size, returns the
+        # already-thresholded COO (x, z, coefficient) triple form
+        # instead (see PLAN.md Phase 9) - this flag is for
+        # inspecting/timing that raw output shape, not a switch on
+        # fwht_pauli_terms's own algorithm.
         start = time.perf_counter()
-        active_x, active_coefficients = fwht_pauli_coefficients(
-            padded, sparse=True, chunk_size=args.chunk_size
+        result = fwht_pauli_coefficients(
+            padded, sparse=True, chunk_size=args.chunk_size, atol=args.atol
         )
         elapsed = time.perf_counter() - start
 
-        print(f"Decomposition time (sparse output): {elapsed:.4f}s")
-        print(f"Active rows: {len(active_x)} of {padded.shape[0]} possible")
+        if args.chunk_size is not None:
+            x_out, z_out, coeff_out = result
+            print(f"Decomposition time (sparse output, chunked): {elapsed:.4f}s")
+            print(f"Nonzero terms: {len(x_out)}")
+        else:
+            active_x, active_coefficients = result
+            print(f"Decomposition time (sparse output): {elapsed:.4f}s")
+            print(f"Active rows: {len(active_x)} of {padded.shape[0]} possible")
 
         if args.show_terms:
             terms = fwht_pauli_terms(
