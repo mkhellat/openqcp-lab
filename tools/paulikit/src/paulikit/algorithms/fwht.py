@@ -69,7 +69,9 @@ total.
 
 from __future__ import annotations
 
+import json
 import warnings
+from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
@@ -163,11 +165,127 @@ def _walsh_hadamard_transform_rows(
     return transformed
 
 
+class _GrowableArray:
+    """Amortized-doubling growable 1-D array.
+
+    Appending ``n`` elements at a time and doubling capacity on
+    overflow costs O(total elements) amortized, rather than O(chunks)
+    reallocations of ever-larger arrays (the naive ``np.concatenate``
+    per chunk) or O(total elements) Python-object overhead (a plain
+    list of scalars) - keeps the chunked path's per-chunk append cheap
+    relative to that chunk's O(chunk_size * dim * log dim) transform
+    cost (see Phase 9, PLAN.md), rather than trading space complexity
+    for a new time-complexity regression.
+    """
+
+    def __init__(self, dtype, initial_capacity: int = 1024):
+        self._data = np.empty(initial_capacity, dtype=dtype)
+        self._size = 0
+
+    def extend(self, values: NDArray) -> None:
+        n = len(values)
+        if n == 0:
+            return
+        needed = self._size + n
+        if needed > len(self._data):
+            new_capacity = max(needed, len(self._data) * 2)
+            grown = np.empty(new_capacity, dtype=self._data.dtype)
+            grown[: self._size] = self._data[: self._size]
+            self._data = grown
+        self._data[self._size : self._size + n] = values
+        self._size += n
+
+    def finalize(self) -> NDArray:
+        return self._data[: self._size]
+
+
+def _checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
+    return Path(str(checkpoint_path) + ".progress.json")
+
+
+def _load_checkpoint(
+    checkpoint_path: str | Path | None,
+) -> tuple[int, tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
+    """Read an existing checkpoint, if any.
+
+    Returns ``(resume_from_chunk_index, (x, z, coeff) | None)``: the
+    chunk index to resume from (0 if no checkpoint, or the checkpoint
+    is absent/incomplete) and the previously-recorded triples to
+    replay into the fresh accumulator, or ``None`` if there is nothing
+    to replay.
+    """
+    if checkpoint_path is None:
+        return 0, None
+    checkpoint_path = Path(checkpoint_path)
+    progress_path = _checkpoint_progress_path(checkpoint_path)
+    if not checkpoint_path.exists() or not progress_path.exists():
+        return 0, None
+
+    with open(progress_path) as f:
+        progress = json.load(f)
+    next_chunk = progress["next_chunk"]
+
+    x_vals: list[int] = []
+    z_vals: list[int] = []
+    coeff_vals: list[complex] = []
+    with open(checkpoint_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            x_vals.append(record["x"])
+            z_vals.append(record["z"])
+            coeff_vals.append(complex(record["re"], record["im"]))
+
+    return next_chunk, (
+        np.array(x_vals, dtype=np.intp),
+        np.array(z_vals, dtype=np.intp),
+        np.array(coeff_vals, dtype=complex),
+    )
+
+
+def _append_checkpoint_chunk(
+    checkpoint_path: str | Path,
+    next_chunk: int,
+    x_out: NDArray[np.intp],
+    z_out: NDArray[np.intp],
+    coeff_out: NDArray[np.complexfloating],
+) -> None:
+    """Append one completed chunk's surviving triples to the
+    checkpoint file, then update the progress marker.
+
+    The triples are appended before the progress marker is updated,
+    so a crash mid-write leaves the progress marker pointing at a
+    chunk whose triples may be incompletely written - ``_load_checkpoint``
+    is only ever consulted for chunks strictly before ``next_chunk``
+    once this function has returned for the resumability guarantee to
+    hold; a crash during this function itself simply loses that one
+    in-flight chunk's checkpoint, which is then recomputed on resume
+    (not silently corrupted), since ``next_chunk`` is only advanced
+    (in the progress file) after this file's write succeeds.
+    """
+    checkpoint_path = Path(checkpoint_path)
+    with open(checkpoint_path, "a") as f:
+        for x, z, coeff in zip(x_out.tolist(), z_out.tolist(), coeff_out.tolist()):
+            f.write(json.dumps({"x": x, "z": z, "re": coeff.real, "im": coeff.imag}) + "\n")
+
+    progress_path = _checkpoint_progress_path(checkpoint_path)
+    with open(progress_path, "w") as f:
+        json.dump({"next_chunk": next_chunk}, f)
+
+
 def fwht_pauli_coefficients(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     sparse: bool = False,
     chunk_size: int | None = None,
-) -> NDArray[np.complexfloating] | tuple[NDArray[np.intp], NDArray[np.complexfloating]]:
+    atol: float = 1e-10,
+    checkpoint_path: str | Path | None = None,
+) -> (
+    NDArray[np.complexfloating]
+    | tuple[NDArray[np.intp], NDArray[np.complexfloating]]
+    | tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]]
+):
     """Decompose an operator into Pauli-string coefficients via FWHT.
 
     Works for **any** complex ``(2**n, 2**n)`` matrix, Hermitian or
@@ -197,18 +315,45 @@ def fwht_pauli_coefficients(
         chunk_size: Only used when ``sparse=True``. If ``None``
             (default), all active rows are gathered and transformed at
             once (one ``(n_active, dim)`` array live in memory - fine
-            for moderate N). If set to a positive integer, active rows
-            are processed in blocks of at most ``chunk_size`` rows, so
-            peak memory scales with ``chunk_size * dim`` rather than
-            ``n_active * dim`` - the tiling technique from MIT 6.172
-            lecture 1 (block the computation to bound working-set
-            size), applied here for memory-footprint reduction rather
-            than cache reuse, since each row transforms independently
-            (see ``_walsh_hadamard_transform_rows``) with no cross-row
-            reduction to preserve. Trades some Python-loop overhead
-            for the ability to complete at N where the whole-array
-            approach runs out of memory (see
-            ``profiling/cache_locality/`` Phase 6 N=150 findings).
+            for moderate N; returns the dense-block form described
+            below). If set to a positive integer, active rows are
+            processed in blocks of at most ``chunk_size`` rows - the
+            tiling technique from MIT 6.172 lecture 1 (block the
+            computation to bound working-set size), applied here for
+            memory-footprint reduction rather than cache reuse, since
+            each row transforms independently (see
+            ``_walsh_hadamard_transform_rows``) with no cross-row
+            reduction to preserve. Unlike ``chunk_size=None``, this
+            mode also thresholds each chunk's output against ``atol``
+            immediately and accumulates only the surviving ``(x, z,
+            coefficient)`` triples (see Returns) - bounding peak memory
+            to ``O(chunk_size * dim + n_final_terms)`` rather than
+            ``O(n_active * dim)``, since the earlier ``chunk_size``
+            design (Phase 6) still allocated one full
+            ``(n_active, dim)`` accumulator regardless of
+            ``chunk_size`` (see PLAN.md Phase 9 - that accumulator was
+            the actual N=150 ceiling, not the per-chunk transient
+            ``chunk_size`` was designed to bound).
+        atol: Only used when ``chunk_size`` is set. Coefficients with
+            ``abs(coefficient) <= atol`` are dropped per-chunk, before
+            accumulation - moved here (rather than staying purely in
+            ``fwht_pauli_terms``) because thresholding must happen
+            before accumulation for the space-complexity fix above to
+            work; the dense-block modes (``chunk_size=None``) are
+            unaffected and keep returning unthresholded output.
+        checkpoint_path: Only used when ``chunk_size`` is set. If
+            given, each completed chunk's surviving triples are
+            appended to ``checkpoint_path`` (newline-delimited JSON)
+            and a sibling ``<checkpoint_path>.progress.json`` file
+            records the index of the next chunk to process. If a
+            checkpoint already exists at this path when called, chunks
+            already recorded there are skipped and their triples are
+            read back rather than recomputed - resuming a crashed or
+            interrupted run rather than restarting from chunk 0. This
+            costs one small file append per chunk (negligible next to
+            each chunk's O(chunk_size * dim * log dim) transform cost -
+            see PLAN.md Phase 9), so it is opt-in but effectively free
+            when enabled; ``None`` (default) does no I/O at all.
 
     Returns:
         If ``sparse=False``: a complex ``numpy.ndarray`` of shape
@@ -218,14 +363,21 @@ def fwht_pauli_coefficients(
         structured/sparse input; callers that want only the nonzero
         terms should filter by magnitude (see ``fwht_pauli_terms``).
 
-        If ``sparse=True``: a tuple ``(active_x, active_coefficients)``
-        where ``active_x`` is a 1-D integer array of the ``x`` values
-        with at least one nonzero coefficient, and
-        ``active_coefficients`` is a complex array of shape
-        ``(len(active_x), dim)`` such that
+        If ``sparse=True`` and ``chunk_size=None``: a tuple
+        ``(active_x, active_coefficients)`` where ``active_x`` is a
+        1-D integer array of the ``x`` values with at least one
+        nonzero coefficient, and ``active_coefficients`` is a complex
+        array of shape ``(len(active_x), dim)`` such that
         ``active_coefficients[i, z]`` is the coefficient of
         ``P(active_x[i], z)``. Rows for ``x`` not in ``active_x`` are
         implicitly all-zero and are not represented at all.
+
+        If ``sparse=True`` and ``chunk_size`` is a positive integer: a
+        tuple ``(x_out, z_out, coefficient_out)`` of three 1-D arrays
+        of equal length - a COO-style triple where entry ``i`` is the
+        coefficient ``coefficient_out[i]`` of Pauli string
+        ``P(x_out[i], z_out[i])``, already thresholded against
+        ``atol`` (unlike the other two return forms).
 
     Raises:
         ValueError: If ``operator`` is not square or its dimension is
@@ -292,8 +444,23 @@ def fwht_pauli_coefficients(
         sorted_p_nz = p_nz[order]
         sorted_q_nz = q_nz[order]
 
-        active_coefficients = np.empty((n_active, dim), dtype=complex)
-        for chunk_start in range(0, n_active, chunk_size):
+        chunk_starts = list(range(0, n_active, chunk_size))
+        resume_from, checkpoint = _load_checkpoint(checkpoint_path)
+
+        x_out = _GrowableArray(np.intp)
+        z_out = _GrowableArray(np.intp)
+        coeff_out = _GrowableArray(complex)
+        if checkpoint is not None and resume_from > 0:
+            # Replay already-completed chunks' triples from the
+            # checkpoint file rather than recomputing them - the
+            # actual resume behavior (see checkpoint_path docstring).
+            prior_x, prior_z, prior_coeff = checkpoint
+            x_out.extend(prior_x)
+            z_out.extend(prior_z)
+            coeff_out.extend(prior_coeff)
+
+        for chunk_index in range(resume_from, len(chunk_starts)):
+            chunk_start = chunk_starts[chunk_index]
             chunk_end = min(chunk_start + chunk_size, n_active)
             lo = int(np.searchsorted(sorted_inverse, chunk_start))
             hi = int(np.searchsorted(sorted_inverse, chunk_end))
@@ -315,11 +482,25 @@ def fwht_pauli_coefficients(
 
             chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
             phase = 1j ** _popcount_array(chunk_x & z_indices, n_qubits)
-            active_coefficients[chunk_start:chunk_end] = (
-                transformed_chunk * np.conj(phase) / dim
-            )
+            chunk_coefficients = transformed_chunk * np.conj(phase) / dim
 
-        return active_x, active_coefficients
+            # Threshold now, before accumulation - the space-complexity
+            # fix (PLAN.md Phase 9): only surviving triples are ever
+            # held for more than one chunk's lifetime.
+            row_idx, z_idx = np.nonzero(np.abs(chunk_coefficients) > atol)
+            chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
+            chunk_coeff_out = chunk_coefficients[row_idx, z_idx]
+
+            x_out.extend(chunk_x_out)
+            z_out.extend(z_idx)
+            coeff_out.extend(chunk_coeff_out)
+
+            if checkpoint_path is not None:
+                _append_checkpoint_chunk(
+                    checkpoint_path, chunk_index + 1, chunk_x_out, z_idx, chunk_coeff_out
+                )
+
+        return x_out.finalize(), z_out.finalize(), coeff_out.finalize()
 
     gathered_active = np.zeros((n_active, dim), dtype=complex)
     gathered_values = operator[p_nz, q_nz]
@@ -386,6 +567,7 @@ def fwht_pauli_terms(
     atol: float = 1e-10,
     assume_hermitian: bool = True,
     chunk_size: int | None = None,
+    checkpoint_path: str | Path | None = None,
 ) -> dict[str, complex] | dict[str, float]:
     """Decompose an operator into a label -> coefficient dict.
 
@@ -421,9 +603,15 @@ def fwht_pauli_terms(
             imaginary parts are then just zero, not dropped).
         chunk_size: Passed through to ``fwht_pauli_coefficients`` - see
             its docstring. ``None`` (default) processes all active
-            rows at once; a positive integer bounds peak memory to
-            roughly ``chunk_size * dim`` complex entries, needed for
-            large N where the whole-array approach exhausts memory.
+            rows at once, then thresholds by ``atol`` here. A positive
+            integer switches to the chunked, already-thresholded COO
+            path (``atol`` is applied per-chunk inside
+            ``fwht_pauli_coefficients`` in that case, not here - same
+            numerical result, but memory stays bounded at large N; see
+            PLAN.md Phase 9).
+        checkpoint_path: Only meaningful when ``chunk_size`` is set -
+            passed through to ``fwht_pauli_coefficients``, see its
+            docstring for the resume behavior.
 
     Returns:
         A dict mapping Pauli-string label (e.g. ``"IXZ"``) to its
@@ -436,17 +624,30 @@ def fwht_pauli_terms(
     """
     dim = operator.shape[0]
     n_qubits = int(round(np.log2(dim)))
-    active_x, active_coefficients = fwht_pauli_coefficients(
-        operator, sparse=True, chunk_size=chunk_size
-    )
 
-    # Re-scan only the active rows fwht_pauli_coefficients already
-    # identified, never the full (dim, dim) array - see
-    # profiling/cache_locality/README.md for why the dense re-scan was
-    # a measured cache-locality/robustness problem (OOMs at N=150).
-    row_idx, z_nonzero = np.nonzero(np.abs(active_coefficients) > atol)
-    x_nonzero = active_x[row_idx]
-    coefficient_values = active_coefficients[row_idx, z_nonzero]
+    if chunk_size is not None:
+        # Already-thresholded COO triples - see fwht_pauli_coefficients's
+        # chunk_size/atol docstring (PLAN.md Phase 9). No further
+        # thresholding/gather needed here; that is the whole point of
+        # this path.
+        x_nonzero, z_nonzero, coefficient_values = fwht_pauli_coefficients(
+            operator,
+            sparse=True,
+            chunk_size=chunk_size,
+            atol=atol,
+            checkpoint_path=checkpoint_path,
+        )
+    else:
+        active_x, active_coefficients = fwht_pauli_coefficients(operator, sparse=True)
+        # Re-scan only the active rows fwht_pauli_coefficients already
+        # identified, never the full (dim, dim) array - see
+        # profiling/cache_locality/README.md for why the dense re-scan
+        # was a measured cache-locality/robustness problem (OOMs at
+        # N=150).
+        row_idx, z_nonzero = np.nonzero(np.abs(active_coefficients) > atol)
+        x_nonzero = active_x[row_idx]
+        coefficient_values = active_coefficients[row_idx, z_nonzero]
+
     labels = _pauli_label_batch(x_nonzero, z_nonzero, n_qubits)
 
     if assume_hermitian:
