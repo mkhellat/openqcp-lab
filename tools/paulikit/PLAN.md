@@ -1560,6 +1560,90 @@ scoping is trusted as production-verified.
 
 **Status: scoped 2026-08-27, not yet implemented.**
 
+### Phase 12 — auto-tuned `chunk_size` and streaming-vs-dense decision, with manual override always available (scoped 2026-08-27, not yet designed in detail)
+
+**Motivation.** Prompted directly by the user questioning whether
+`chunk_size=256` (used as an example default throughout Phase 9/10's
+own docs) is actually well-chosen, rather than accepting it as tuned.
+It is not: a controlled sweep across `chunk_size` at N=25/50/100
+(`profiling/phase10/chunk_size_cache_locality_findings.md`) found
+`chunk_size=256` is measurably suboptimal at **every** N tested -
+never the fastest option in any comparison. `perf stat` at N=100
+confirmed the mechanism: cache-miss ratio scales cleanly with
+`chunk_size`'s working-set size (`chunk_size * dim * 16 bytes`)
+relative to this machine's actual cache hierarchy (L2 1 MiB, L3 8 MiB
+shared) - 7.3% miss ratio at `chunk_size=4` (512 KiB, fits in L2),
+21.3% at `chunk_size=32` (4 MiB, fits in L3), 44.6% at `chunk_size=256`
+(32 MiB, 4x over L3). `chunk_size` was designed (Phase 6/9) purely as
+a memory-footprint bound; this reveals it is independently, and often
+more impactfully at N≤100 scale, a **cache-locality lever** - the two
+considerations point the same direction (smaller is generally better)
+but for different reasons, and neither alone justified today's
+example value.
+
+**Two distinct auto-decisions in scope, per the user's explicit
+framing** (not one general "make streaming smart" instruction):
+1. **Auto-pick `chunk_size`** when the caller doesn't specify one -
+   `fwht_pauli_terms_iter` currently requires `chunk_size` with no
+   default at all; `fwht_pauli_coefficients`'s `chunk_size=None` means
+   "don't chunk," not "pick one." A computed default removes the
+   burden of the caller having to guess a value from first principles.
+2. **Auto-pick streaming vs. dense** - a higher-level decision (should
+   `fwht_pauli_terms` vs. `fwht_pauli_terms_iter` even be chosen) that
+   the user separately confirmed is in scope, not deferred.
+
+**Non-negotiable constraint, stated explicitly by the user**: both
+auto-picks must remain **manually overridable** - "we should allow
+the user to manually toggle them on/off and control their params as
+well." Auto-tuning is the default behavior when a parameter is
+unset, never a forced decision a caller cannot bypass. This directly
+continues [[feedback_divide_and_conquer_strategy]]'s discipline
+(reasoned strategy, not a black box) and
+[[feedback_perf_priority_order]]'s ordering (this is a performance fix,
+priority 1 - it must not remove existing manual control, which would
+be a reliability/usability regression, priority 2).
+
+**Design questions for implementation (not yet answered):**
+1. What is the right target cache level for the `chunk_size` heuristic
+   - L2 (1 MiB on this machine, per `chunk_size=4`'s strong result) or
+   L3 (8 MiB, per `chunk_size=32`'s still-good but less extreme
+   result)? Only 3 points were measured at one N; a proper sweep
+   (more chunk_size values, more N, ideally more than one machine) is
+   needed before trusting a specific target - not yet done.
+2. How should `dim` (which the heuristic needs to compute a working-set
+   size) interact with the *lower* bound found at N=25's
+   `chunk_size=1` (57% slower than dense, since too little work per
+   chunk lets fixed per-chunk overhead dominate)? The heuristic likely
+   needs both a cache-driven upper bound on working-set size AND a
+   floor on absolute chunk_size (or total chunk count) to avoid this
+   failure mode - not yet formalized.
+3. How to query the machine's actual cache sizes portably? `lscpu` was
+   used for this scoping's own measurement but is Linux-specific and
+   not meant to be shelled out to at runtime; `os.sysconf` has some
+   cache-size constants on some platforms but portability across
+   Linux/macOS/Windows is unverified - needs research before
+   implementation, not assumed to just work.
+4. What triggers the streaming-vs-dense decision (auto-pick #2)?
+   Candidates: estimated term count (requires either a cheap
+   pre-pass or a heuristic from `n_active`/sparsity), available
+   system memory (queryable, e.g. via `psutil` - a new dependency
+   question, mirroring Phase 8's `scipy` optionality precedent), or a
+   fixed N/dim threshold (simpler, less adaptive to the actual
+   machine's resources). Not yet decided.
+5. API shape for manual override: keep today's explicit `chunk_size`
+   parameter (a caller passing a value bypasses auto-tuning
+   entirely, no new flag needed) plus a new top-level convenience
+   function/parameter for auto-picking streaming-vs-dense (since that
+   decision currently requires the caller to choose between two
+   different function names, `fwht_pauli_terms` vs.
+   `fwht_pauli_terms_iter`)? Not yet designed - this is a bigger API
+   surface question than `chunk_size` alone.
+
+**Status: scoped 2026-08-27, not yet designed in detail or
+implemented.** The cache-locality mechanism behind auto-decision #1 is
+confirmed by direct measurement; the auto-tuning formula itself, and
+all of auto-decision #2's design, remain open.
+
 
 ## 6. Explicitly out of scope
 
