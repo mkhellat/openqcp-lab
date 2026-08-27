@@ -1,8 +1,14 @@
 # Phase 10: streaming output and its cache-locality follow-up
 
 Map for this directory - read this first, then follow the findings
-below in order. See `PLAN.md` Phase 10 for the design/implementation
+below in order. See `../../PLAN.md` Phase 10 for the design/implementation
 narrative; this directory holds the supporting measurements.
+
+Two follow-on phases were scoped by findings surfaced here and now
+live in their own sibling directories, not this one:
+[`../phase11/`](../phase11/README.md) (`dict_build` optimization) and
+[`../phase12/`](../phase12/README.md) (`chunk_size` cache-locality
+tuning).
 
 ## Findings, in order
 
@@ -52,15 +58,28 @@ narrative; this directory holds the supporting measurements.
    consistent with finding 3's dict-construction-dominated diagnosis.
    Script: `steady_state_streaming_sweep.py`.
 
-5. [`phase11_dict_build_scoping_findings.md`](phase11_dict_build_scoping_findings.md) -
-   scopes PLAN.md Phase 11: breaks `dict_build` down further and finds
-   the per-term Hermiticity check (not the dict construction itself)
-   is the dominant sub-cost - vectorizing it (NumPy `abs`/`maximum`
-   instead of a per-term Python loop) plus using `dict(zip(...))`
-   instead of an explicit insert loop gives a 2.7-3.2x speedup on a
-   synthetic 1M/10M-term benchmark, correctness-asserted. Not yet
-   implemented against the real pipeline. Script:
-   `dict_build_microbenchmark.py`.
+5. [`../phase11/phase11_dict_build_scoping_findings.md`](../phase11/phase11_dict_build_scoping_findings.md) -
+   scopes PLAN.md Phase 11 (now its own directory,
+   [`../phase11/`](../phase11/README.md)): breaks `dict_build` down
+   further and finds the per-term Hermiticity check (not the dict
+   construction itself) is the dominant sub-cost - vectorizing it
+   (NumPy `abs`/`maximum` instead of a per-term Python loop) plus using
+   `dict(zip(...))` instead of an explicit insert loop gives a 2.7-3.2x
+   speedup on a synthetic 1M/10M-term benchmark, correctness-asserted.
+   Not yet implemented against the real pipeline. Script:
+   `../phase11/dict_build_microbenchmark.py`.
+
+## See also
+
+[`../phase12/chunk_size_cache_locality_findings.md`](../phase12/chunk_size_cache_locality_findings.md) -
+a related, separately-scoped follow-up that also grew out of this
+phase's work: a controlled `chunk_size` sweep found the `chunk_size=256`
+value used as an example throughout this directory's own findings docs
+is measurably suboptimal at every N tested, and that `chunk_size` is
+independently a cache-locality lever, not just the memory-footprint
+bound it was originally designed as. Scopes PLAN.md Phase 12
+(auto-tuned `chunk_size`/streaming decision) - now its own directory,
+[`../phase12/`](../phase12/README.md).
 
 ## Takeaway if you only read one thing
 

@@ -281,7 +281,7 @@ Surveyed this session, informing methodology (not code reuse):
 
 ### Phase 3 — C porting experiment (only for confirmed hot loops)
 
-Phase 2 profiling (`tools/paulikit/profiling/README.md`, task #16,
+Phase 2 profiling (`tools/paulikit/profiling/phase2/README.md`, task #16,
 2026-08-16) found two distinct, additive costs, addressed as two
 sequenced sub-phases rather than one conflated "port the hot loop"
 exercise:
@@ -1566,7 +1566,7 @@ scoping is trusted as production-verified.
 `chunk_size=256` (used as an example default throughout Phase 9/10's
 own docs) is actually well-chosen, rather than accepting it as tuned.
 It is not: a controlled sweep across `chunk_size` at N=25/50/100
-(`profiling/phase10/chunk_size_cache_locality_findings.md`) found
+(`profiling/phase12/chunk_size_cache_locality_findings.md`) found
 `chunk_size=256` is measurably suboptimal at **every** N tested -
 never the fastest option in any comparison. `perf stat` at N=100
 confirmed the mechanism: cache-miss ratio scales cleanly with

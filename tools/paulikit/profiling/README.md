@@ -8,9 +8,10 @@ links into the subdirectories for full detail. See
 behind each phase — this README is the *measurement* trail, PLAN.md is
 the *decision* trail.
 
-**Layout:**
-- Loose files directly in this directory (`profile_target.py`,
-  `cprofile_n50.prof`, `pyspy_n50.svg`, …) are Phase 2's original
+**Layout:** one subdirectory per phase (or per closely-related group of
+phases), each with its own `README.md` (or single findings doc) as its
+own entry point:
+- [`phase2/`](phase2/README.md) — Phase 2's original
   cProfile/line_profiler/py-spy baseline artifacts.
 - [`phase3b/`](phase3b/README.md) — sparsity-aware
   `fwht_pauli_coefficients` design exploration (Phase 3b).
@@ -19,17 +20,36 @@ the *decision* trail.
 - [`phase9/`](phase9/phase9_findings.md) — chunked-accumulator
   space-complexity fix, N=150 measurement (Phase 9).
 - [`phase10/`](phase10/README.md) — streaming output, TBB
-  re-measurement, N-scaling table, Phase 11 scoping (Phase 10).
+  re-measurement, N-scaling table (Phase 10).
+- [`phase11/`](phase11/README.md) — `dict_build` optimization scoping
+  (Phase 11).
+- [`phase12/`](phase12/README.md) — `chunk_size` as a cache-locality
+  lever, auto-tuning scoping (Phase 12).
 - [`../bindings/README.md`](../bindings/README.md) — the C/Cython/CFFI/
   ctypes/SWIG binding comparison (Phase 3a; lives under `bindings/`,
   not `profiling/`, but is part of this same chronological trail).
+
+**Why `phase10/`/`phase11/`/`phase12/` are separate directories, not
+one flat `phase10/`:** all three phases' findings originally
+accumulated inside a single `phase10/` directory as they were
+discovered, since Phase 11 and Phase 12 were both *scoped* by findings
+that happened to surface during Phase 10's own investigation. But
+PLAN.md tracks Phase 10, 11, and 12 as three distinct phases with
+separate status (Phase 10 implemented; Phase 11 scoped, not
+implemented; Phase 12 scoped, not yet designed in detail) — keeping
+their findings docs and scripts under one directory obscured that
+distinction and made the directory the largest, most heterogeneous one
+in this tree. Splitting by actual phase ownership (which each finding's
+own "scopes PLAN.md Phase N" language already stated explicitly) keeps
+the physical layout matching the phase structure everything else in
+this directory follows.
 
 ## Chronological summary
 
 ### Phase 2 — cProfile / line_profiler / py-spy baseline (2026-08-16)
 
 The starting point for all native-porting and algorithmic work below.
-`profile_target.py` builds the matched-N real coupled-oscillator
+`phase2/profile_target.py` builds the matched-N real coupled-oscillator
 Hamiltonian used by `tests/test_benchmark_reference.py`, then calls
 `fwht_pauli_terms` on it. Profiled at N=50 (2048×2048, 11 qubits,
 ~6.2s plain run time) — the largest matched-benchmark size that still
@@ -61,9 +81,11 @@ called once per nonzero coefficient. This directly motivated Phase 3a
 below: a native port of the WHT butterfly would speed up only ~15% of
 runtime, while label formatting was 60-90% depending on term count.
 
-Full detail, including the line-by-line and py-spy breakdowns:
-[`README.md`'s original content is preserved below](#phase-2-artifacts-and-full-detail)
-— see the "Artifacts in this directory" list at the end of this file.
+Full detail, including the line-by-line and py-spy breakdowns, plus
+reproduction commands and the artifact list, now lives in
+[`phase2/README.md`](phase2/README.md) — moved there so Phase 2's
+artifacts and their write-up sit together, rather than loose files in
+this directory's root next to every later phase's own subdirectory.
 
 ### Phase 3a — `pauli_label` C port + binding comparison (2026-08-16, complete)
 
@@ -295,7 +317,7 @@ included. **N=150 is now a solved, repeatable case.**
    0.069s → 1.329s → 22.064s → 101.310s, **linear** scaling with term
    count (~4.5x growth in both from N=100 to N=150), consistent with
    finding 3's dict-construction-dominated diagnosis.
-5. [`phase11_dict_build_scoping_findings.md`](phase10/phase11_dict_build_scoping_findings.md)
+5. [`phase11/phase11_dict_build_scoping_findings.md`](phase11/phase11_dict_build_scoping_findings.md)
    — scopes Phase 11 (below): the per-term Hermiticity check, not dict
    construction itself, is the dominant sub-cost within dict-building;
    vectorizing it plus `dict(zip(...))` construction gives a
@@ -307,7 +329,7 @@ Not yet started as of this writing. `dict_build` — the per-chunk
 Python loop converting `(label, coefficient)` pairs into a `dict` —
 was found (Phase 10, finding 3 above) to be ~60% of total pipeline
 time at N=150. Scoping work (see
-[`phase10/phase11_dict_build_scoping_findings.md`](phase10/phase11_dict_build_scoping_findings.md))
+[`phase11/phase11_dict_build_scoping_findings.md`](phase11/phase11_dict_build_scoping_findings.md))
 broke this down further via a standalone microbenchmark: the per-term
 Hermiticity check (`abs(c.imag) > max(atol, 1e-6 * abs(c))`, evaluated
 one Python object at a time) is the single largest sub-cost — a fully
@@ -319,6 +341,26 @@ beats an explicit per-item insert loop by a further ~30-40%. Not yet
 implemented against the real pipeline — see `../PLAN.md` Phase 11 for
 the remaining open design questions (preserving per-term error-message
 specificity, whether to apply to the non-streaming path too).
+
+### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning scoping (scoped 2026-08-27, not yet designed in detail)
+
+Full detail:
+[`phase12/chunk_size_cache_locality_findings.md`](phase12/chunk_size_cache_locality_findings.md).
+Prompted by the user questioning whether `chunk_size=256` (used as an
+example default throughout Phase 9/10's own docs) was actually
+well-chosen. It wasn't: a controlled sweep across `chunk_size` at
+N=25/50/100 found `chunk_size=256` measurably suboptimal at **every**
+N tested. `perf stat` at N=100 confirmed the mechanism: cache-miss
+ratio scales cleanly with `chunk_size`'s working-set size relative to
+this machine's cache hierarchy — 7.3% at `chunk_size=4` (fits in L2),
+21.3% at `chunk_size=32` (fits in L3), 44.6% at `chunk_size=256` (4x
+over L3). `chunk_size` was designed (Phase 6/9) purely as a
+memory-footprint bound; this reveals it is independently, and often
+more impactfully at N≤100 scale, a **cache-locality lever**.
+
+Scopes PLAN.md Phase 12 (auto-tuned `chunk_size` and streaming-vs-dense
+decision, with manual override always available) — not yet designed in
+detail as of this writing.
 
 ## Current state: what's solved vs. open
 
@@ -337,164 +379,16 @@ specificity, whether to apply to the non-streaming path too).
 - **Open, scoped, not yet implemented:** Phase 11 (`dict_build`
   vectorization) — the current highest-leverage remaining optimization
   target, with a scoped fix and a measured 2.7-3.2x isolated-benchmark
-  upside not yet applied to the real pipeline. Also open: Phase 5
-  (prebuilt wheels, to make the native extension a hard requirement)
-  and Phase 7's remaining items (TBB false-sharing/partitioner tuning
-  — explicitly conditional on TBB re-entering the hot path, which it
-  has not; statistical rigor for `perf`-based measurements; PyPI
-  publishing strategy). See `../PLAN.md` for full status on all of
-  these.
+  upside not yet applied to the real pipeline. Phase 12 (`chunk_size`
+  auto-tuning and streaming-vs-dense auto-decision) — scoped, not yet
+  designed in detail. Also open: Phase 5 (prebuilt wheels, to make the
+  native extension a hard requirement) and Phase 7's remaining items
+  (TBB false-sharing/partitioner tuning — explicitly conditional on TBB
+  re-entering the hot path, which it has not; statistical rigor for
+  `perf`-based measurements; PyPI publishing strategy). See
+  `../PLAN.md` for full status on all of these.
 - **Known measurement confound to control for in any new work in this
   directory:** OpenBLAS thread-pool noise. Set `OPENBLAS_NUM_THREADS=1`
   for any new `perf`-based measurement unless specifically
   investigating BLAS behavior itself (see
   `cache_locality/stall_floor_mystery_solved.md`).
-
----
-
-## Phase 2 artifacts and full detail
-
-The rest of this file is Phase 2's original profiling write-up,
-preserved in full since it's the actual evidence Phases 3a/3b/3c were
-scoped against.
-
-Follows [`../PLAN.md`](../PLAN.md) Section 5, Phase 2: `cProfile` +
-`snakeviz` for an initial pass, `line_profiler` for per-line detail on
-whatever cProfile flags as hot, `py-spy` as a no-instrumentation
-sampling cross-check. All three tools agree on the same hot spot.
-
-### Setup
-
-`profile_target.py` builds the same matched-N real coupled-oscillator
-Hamiltonian used by `tests/test_benchmark_reference.py` (so results
-are directly comparable to the recorded PennyLane benchmark), then
-calls `fwht_pauli_terms` on it. N=50 (2048x2048, 11 qubits, ~6.2s
-plain run time) was chosen as the profiling target: the largest
-matched-benchmark size that still runs in single-digit seconds, so it
-can be profiled repeatedly. N=100 (~8192x8192) was timed once for
-reference but is too slow to iterate on directly.
-
-Reproduce:
-
-```bash
-# cProfile
-python3 -m cProfile -o profiling/cprofile_n50.prof profiling/profile_target.py
-snakeviz profiling/cprofile_n50.prof   # interactive flame graph, browser GUI
-
-# line_profiler (requires @profile-decorated copy or kernprof -l)
-kernprof -l -v <script importing fwht.pauli_label / fwht.fwht_pauli_terms>
-
-# py-spy
-py-spy record -o profiling/pyspy_n50.svg -- python3 profiling/profile_target.py
-```
-
-### Finding: `pauli_label` dominates, not the FWHT math
-
-At N=50, `fwht_pauli_terms` takes 11.7s total. Breakdown by
-**cumulative** time (`cprofile_n50.prof`, sorted by `cumulative`):
-
-| function | cumtime | % of total |
-|---|---|---|
-| `fwht_pauli_terms` (whole call) | 11.708s | 100% |
-| `pauli_label` (1,261,568 calls) | 6.980s | **59.6%** |
-| `fwht_pauli_coefficients` (the actual FWHT: gather + WHT + phase) | 1.812s | 15.5% |
-| `_walsh_hadamard_transform_rows` (the WHT butterfly itself) | 1.042s | 8.9% |
-| `_popcount_array` | 0.463s | 4.0% |
-
-By **self** time (`tottime`, excludes callees) the gap is even more
-stark: `pauli_label` alone costs 4.902s of self time — more than
-2x the *entire* `fwht_pauli_coefficients` core algorithm's self time
-(0.274s self, i.e. almost all of its 1.812s cumulative is the WHT and
-gather steps it calls, not label formatting).
-
-**The algorithmic core (FWHT itself) is not the bottleneck.** The
-bottleneck is the pure-Python bookkeeping step that turns numeric
-`(x, z)` bitmask coefficients into `"IXYZ"`-style string dict keys,
-run once per nonzero term (1.26M times at N=50).
-
-### Line-level detail (`line_profiler`, `kernprof -l -v`)
-
-Inside `fwht_pauli_terms`, one line accounts for 88.1% of the
-function's own measured time:
-
-```
-Line #      Hits         Time  Per Hit   % Time  Line Contents
-...
-1261568   32265959.6     25.6     88.1      real_terms[pauli_label(x, z, n_qubits)] = float(c.real)
-```
-
-Inside `pauli_label` itself (called 1,261,568 times, `n_qubits=11`,
-so 13,877,248 inner-loop iterations):
-
-```
-Line #      Hits         Time  Per Hit   % Time  Line Contents
-...
-   1261568     650627.3      0.5      2.8      letters = {(0, 0): "I", (1, 0): "X", (0, 1): "Z", (1, 1): "Y"}
-   1261568     349118.4      0.3      1.5      chars = []
-  15138816    4184285.3      0.3     18.2      for qubit in range(n_qubits):
-  13877248    3843422.5      0.3     16.7          bit = n_qubits - 1 - qubit
-  13877248    4012536.9      0.3     17.5          xj = (x_mask >> bit) & 1
-  13877248    3992917.2      0.3     17.4          zj = (z_mask >> bit) & 1
-  13877248    5104560.2      0.4     22.2          chars.append(letters[(xj, zj)])
-   1261568     820816.5      0.7      3.6      return "".join(chars)
-```
-
-Two contributing causes, both fixable without touching the FWHT
-algorithm:
-1. **`letters` dict is rebuilt on every call** (2.8% of `pauli_label`'s
-   own time) instead of being a module-level constant.
-2. **The per-qubit Python loop itself** (lines 208-212, ~92% combined)
-   is pure per-bit interpreted-Python work repeated 11-13 times per
-   term, 1.26M times over. This is the real cost: bit-shifting,
-   masking, and a dict lookup per qubit per term, none of which is
-   vectorizable in the current one-call-per-term design.
-
-### Cross-check (`py-spy`, sampling, ~0 instrumentation overhead)
-
-`py-spy record` (100 Hz sampling) on the same N=50 target agrees with
-the instrumented profilers without their overhead. Self-time samples
-landing inside `pauli_label`, broken down by exact source line
-(`pyspy_n50.svg` flame graph, leaf-frame percentages):
-
-| line | content | % of all samples |
-|---|---|---|
-| fwht.py:212 | `chars.append(letters[(xj, zj)])` | 16.75% |
-| fwht.py:210 | `xj = (x_mask >> bit) & 1` | 7.74% |
-| fwht.py:211 | `zj = (z_mask >> bit) & 1` | 6.48% |
-| fwht.py:213 | `return "".join(chars)` | 1.90% |
-
-These four lines alone account for **~33% of every sample taken
-across the entire program run** (not just within `pauli_label`) —
-independent confirmation, via a fundamentally different measurement
-method, of the same hot spot line_profiler found.
-
-### Conclusion
-
-The FWHT algorithm itself (`fwht_pauli_coefficients`: the XOR gather,
-the Walsh-Hadamard butterfly, the phase-factor multiplication) is
-fast and already vectorized in NumPy — it is not the target for any
-future optimization work. The actual bottleneck is
-`pauli_label`'s per-term, per-qubit, pure-Python string-building loop
-in the `fwht_pauli_terms` convenience wrapper, called once per
-nonzero coefficient.
-
-This matters for any future Phase 3 (C porting) decision per
-PLAN.md: a native port of the WHT butterfly would speed up only
-~15% of current runtime, and *none* of the label-formatting cost
-(~60-90% of runtime depending on term count) — porting `pauli_label`
-(or vectorizing/batching label generation in NumPy, or making label
-generation lazy so it only runs for terms the caller actually
-inspects) is the higher-leverage target if wall-clock time on the
-convenience `fwht_pauli_terms` API is the concern.
-`fwht_pauli_coefficients` (the numeric-array API, no label strings)
-does not pay this cost at all.
-
-### Artifacts in this directory
-
-- `profile_target.py` — shared setup, builds the matched-N Hamiltonian.
-- `cprofile_n50.prof` — raw cProfile output, open with `snakeviz` for
-  an interactive flame graph.
-- `cprofile_n50_tottime.txt` — text dump, sorted by self time.
-- `pyspy_n50.svg` — py-spy sampling flame graph (open in a browser).
-- `pyspy_n50.speedscope.json` — same py-spy run, speedscope format
-  (upload to https://www.speedscope.app/ for an interactive view).
