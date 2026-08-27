@@ -1420,6 +1420,38 @@ phase; only decomposing the problem differently did.
 **Status: implemented and verified 2026-08-27.** N=150 is now a
 solved, repeatable case on this machine.
 
+**Full-pipeline cache-locality re-investigation (2026-08-27, per
+direct user request - see
+`profiling/phase10/full_pipeline_n150_findings.md`).** The
+`--parallel-labels` recommendation above was based on
+`pauli_label_batch_parallel` measured *in isolation* against a
+synthetic 40M-pair benchmark. Re-measured embedded in the real
+pipeline at N=150: a per-stage wall-clock breakdown
+(gather/WHT/threshold/label/dict-construction) found **dict
+construction - not labeling, not the WHT butterfly - dominates at
+~60% of total pipeline time** (vs. ~21% WHT, ~7% labeling), a cost no
+prior measurement had isolated. At that proportion, labeling's
+isolated 1.1-1.4x win becomes noise-level at the whole-pipeline scale:
+whole-pipeline `perf stat` shows `--parallel-labels` **slightly
+slower** end-to-end (97.97s vs. 96.96s) with cache-miss/LLC-miss/stall
+percentages all flat to within a point - the isolated kernel's
+cache-locality cost does not reproduce as a measurable system-level
+effect either, simply because labeling is too small a share of total
+time for its cost or benefit to matter much at this scale.
+**Correction to Phase 10's original recommendation:**
+`--parallel-labels` should not be treated as a default optimization
+based on the isolated measurement; it delivers no measurable
+full-pipeline benefit at N=150's real proportions (still available as
+an opt-in flag, since it is not harmful, just not helpful here).
+**New finding, not yet scoped as a phase:** dict construction is now
+the highest-leverage remaining optimization target in this pipeline -
+this directly parallels Phase 3's original N=50 finding
+(`pauli_label`'s per-term Python loop dominating the vectorized FWHT
+core), with the specific bottleneck having moved from label-string
+formatting to dict construction now that labels are TBB/Cython-fast,
+but the general shape of the problem (pure-Python per-term
+bookkeeping dominating a vectorized numeric core) unchanged.
+
 
 ## 6. Explicitly out of scope
 
