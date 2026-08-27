@@ -1452,6 +1452,114 @@ formatting to dict construction now that labels are TBB/Cython-fast,
 but the general shape of the problem (pure-Python per-term
 bookkeeping dominating a vectorized numeric core) unchanged.
 
+### Phase 11 — `dict_build` optimization (scoped 2026-08-27, not yet implemented)
+
+**Motivation.** `full_pipeline_n150_findings.md` found `dict_build` -
+the per-chunk Python loop in `fwht_pauli_terms`/`fwht_pauli_terms_iter`
+that converts each chunk's `(label, coefficient)` pairs into a
+`dict` - accounts for ~60% of total pipeline time at N=150, dwarfing
+the WHT butterfly (~21%) and label generation (~7%).
+`n_scaling_streaming_findings.md`'s N=25/50/100/150 timing table
+confirms the resulting behavior: total time scales essentially
+**linearly** with term count (both grow ~4.5x from N=100 to N=150) -
+exactly what's expected when a per-term Python cost dominates, and
+the signature this phase should look for gone once fixed.
+
+**Divide-and-conquer decomposition of `dict_build` itself.** Before
+optimizing, the loop's body was broken into its actual sub-costs via
+a standalone microbenchmark (1M and 10M synthetic terms, not yet
+committed as a checked-in script - see "Not yet done" below) to see
+which part dominates, rather than optimizing by assumption:
+
+1. `chunk_coeff.tolist()` - converts the chunk's complex128 NumPy
+   array to a list of Python `complex` objects. Present in every
+   variant tested; not differentiating.
+2. **The per-term Hermiticity check** (`abs(c.imag) > max(atol, 1e-6 *
+   abs(c))`, evaluated inside the Python loop, once per term) - this
+   is a fully vectorizable NumPy operation (`np.abs`, `np.maximum`,
+   one array comparison) currently being paid for one Python-level
+   `abs()`/`max()`/comparison at a time. **This is the single largest
+   sub-cost measured**: removing it (replaced by one vectorized check
+   before the loop) alone produced a 3.76x speedup at 1M terms and
+   2.58x at 10M terms in isolation (both numbers report honestly, not
+   averaged/oversold - the effect is real but its exact magnitude
+   shrinks somewhat at larger scale, plausibly as `.tolist()`'s own
+   cost becomes proportionally larger).
+3. **The dict construction itself** (`real_terms[label] = ...` inside
+   an explicit loop) - even with the check removed, an explicit
+   per-item loop is measurably slower than `dict(zip(labels,
+   values))`'s C-level constructor (a further ~30-40% within the
+   remaining cost, per the isolated microbenchmark).
+
+**Two genuinely different problems, not one:** the Hermiticity check
+(only present in the `assume_hermitian=True` branch) is a validation
+step masquerading as a per-item Python cost - it should never have
+been inside the per-term loop. Dict construction is an inherent
+requirement of the API's return type (a `dict[str, float]`), not
+removable, but its *construction method* still has a faster and a
+slower version. The `assume_hermitian=False` branch already has no
+per-term check (just a dict comprehension), so it only needs the
+construction-method fix, not the vectorized-check fix - these two
+branches need different treatment, confirmed by reading the code, not
+assumed symmetric.
+
+**Design questions for implementation (not yet answered):**
+1. Vectorizing the Hermiticity check loses the current error
+   message's per-term specificity (naming the exact offending
+   `label` and its `imag` value) if done naively (a single `.any()`
+   check tells you *that* something failed, not *which* term). Fix:
+   on violation, find the first (or all) violating index/indices via
+   `np.nonzero` *only in the error path* (which is rare and doesn't
+   need to be fast) and reconstruct the same error message from that
+   index - preserves today's diagnostic quality without paying its
+   cost on the common, non-error path. This must be verified to
+   produce byte-identical error messages to today's before being
+   trusted (per this project's own established discipline - Phase 6/8/9's
+   own verification bar - not just "looks equivalent").
+2. Should the vectorized check + `dict(zip(...))` construction replace
+   the loop in both `fwht_pauli_terms` (dense, non-chunked path) and
+   `fwht_pauli_terms_iter`'s per-chunk loop, or only the latter (since
+   the streaming path is where the ~60%-of-time finding was measured,
+   at N=150 scale)? Likely both, since the same sub-cost structure
+   applies to `fwht_pauli_terms`'s single, larger loop too - not yet
+   separately measured at non-streaming scale to confirm.
+3. `atol`/Hermiticity-tolerance semantics: the current per-term check
+   uses `max(atol, 1e-6 * abs(c))` - a per-term *relative* tolerance
+   floor. The vectorized form needs `np.maximum(atol, 1e-6 *
+   np.abs(coeffs.real))` (broadcasting), which should be mathematically
+   identical - needs bit-for-bit verification against the scalar
+   per-term form, not assumed equivalent from reading the formulas.
+4. Does this change interact with `chunk_size=None`'s dense path in
+   `fwht_pauli_terms` (which currently reuses the same per-term loop
+   structure, per question 2)? If chunk_size is set,
+   `fwht_pauli_terms_iter`'s chunk boundaries already provide a
+   natural vectorization unit (one chunk's `chunk_coeff` array); the
+   non-chunked path's `coefficient_values` array would need the same
+   treatment applied to the whole array at once.
+
+**Priority-order framing** (per
+[[feedback_perf_priority_order]]): this is squarely a **performance**
+fix (priority 1) - it does not touch reliability, scalability, or
+resumability, all of which stay exactly as Phase 8/9/10 left them.
+The one reliability-adjacent detail (design question 1, preserving
+error-message specificity) must be resolved as part of the
+implementation, not treated as acceptable collateral damage for
+speed - matches the priority order's "performance first, but not at
+the cost of reliability" framing already established for this
+project.
+
+**Not yet done:** the microbenchmark itself is not yet a committed,
+checked-in script (per this project's own "document exploration
+scripts" convention) - only its numbers are recorded here from an
+interactive session. A committed version, plus bit-for-bit
+correctness tests against the existing per-term loop (both the
+`assume_hermitian=True` and `False` branches, and the error-message
+preservation from design question 1), should be the first concrete
+implementation step, before any performance claim from this
+scoping is trusted as production-verified.
+
+**Status: scoped 2026-08-27, not yet implemented.**
+
 
 ## 6. Explicitly out of scope
 
