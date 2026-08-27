@@ -3,19 +3,24 @@
 Status: Phases 0-3c complete. Phase 6 (sparse output for
 `fwht_pauli_coefficients`, plus two follow-on memory-footprint fixes
 and an optional `chunk_size` tiling parameter - see Phase 6's
-"Update 2026-08-26" below) is implemented and correctness-verified;
-N=150 is not yet unblocked - the dominant remaining cost there is
-`paulikit.hamiltonian`'s dense (rather than sparse) Hamiltonian
-storage, now scoped as Phase 8 (design questions written up, not yet
-answered with the user or implemented). Phase 4 (final write-up),
-Phase 5 (prebuilt wheels + hard-require the native extension), and
-Phase 7 (remaining items from the 2026-08-25 Gemini-transcript
-review: TBB false sharing/partitioner tuning - conditional on TBB
-re-entering the hot path, statistical rigor for perf measurements,
-PyPI publishing strategy) are all scoped but not started. Phase 5
-scoped 2026-08-19; Phase 6 and Phase 7 scoped 2026-08-25; Phase 8
-scoped 2026-08-26.
-Last updated: 2026-08-26.
+"Update 2026-08-26" below) is implemented and correctness-verified.
+Phase 8 (sparse Hamiltonian construction/storage/input) is now
+implemented and correctness-verified too (see Phase 8's own status
+below) - N=150's original densification ceiling (~4 GiB at
+Hamiltonian-construction time) is cleared, confirmed via a real
+N=150 attempt, but that attempt hit a **new, distinct** ceiling one
+step later inside `fwht_pauli_coefficients`/`fwht_pauli_terms`'s own
+output accumulator (~11.8 GiB, unrelated to Hamiltonian sparsity),
+now scoped as Phase 9 (not yet designed/implemented). Phase 4 (final
+write-up), Phase 5 (prebuilt wheels + hard-require the native
+extension), and Phase 7 (remaining items from the 2026-08-25
+Gemini-transcript review: TBB false sharing/partitioner tuning -
+conditional on TBB re-entering the hot path, statistical rigor for
+perf measurements, PyPI publishing strategy) are all scoped but not
+started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7 scoped
+2026-08-25; Phase 8 scoped 2026-08-26, implemented 2026-08-27; Phase
+9 scoped 2026-08-27.
+Last updated: 2026-08-27.
 
 
 ## 1. Problem statement
@@ -1123,15 +1128,118 @@ scoped here) are different problems with different payoffs. This
 phase targets the measured N=150 ceiling (input densification, ~4
 GiB), not a further algorithmic redesign of the WHT step.
 
-**Status: all 5 design questions resolved 2026-08-26 (see above).**
-Ready for implementation - not yet started. Implementation should
-follow Phase 6's own verification discipline: bit-for-bit correctness
-between `sparse=True`/`sparse=False` at every step (mirroring the
-`chunk_size`/`sparse` verification already done for
-`fwht_pauli_coefficients` in Phase 6), before any performance claim is
-trusted, and a real N=150 measurement attempt once implemented -
-that's the actual test of whether this closes `n150_oom_finding.md`,
-not just a design-level expectation.
+**Status: implemented and correctness-verified 2026-08-27.**
+`build_hamiltonian(..., sparse=True)` and `pad_to_power_of_two(...,
+sparse=True)` added to `hamiltonian.py`, gated behind a new
+`try: import scipy.sparse` (hard `ImportError` with an actionable
+message when `sparse=True` is requested without the `sparse` extra
+installed, per question 1 - never a silent dense fallback).
+`fwht_pauli_coefficients` now accepts a `scipy.sparse` operator
+directly (converted to CSR internally for fancy-indexing support,
+since COO - the format `pad_to_power_of_two` returns - is not
+fancy-indexable), with the `.astype(complex)` and
+`np.asarray(...).ravel()` fixes from question 4 applied at both
+fancy-indexing gather sites (the unchunked path and the chunked
+path). 15 new tests added
+(`tests/test_sparse_hamiltonian.py`): sparse/dense parity for all
+three functions (bit-for-bit, `max_error == 0.0`, not just
+`pytest.approx`), the non-mutation contract for
+`pad_to_power_of_two(..., sparse=True)`, sparse-input combined with
+the existing `sparse=True` *output* mode and with `chunk_size`
+chunking, and both `ImportError` paths (via `monkeypatch` on the
+module's `_sp` name). All 40 tests pass (25 pre-existing + 15 new).
+
+A real N=150 attempt (`build_hamiltonian` → `pad_to_power_of_two` →
+`fwht_pauli_terms`, all with `sparse=True`, `chunk_size=256`, under a
+6 GB `ulimit -v` cap) confirms this phase's targeted ceiling is
+cleared: `build_hamiltonian(sparse=True)` takes 0.04s (was the ~4 GiB
+densify-and-upcast crash point), `pad_to_power_of_two(sparse=True)`
+is instant, and the WHT transform itself completes. The run still
+crashed, but one step later, inside `fwht_pauli_terms`'s own nonzero
+extraction (`active_coefficients[row_idx, z_nonzero]`) - a **new,
+distinct** bottleneck unrelated to Hamiltonian sparsity, now scoped
+as Phase 9. This phase's own scope (Hamiltonian construction/
+storage/input densification) is fully closed.
+
+### Phase 9 — `fwht_pauli_coefficients`/`fwht_pauli_terms` output-accumulator memory (scoped 2026-08-27, not yet designed)
+
+**Motivation.** Phase 8 cleared N=150's original ceiling (dense
+Hamiltonian construction, ~4 GiB), confirmed by a real run under a
+6 GB `ulimit -v` cap. That run got much further than any previous
+attempt - Hamiltonian construction, padding, and the WHT transform
+itself (with `chunk_size=256` bounding the *transient* per-chunk
+working set) all completed - but then crashed one step later, inside
+`fwht_pauli_terms`'s nonzero-extraction line:
+```
+active_coefficients[row_idx, z_nonzero]
+```
+with `numpy._core._exceptions._ArrayMemoryError: Unable to allocate
+1.37 GiB for an array with shape (91652096,)`.
+
+**Root cause, confirmed by direct calculation, not guesswork.** At
+N=150, `n_active` (the number of x-values with at least one nonzero
+gathered entry) is 45,000 and `dim` is 16,384. `chunk_size` only
+bounds the *transient* per-chunk array
+(`gathered_chunk`/`transformed_chunk`, shape `(chunk_size, dim)`)
+inside `fwht_pauli_coefficients`'s chunked loop - but the loop still
+writes every chunk's result into one `active_coefficients =
+np.empty((n_active, dim), dtype=complex)` accumulator allocated
+up front (see `fwht.py`, the line right before the chunking loop).
+At N=150 that's `45000 * 16384 * 16 bytes ≈ 11.8 GiB` - already the
+real ceiling, independent of `chunk_size`'s value, and independent
+of Hamiltonian sparsity (this is downstream of the WHT step, not
+upstream of it - Phase 8 is unrelated). `fwht_pauli_terms` then needs
+a second full-size gather (`active_coefficients[row_idx, z_nonzero]`)
+on top of that, which is what actually raised the exception this run
+(91.6M of the 737M possible entries survive the `atol` threshold -
+~12%, roughly consistent with Phase 3b's 47-86%-active-*rows* finding,
+just applied to entries here instead of rows).
+
+**Why this is a real, distinct problem from Phase 6/8.** Phase 6's
+`chunk_size` was designed to bound *transient* working memory during
+the WHT computation itself (per row-block). It was never designed to
+bound the *output* - the full set of (x, z) coefficients above
+`atol` is data the caller (eventually) needs, and at N=150 there is
+a lot of it (~91.6M complex entries, if none are filtered further).
+This is not a "just chunk it more" fix in the way Phase 6's was;
+returning ~92M terms as a Python dict (`fwht_pauli_terms`'s own
+return type) is itself questionable at that scale, both for peak
+memory and for whether a 92M-entry `dict[str, float]` is a usable
+result for any downstream caller.
+
+**Design questions for next session (none yet answered):**
+1. Is a 92M-term result at N=150 actually useful to any real caller,
+   or does this indicate the *problem itself* (not just the
+   implementation) needs bounding - e.g. a coefficient-magnitude cutoff
+   tighter than the current default `atol=1e-10`, or a top-k/truncated
+   result mode? This is a physics/use-case question as much as an
+   engineering one and should not be answered by engineering guesswork
+   alone.
+2. If the full term set genuinely is needed, should
+   `fwht_pauli_terms`'s extraction become a generator/streaming API
+   (yielding `(label, coefficient)` pairs, or writing directly to a
+   file/sparse-on-disk format) rather than building one dict in
+   memory - a bigger API-shape change than anything in Phase 6/8, so
+   needs explicit user sign-off before implementation, not silent
+   scoping.
+3. Should `fwht_pauli_coefficients`'s chunked path write its per-chunk
+   output directly into a **sparse** accumulator (e.g. incrementally
+   building COO triples per chunk, only for entries above `atol`)
+   instead of a dense `(n_active, dim)` array - moving the
+   thresholding *into* the chunk loop rather than after it, so the
+   ~92M *entries* never coexist as a single dense block? This looks
+   like the most promising direction (mirrors Phase 6/8's own
+   dense-to-sparse pattern) but needs the same measurement discipline
+   before being trusted - unverified as of this scoping.
+4. Does `chunk_size`'s existing docstring/contract need updating once
+   Phase 9 lands, to clarify what it does and does not bound (it never
+   claimed to bound the output accumulator, but the N=150 crash shows
+   that distinction matters in practice and should be stated
+   explicitly)?
+
+**Status: scoped 2026-08-27, not yet designed or implemented.** No
+code changes yet - this section exists so the next session does not
+have to re-derive the root cause from scratch.
 
 
 ## 6. Explicitly out of scope

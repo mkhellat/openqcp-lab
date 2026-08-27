@@ -53,14 +53,22 @@ not need the flag.
 With test/profiling dependencies:
 
 ```bash
-pip install -e ".[test]" --no-build-isolation   # pytest, PennyLane (for fixture regeneration/reference checks)
+pip install -e ".[test]" --no-build-isolation   # pytest, PennyLane (for fixture regeneration/reference checks), scipy
 pip install -e ".[dev]" --no-build-isolation    # the above, plus snakeviz, line_profiler, py-spy
+pip install -e ".[sparse]" --no-build-isolation # just scipy, for build_hamiltonian(sparse=True) / pad_to_power_of_two(sparse=True)
 ```
 
 Requires Python >= 3.10. Runtime dependencies are just `numpy` — the
 core algorithms have no dependency on PennyLane, Qiskit, or Classiq;
 those are only used in the `test`/`dev` extras, for generating and
-cross-checking correctness fixtures. Building from source always
+cross-checking correctness fixtures. `scipy` is likewise optional:
+only needed for the `sparse=True` path on `build_hamiltonian`,
+`pad_to_power_of_two`, and (as an input type)
+`fwht_pauli_coefficients`/`fwht_pauli_terms` (see `PLAN.md` Phase 8) -
+calling any of those with `sparse=True` (or passing a
+`scipy.sparse` operator directly) without `scipy` installed raises a
+clear `ImportError` naming the `sparse` extra, rather than silently
+falling back to the dense path. Building from source always
 requires `meson-python`, `Cython`, and `numpy` (PEP 517/518's
 `[build-system] requires` has no conditional mechanism), but both are
 pure-Python-installable — no C toolchain is needed just to build the
@@ -303,12 +311,18 @@ Hamiltonian is built and stored as a **dense** `numpy.ndarray` even
 though it is extremely sparse in practice (at N=150, only 0.034% of
 entries are nonzero), and `fwht_pauli_coefficients` upcasts that dense
 array to `complex128` before doing anything else - roughly 4 GiB at
-N=150, dwarfing every fix described above. Actually fixing N=150
-requires the Hamiltonian to stay sparse (e.g. `scipy.sparse`) from
-construction through to `fwht_pauli_coefficients`'s input - a real
-architectural change, scoped separately as `PLAN.md` Phase 8 (design
-questions written up, not yet answered or implemented), not attempted
-in this round.
+N=150, dwarfing every fix described above. `PLAN.md` Phase 8 (2026-08-27)
+closes this: `build_hamiltonian(..., sparse=True)` and
+`pad_to_power_of_two(..., sparse=True)` keep the Hamiltonian in
+`scipy.sparse` form from construction through padding, and
+`fwht_pauli_coefficients`/`fwht_pauli_terms` accept a `scipy.sparse`
+operator directly - `scipy` is optional (see Installation above),
+gated behind a clear `ImportError` rather than a silent dense
+fallback. A real N=150 attempt with this in place confirms the
+densification ceiling is cleared, but surfaced a **new, distinct**
+memory ceiling one step later, inside `fwht_pauli_coefficients`'s own
+output accumulator (unrelated to Hamiltonian sparsity) - see `PLAN.md`
+Phase 9 (scoped, not yet implemented).
 
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the

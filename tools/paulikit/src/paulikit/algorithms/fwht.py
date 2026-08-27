@@ -79,6 +79,11 @@ try:
 except ImportError:
     _native = None
 
+try:
+    import scipy.sparse as _sp
+except ImportError:
+    _sp = None
+
 
 _POPCOUNT_BYTE_LUT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
 
@@ -236,7 +241,24 @@ def fwht_pauli_coefficients(
             "pad it first with paulikit.hamiltonian.pad_to_power_of_two"
         )
 
-    operator = np.asarray(operator, dtype=complex)
+    # operator may itself be a scipy.sparse matrix (e.g. from
+    # paulikit.hamiltonian.build_hamiltonian(..., sparse=True)) - kept
+    # sparse rather than densified here, since densifying+upcasting to
+    # complex is exactly the ~4GiB N=150 cost this input path exists
+    # to avoid (see PLAN.md Phase 8). np.nonzero() and fancy indexing
+    # both dispatch correctly to scipy.sparse's own implementations
+    # without densifying (verified directly - see PLAN.md Phase 8
+    # question 4), except that sparse fancy indexing returns a
+    # numpy.matrix of shape (1, nnz) rather than a flat (nnz,) array,
+    # which is why the gather below goes through np.asarray(...).ravel().
+    is_sparse_input = _sp is not None and _sp.issparse(operator)
+    if is_sparse_input:
+        # COO (e.g. from pad_to_power_of_two(..., sparse=True)) does
+        # not support fancy indexing (operator[p_nz, q_nz] below) -
+        # CSR does, and np.nonzero() dispatches efficiently on CSR too.
+        operator = operator.tocsr().astype(complex)
+    else:
+        operator = np.asarray(operator, dtype=complex)
 
     # Step 1: XOR-index gather, restricted to the operator's nonzero
     # entries. gathered[x, q] = operator[q ^ x, q] is nonzero only when
@@ -277,9 +299,15 @@ def fwht_pauli_coefficients(
             hi = int(np.searchsorted(sorted_inverse, chunk_end))
 
             gathered_chunk = np.zeros((chunk_end - chunk_start, dim), dtype=complex)
+            gathered_values = operator[sorted_p_nz[lo:hi], sorted_q_nz[lo:hi]]
+            if is_sparse_input:
+                # scipy.sparse fancy indexing returns a numpy.matrix of
+                # shape (1, nnz), not a flat (nnz,) ndarray - verified
+                # directly (PLAN.md Phase 8 question 4).
+                gathered_values = np.asarray(gathered_values).ravel()
             gathered_chunk[
                 sorted_inverse[lo:hi] - chunk_start, sorted_q_nz[lo:hi]
-            ] = operator[sorted_p_nz[lo:hi], sorted_q_nz[lo:hi]]
+            ] = gathered_values
 
             transformed_chunk = _walsh_hadamard_transform_rows(
                 gathered_chunk, overwrite_input=True
@@ -294,7 +322,13 @@ def fwht_pauli_coefficients(
         return active_x, active_coefficients
 
     gathered_active = np.zeros((n_active, dim), dtype=complex)
-    gathered_active[inverse, q_nz] = operator[p_nz, q_nz]
+    gathered_values = operator[p_nz, q_nz]
+    if is_sparse_input:
+        # scipy.sparse fancy indexing returns a numpy.matrix of shape
+        # (1, nnz), not a flat (nnz,) ndarray - verified directly
+        # (PLAN.md Phase 8 question 4).
+        gathered_values = np.asarray(gathered_values).ravel()
+    gathered_active[inverse, q_nz] = gathered_values
 
     # Step 2: Walsh-Hadamard Transform of each active row (each fixed
     # x with at least one nonzero gathered entry). Rows with no
