@@ -782,13 +782,20 @@ def fwht_pauli_terms_iter(
             chunk-by-chunk in their original grouping.
         parallel_labels: If ``True``, uses the oneTBB-parallel label
             kernel (``pauli_label_batch_parallel``) per chunk instead
-            of the serial kernel. Measured (PLAN.md Phase 10,
-            ``profiling/phase10/tbb_labeling_n150_findings.md``) as a
+            of the serial kernel. Measured **in isolation**
+            (``profiling/phase10/tbb_labeling_n150_findings.md``) as a
             real ~1.1-1.4x wall-clock win at N=150-representative
-            scale, at the cost of a modest cache-locality regression
-            (cache-miss/stall percentages each rise a few points) -
-            not a universal win, so left opt-in (default ``False``)
-            rather than replacing the serial kernel outright.
+            scale, at the cost of a modest cache-locality regression.
+            However, re-measured embedded in the real streaming
+            pipeline at N=150
+            (``profiling/phase10/full_pipeline_n150_findings.md``),
+            this delivers **no measurable wall-clock or cache-locality
+            difference either way** - label generation is only ~7% of
+            total pipeline time, dwarfed by dict construction (~60%),
+            so the isolated effect washes out to noise at the
+            whole-pipeline level. Left opt-in (default ``False``) since
+            it is not harmful, just not a meaningful lever for this
+            pipeline's actual performance.
 
     Yields:
         One ``dict`` per chunk, same value-type contract as
@@ -863,13 +870,16 @@ def _pauli_label_batch(
         parallel: If ``True`` and the native extension is available,
             uses ``pauli_label_batch_parallel`` (oneTBB-parallel)
             instead of the serial ``pauli_label_batch`` kernel. Real
-            wall-clock win at large batch sizes (~1.1-1.4x measured at
-            40M terms) at the cost of a modest cache-locality
-            regression (cache-miss/stall percentages each rise a few
-            points - see PLAN.md Phase 10 and
-            ``profiling/phase10/tbb_labeling_n150_findings.md`` for the
-            measured tradeoff) - not a universal win, so left opt-in
-            rather than the default. Ignored (falls back to serial, or
+            wall-clock win **in isolation** at large batch sizes
+            (~1.1-1.4x measured at 40M terms -
+            ``profiling/phase10/tbb_labeling_n150_findings.md``), but
+            no measurable benefit once embedded in the real streaming
+            pipeline at N=150 - dict construction there dominates at
+            ~60% of total time, dwarfing labeling's ~7% share (see
+            ``profiling/phase10/full_pipeline_n150_findings.md``). Left
+            opt-in rather than the default, since it is not a
+            meaningful lever for real-pipeline performance. Ignored
+            (falls back to serial, or
             the pure-Python loop) if the native extension is
             unavailable - the ``parallel`` and native-availability
             questions are independent.

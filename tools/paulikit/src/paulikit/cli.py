@@ -298,11 +298,13 @@ def build_parser():
     decompose_parser.add_argument(
         "--parallel-labels", action="store_true",
         help="With --stream, use the oneTBB-parallel label kernel "
-             "instead of the serial one for each chunk - a real "
-             "~1.1-1.4x wall-clock win at large scale, at the cost of a "
-             "modest cache-locality regression (see PLAN.md Phase 10 and "
-             "profiling/phase10/tbb_labeling_n150_findings.md for the "
-             "measured tradeoff). Ignored without --stream.",
+             "instead of the serial one for each chunk. Wins ~1.1-1.4x "
+             "wall-clock in isolation, but delivers no measurable "
+             "benefit once embedded in the real streaming pipeline at "
+             "N=150 (dict construction there dominates at ~60% of "
+             "total time, dwarfing labeling's ~7% share) - see "
+             "profiling/phase10/full_pipeline_n150_findings.md. "
+             "Ignored without --stream.",
     )
     decompose_parser.add_argument(
         "--checkpoint-path", type=str, default=None,
