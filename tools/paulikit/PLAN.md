@@ -4,22 +4,26 @@ Status: Phases 0-3c complete. Phase 6 (sparse output for
 `fwht_pauli_coefficients`, plus two follow-on memory-footprint fixes
 and an optional `chunk_size` tiling parameter - see Phase 6's
 "Update 2026-08-26" below) is implemented and correctness-verified.
-Phase 8 (sparse Hamiltonian construction/storage/input) is now
-implemented and correctness-verified too (see Phase 8's own status
-below) - N=150's original densification ceiling (~4 GiB at
-Hamiltonian-construction time) is cleared, confirmed via a real
-N=150 attempt, but that attempt hit a **new, distinct** ceiling one
-step later inside `fwht_pauli_coefficients`/`fwht_pauli_terms`'s own
-output accumulator (~11.8 GiB, unrelated to Hamiltonian sparsity),
-now scoped as Phase 9 (not yet designed/implemented). Phase 4 (final
-write-up), Phase 5 (prebuilt wheels + hard-require the native
-extension), and Phase 7 (remaining items from the 2026-08-25
-Gemini-transcript review: TBB false sharing/partitioner tuning -
-conditional on TBB re-entering the hot path, statistical rigor for
-perf measurements, PyPI publishing strategy) are all scoped but not
-started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7 scoped
-2026-08-25; Phase 8 scoped 2026-08-26, implemented 2026-08-27; Phase
-9 scoped 2026-08-27.
+Phase 8 (sparse Hamiltonian construction/storage/input) and Phase 9
+(chunked-accumulator space-complexity fix, with opt-in
+checkpoint/resume) are both implemented and correctness-verified (see
+each phase's own status below). Together they clear N=150's original
+densification ceiling (~4 GiB) and the accumulator ceiling that
+followed it (~11.8 GiB) - confirmed via real, memory-capped N=150
+attempts (see `profiling/phase9/phase9_findings.md`). What remains at
+N=150 is not a bug: the genuine result size (~134M terms at
+`atol=1e-10`, ~4.3 GiB) exceeds this machine's available RAM once
+label-string generation and dict construction are added on top of the
+accumulator - the user has directed this be closed with a mandatory
+(not optional) streaming/generator output, scoped as Phase 10, not
+yet designed. Phase 4 (final write-up), Phase 5 (prebuilt wheels +
+hard-require the native extension), and Phase 7 (remaining items from
+the 2026-08-25 Gemini-transcript review: TBB false sharing/partitioner
+tuning - conditional on TBB re-entering the hot path, statistical
+rigor for perf measurements, PyPI publishing strategy) are all scoped
+but not started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7
+scoped 2026-08-25; Phase 8 scoped 2026-08-26, implemented 2026-08-27;
+Phase 9 scoped and implemented 2026-08-27; Phase 10 scoped 2026-08-27.
 Last updated: 2026-08-27.
 
 
@@ -1237,9 +1241,116 @@ result for any downstream caller.
    that distinction matters in practice and should be stated
    explicitly)?
 
-**Status: scoped 2026-08-27, not yet designed or implemented.** No
-code changes yet - this section exists so the next session does not
-have to re-derive the root cause from scratch.
+**Status: implemented and verified 2026-08-27.** Resolved with the
+user directly (not engineering guesswork): tackled as a pure
+space-complexity/scalability engineering problem, prioritized in this
+explicit order - (1) time complexity (cache-locality, parallelism,
+vectorization), (2) space complexity/scalability (reaching the
+highest possible problem sizes), (3) resumability (only if it doesn't
+meaningfully cost (1) or (2)). This resolved design question 3 above
+in favor of the sparse-accumulator direction, and added checkpointing
+as a genuinely cheap addition (verified: ~59M butterfly ops per chunk
+vs. one small file append - negligible).
+
+Implementation: `fwht_pauli_coefficients`'s chunked path now
+thresholds each chunk's output against `atol` immediately (moved atol
+into `fwht_pauli_coefficients` per design question 4's resolution -
+only when `chunk_size` is set; the dense-block `chunk_size=None`
+modes are unaffected) and accumulates only surviving `(x, z,
+coefficient)` triples into a new `_GrowableArray` (amortized-doubling
+growable array - O(total survivors) amortized append cost, not
+O(chunks) reallocations or O(n_terms) Python-object overhead) instead
+of one dense `(n_active, dim)` block. Returns a COO-style triple
+`(x_out, z_out, coeff_out)` when chunked (a new, distinct return shape
+from the unchunked `sparse=True` mode's dense-block form - documented
+in the docstring, not silently overloaded). An optional
+`checkpoint_path` parameter appends each completed chunk's triples to
+a newline-delimited JSON file plus a small progress marker, enabling
+resume after a crash/interruption. `fwht_pauli_terms` gained a
+matching `checkpoint_path` parameter and now calls the chunked COO
+path directly (skipping its own redundant re-threshold) when
+`chunk_size` is set. 15 new tests in `tests/test_chunked_accumulator.py`
+- dense/chunked parity across multiple chunk sizes and fixtures,
+amortized-growth correctness at odd chunk-count boundaries, a full
+checkpoint-interrupt-and-resume round trip, and a hand-truncated
+progress-file crash simulation. `tests/test_sparse_hamiltonian.py`'s
+chunking test updated to match the new atol-aware COO return shape.
+Full suite: 55/55 passing.
+
+**Real N=150 result, confirmed via direct measurement (see
+`profiling/phase9/phase9_findings.md` for the full run log and
+`profiling/phase9/n150_chunked_accumulator_test.py` for the script
+used):** the fix works exactly as designed - the artificial `n_active
+* dim` (11.8 GiB) ceiling is gone, confirmed by a 10 GB `ulimit -v`
+run completing the *entire* chunked accumulation of ~134M survivor
+terms, something the pre-Phase-9 code could never do at any memory
+size. What remains is the genuine, non-artificial result size: ~134M
+terms at `atol=1e-10` (~4.3 GiB for the raw triple alone), plus a
+**third**, still-separate O(n_terms) allocation inside
+`_pauli_label_batch` (label-string generation) that this phase's fix
+does not address, since it runs after `fwht_pauli_coefficients`
+returns. A 13.5 GB attempt was killed by the safety-monitoring loop
+itself after real system memory (not the `ulimit` cap) dropped to
+630 MiB - decisive confirmation that materializing the full
+`dict[str, float]` result genuinely does not fit in this machine's
+~11 GiB available RAM, not an artifact of an overly strict test cap.
+
+**Conclusion, confirmed with the user 2026-08-27:** no fixed-RAM fix
+survives arbitrary N, since term count grows with N and any given
+machine's RAM is finite. `fwht_pauli_terms`'s fully-materialized
+`dict` return contract has an inherent ceiling that raising memory
+limits cannot remove in general - only a streaming/generator output
+(never holding the full result at once) removes the ceiling itself.
+The user explicitly decided this is **mandatory follow-up work, not
+optional** - scoped as Phase 10 below.
+
+
+### Phase 10 — Streaming/generator output for `fwht_pauli_terms` (scoped 2026-08-27, not yet designed)
+
+**Motivation.** Phase 9 proved the chunked/checkpointed COO
+accumulator itself is correct and scales past the old artificial
+ceiling - but `fwht_pauli_terms`'s contract (materialize every
+surviving term as Python label strings, then build one `dict`) still
+requires O(n_terms) memory for the *final* answer, and N=150 already
+produces ~134M terms - more than this machine's available RAM can
+hold once label strings and dict overhead are added on top of the
+raw triple (see Phase 9's findings). Mandatory follow-up per the
+user's explicit direction ("we MUST do the streaming"), not optional
+hardening.
+
+**Direction (not yet designed in detail).** The chunked accumulator
+from Phase 9 is the natural foundation: each chunk's surviving
+triples already exist independently and briefly before being folded
+into the growable arrays. A streaming mode should instead convert
+each chunk's triples to labels and yield `(label, coefficient)` pairs
+immediately - or write them incrementally to the existing
+`checkpoint_path` mechanism - so no more than one chunk's worth of
+labels is ever held in memory, and the final result is never required
+to exist as a single in-memory `dict`.
+
+**Open questions for next session:**
+1. New function, or a mode on `fwht_pauli_terms` itself (e.g. a
+   `stream: bool` flag returning a generator instead of a dict, or a
+   sibling `fwht_pauli_terms_iter`)? Changing `fwht_pauli_terms`'s
+   return type conditionally is an awkward API shape; a clearly-named
+   sibling function may be cleaner - not yet decided.
+2. Should streaming be chunk_size-only (mirroring Phase 9), or should
+   it also work without chunking for smaller N where a dict is fine
+   but a caller wants streaming anyway (e.g. writing straight to
+   disk)?
+3. Does the existing `checkpoint_path` file (newline-delimited JSON of
+   `{"x":.., "z":.., "re":.., "im":..}`) become the *product* itself
+   for very large N (i.e. the "streamed result" is simply reading that
+   file back, post-hoc converting x/z to labels only as needed), or is
+   a separate in-process generator (no required file I/O) the primary
+   target, with file-backed streaming as a secondary option?
+4. What does the existing `atol`/`assume_hermitian` Hermiticity check
+   in `fwht_pauli_terms` need to become in a streaming context - can
+   it still raise `ValueError` partway through a stream (after some
+   terms have already been yielded), or does that behavior need to
+   change (e.g. validate per-term instead of failing the whole call)?
+
+**Status: scoped 2026-08-27, not yet designed or implemented.**
 
 
 ## 6. Explicitly out of scope
