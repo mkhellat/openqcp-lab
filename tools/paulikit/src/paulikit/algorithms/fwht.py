@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -275,6 +276,154 @@ def _append_checkpoint_chunk(
         json.dump({"next_chunk": next_chunk}, f)
 
 
+def _iter_chunked_coefficients(
+    operator,
+    is_sparse_input: bool,
+    active_x: NDArray[np.intp],
+    inverse: NDArray[np.intp],
+    p_nz: NDArray[np.intp],
+    q_nz: NDArray[np.intp],
+    dim: int,
+    n_qubits: int,
+    n_active: int,
+    z_indices: NDArray[np.intp],
+    chunk_size: int,
+    atol: float,
+    checkpoint_path: str | Path | None,
+):
+    """Generator over chunks of already-thresholded ``(x, z,
+    coefficient)`` triples - the shared tile-producing core of the
+    chunked path (PLAN.md Phase 9), used by both
+    ``fwht_pauli_coefficients`` (which accumulates every tile into one
+    COO triple) and ``fwht_pauli_terms_iter`` (which converts each
+    tile to labels and yields it immediately - PLAN.md Phase 10). Each
+    chunk is a fully independent sub-problem (divide-and-conquer: no
+    cross-chunk combination step exists in the underlying math, unlike
+    e.g. tiled matrix multiply's block-sum reduction - see PLAN.md
+    Phase 10's design notes) - this generator is what keeps that
+    independence visible to callers instead of re-fusing every tile
+    before returning, which is the actual fix streaming needed.
+
+    Yields ``(chunk_x, chunk_z, chunk_coeff)`` - three 1-D arrays of
+    equal length, one triple per chunk, in chunk order.
+    """
+    if chunk_size < 1:
+        raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
+    # inverse is sorted first so each chunk's nonzero entries
+    # (p_nz[lo:hi], q_nz[lo:hi]) are a contiguous slice, found via
+    # searchsorted on chunk boundaries - avoiding an O(nnz) boolean
+    # mask per chunk.
+    order = np.argsort(inverse, kind="stable")
+    sorted_inverse = inverse[order]
+    sorted_p_nz = p_nz[order]
+    sorted_q_nz = q_nz[order]
+
+    chunk_starts = list(range(0, n_active, chunk_size))
+    resume_from, checkpoint = _load_checkpoint(checkpoint_path)
+    if checkpoint is not None and resume_from > 0:
+        # Replay already-completed chunks' triples from the checkpoint
+        # file rather than recomputing them - the actual resume
+        # behavior (see fwht_pauli_coefficients's checkpoint_path
+        # docstring). Replayed as one combined "chunk" up front; a
+        # caller streaming this (fwht_pauli_terms_iter) sees it as a
+        # single larger tile rather than per-original-chunk history,
+        # which is fine since the checkpoint file itself does not
+        # preserve original chunk boundaries.
+        yield checkpoint
+
+    for chunk_index in range(resume_from, len(chunk_starts)):
+        chunk_start = chunk_starts[chunk_index]
+        chunk_end = min(chunk_start + chunk_size, n_active)
+        lo = int(np.searchsorted(sorted_inverse, chunk_start))
+        hi = int(np.searchsorted(sorted_inverse, chunk_end))
+
+        gathered_chunk = np.zeros((chunk_end - chunk_start, dim), dtype=complex)
+        gathered_values = operator[sorted_p_nz[lo:hi], sorted_q_nz[lo:hi]]
+        if is_sparse_input:
+            # scipy.sparse fancy indexing returns a numpy.matrix of
+            # shape (1, nnz), not a flat (nnz,) ndarray - verified
+            # directly (PLAN.md Phase 8 question 4).
+            gathered_values = np.asarray(gathered_values).ravel()
+        gathered_chunk[
+            sorted_inverse[lo:hi] - chunk_start, sorted_q_nz[lo:hi]
+        ] = gathered_values
+
+        transformed_chunk = _walsh_hadamard_transform_rows(
+            gathered_chunk, overwrite_input=True
+        )
+
+        chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
+        phase = 1j ** _popcount_array(chunk_x & z_indices, n_qubits)
+        chunk_coefficients = transformed_chunk * np.conj(phase) / dim
+
+        # Threshold now, before accumulation - the space-complexity
+        # fix (PLAN.md Phase 9): only surviving triples are ever held
+        # for more than one chunk's lifetime.
+        row_idx, z_idx = np.nonzero(np.abs(chunk_coefficients) > atol)
+        chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
+        chunk_coeff_out = chunk_coefficients[row_idx, z_idx]
+
+        if checkpoint_path is not None:
+            _append_checkpoint_chunk(
+                checkpoint_path, chunk_index + 1, chunk_x_out, z_idx, chunk_coeff_out
+            )
+
+        yield chunk_x_out, z_idx, chunk_coeff_out
+
+
+def _prepare_operator_for_fwht(operator):
+    """Shared validation/setup for ``fwht_pauli_coefficients`` and
+    ``fwht_pauli_terms_iter``: shape/power-of-two checks, sparse-input
+    detection and CSR conversion, and the XOR-index gather's raw
+    nonzero-entry arrays (before deduplicating into ``active_x``,
+    which each caller does slightly differently downstream).
+
+    Returns ``(operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz)``.
+    """
+    dim = operator.shape[0]
+    if operator.shape != (dim, dim):
+        raise ValueError(f"operator must be square, got shape {operator.shape}")
+    n_qubits = int(round(np.log2(dim)))
+    if 2**n_qubits != dim:
+        raise ValueError(
+            f"operator dimension {dim} is not a power of two; "
+            "pad it first with paulikit.hamiltonian.pad_to_power_of_two"
+        )
+
+    # operator may itself be a scipy.sparse matrix (e.g. from
+    # paulikit.hamiltonian.build_hamiltonian(..., sparse=True)) - kept
+    # sparse rather than densified here, since densifying+upcasting to
+    # complex is exactly the ~4GiB N=150 cost this input path exists
+    # to avoid (see PLAN.md Phase 8). np.nonzero() and fancy indexing
+    # both dispatch correctly to scipy.sparse's own implementations
+    # without densifying (verified directly - see PLAN.md Phase 8
+    # question 4), except that sparse fancy indexing returns a
+    # numpy.matrix of shape (1, nnz) rather than a flat (nnz,) array,
+    # which is why callers' gathers go through np.asarray(...).ravel().
+    is_sparse_input = _sp is not None and _sp.issparse(operator)
+    if is_sparse_input:
+        # COO (e.g. from pad_to_power_of_two(..., sparse=True)) does
+        # not support fancy indexing (operator[p_nz, q_nz]) - CSR
+        # does, and np.nonzero() dispatches efficiently on CSR too.
+        operator = operator.tocsr().astype(complex)
+    else:
+        operator = np.asarray(operator, dtype=complex)
+
+    # Step 1: XOR-index gather, restricted to the operator's nonzero
+    # entries. gathered[x, q] = operator[q ^ x, q] is nonzero only when
+    # p = q ^ x is a nonzero entry of operator, i.e. x = p ^ q. Only
+    # scattering those (x, q) cells - rather than gathering the full
+    # dense (dim, dim) array via fancy indexing - avoids O(dim**2) work
+    # for the O(N)-nonzero Hamiltonians this package targets. See
+    # ``profiling/phase3b/README.md`` for the profiling/design work behind this
+    # (an operator-sparsity-independent all-dense fallback would still
+    # be correct here, but measurably slower on sparse input and no
+    # faster on dense input).
+    p_nz, q_nz = np.nonzero(operator)
+    x_nz = p_nz ^ q_nz
+    return operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz
+
+
 def fwht_pauli_coefficients(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     sparse: bool = False,
@@ -383,122 +532,25 @@ def fwht_pauli_coefficients(
         ValueError: If ``operator`` is not square or its dimension is
             not a power of two.
     """
-    dim = operator.shape[0]
-    if operator.shape != (dim, dim):
-        raise ValueError(f"operator must be square, got shape {operator.shape}")
-    n_qubits = int(round(np.log2(dim)))
-    if 2**n_qubits != dim:
-        raise ValueError(
-            f"operator dimension {dim} is not a power of two; "
-            "pad it first with paulikit.hamiltonian.pad_to_power_of_two"
-        )
-
-    # operator may itself be a scipy.sparse matrix (e.g. from
-    # paulikit.hamiltonian.build_hamiltonian(..., sparse=True)) - kept
-    # sparse rather than densified here, since densifying+upcasting to
-    # complex is exactly the ~4GiB N=150 cost this input path exists
-    # to avoid (see PLAN.md Phase 8). np.nonzero() and fancy indexing
-    # both dispatch correctly to scipy.sparse's own implementations
-    # without densifying (verified directly - see PLAN.md Phase 8
-    # question 4), except that sparse fancy indexing returns a
-    # numpy.matrix of shape (1, nnz) rather than a flat (nnz,) array,
-    # which is why the gather below goes through np.asarray(...).ravel().
-    is_sparse_input = _sp is not None and _sp.issparse(operator)
-    if is_sparse_input:
-        # COO (e.g. from pad_to_power_of_two(..., sparse=True)) does
-        # not support fancy indexing (operator[p_nz, q_nz] below) -
-        # CSR does, and np.nonzero() dispatches efficiently on CSR too.
-        operator = operator.tocsr().astype(complex)
-    else:
-        operator = np.asarray(operator, dtype=complex)
-
-    # Step 1: XOR-index gather, restricted to the operator's nonzero
-    # entries. gathered[x, q] = operator[q ^ x, q] is nonzero only when
-    # p = q ^ x is a nonzero entry of operator, i.e. x = p ^ q. Only
-    # scattering those (x, q) cells - rather than gathering the full
-    # dense (dim, dim) array via fancy indexing - avoids O(dim**2) work
-    # for the O(N)-nonzero Hamiltonians this package targets. See
-    # ``profiling/phase3b/README.md`` for the profiling/design work behind this
-    # (an operator-sparsity-independent all-dense fallback would still
-    # be correct here, but measurably slower on sparse input and no
-    # faster on dense input).
-    p_nz, q_nz = np.nonzero(operator)
-    x_nz = p_nz ^ q_nz
+    operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz = _prepare_operator_for_fwht(
+        operator
+    )
     active_x, inverse = np.unique(x_nz, return_inverse=True)
     n_active = len(active_x)
 
     z_indices = np.arange(dim)[np.newaxis, :]
 
     if sparse and chunk_size is not None:
-        if chunk_size < 1:
-            raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
-        # Tiled variant: process active_x in row-blocks of at most
-        # chunk_size, so at most one (chunk_size, dim) array is live
-        # at a time instead of one (n_active, dim) array - see the
-        # chunk_size docstring entry above. inverse is sorted first so
-        # each chunk's nonzero entries (p_nz[lo:hi], q_nz[lo:hi]) are
-        # a contiguous slice, found via searchsorted on chunk
-        # boundaries - avoiding an O(nnz) boolean mask per chunk.
-        order = np.argsort(inverse, kind="stable")
-        sorted_inverse = inverse[order]
-        sorted_p_nz = p_nz[order]
-        sorted_q_nz = q_nz[order]
-
-        chunk_starts = list(range(0, n_active, chunk_size))
-        resume_from, checkpoint = _load_checkpoint(checkpoint_path)
-
         x_out = _GrowableArray(np.intp)
         z_out = _GrowableArray(np.intp)
         coeff_out = _GrowableArray(complex)
-        if checkpoint is not None and resume_from > 0:
-            # Replay already-completed chunks' triples from the
-            # checkpoint file rather than recomputing them - the
-            # actual resume behavior (see checkpoint_path docstring).
-            prior_x, prior_z, prior_coeff = checkpoint
-            x_out.extend(prior_x)
-            z_out.extend(prior_z)
-            coeff_out.extend(prior_coeff)
-
-        for chunk_index in range(resume_from, len(chunk_starts)):
-            chunk_start = chunk_starts[chunk_index]
-            chunk_end = min(chunk_start + chunk_size, n_active)
-            lo = int(np.searchsorted(sorted_inverse, chunk_start))
-            hi = int(np.searchsorted(sorted_inverse, chunk_end))
-
-            gathered_chunk = np.zeros((chunk_end - chunk_start, dim), dtype=complex)
-            gathered_values = operator[sorted_p_nz[lo:hi], sorted_q_nz[lo:hi]]
-            if is_sparse_input:
-                # scipy.sparse fancy indexing returns a numpy.matrix of
-                # shape (1, nnz), not a flat (nnz,) ndarray - verified
-                # directly (PLAN.md Phase 8 question 4).
-                gathered_values = np.asarray(gathered_values).ravel()
-            gathered_chunk[
-                sorted_inverse[lo:hi] - chunk_start, sorted_q_nz[lo:hi]
-            ] = gathered_values
-
-            transformed_chunk = _walsh_hadamard_transform_rows(
-                gathered_chunk, overwrite_input=True
-            )
-
-            chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
-            phase = 1j ** _popcount_array(chunk_x & z_indices, n_qubits)
-            chunk_coefficients = transformed_chunk * np.conj(phase) / dim
-
-            # Threshold now, before accumulation - the space-complexity
-            # fix (PLAN.md Phase 9): only surviving triples are ever
-            # held for more than one chunk's lifetime.
-            row_idx, z_idx = np.nonzero(np.abs(chunk_coefficients) > atol)
-            chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
-            chunk_coeff_out = chunk_coefficients[row_idx, z_idx]
-
+        for chunk_x_out, chunk_z_out, chunk_coeff_out in _iter_chunked_coefficients(
+            operator, is_sparse_input, active_x, inverse, p_nz, q_nz, dim, n_qubits,
+            n_active, z_indices, chunk_size, atol, checkpoint_path,
+        ):
             x_out.extend(chunk_x_out)
-            z_out.extend(z_idx)
+            z_out.extend(chunk_z_out)
             coeff_out.extend(chunk_coeff_out)
-
-            if checkpoint_path is not None:
-                _append_checkpoint_chunk(
-                    checkpoint_path, chunk_index + 1, chunk_x_out, z_idx, chunk_coeff_out
-                )
 
         return x_out.finalize(), z_out.finalize(), coeff_out.finalize()
 
@@ -668,11 +720,132 @@ def fwht_pauli_terms(
     return complex_terms
 
 
+def fwht_pauli_terms_iter(
+    operator: NDArray[np.complexfloating] | NDArray[np.floating],
+    chunk_size: int,
+    atol: float = 1e-10,
+    assume_hermitian: bool = True,
+    checkpoint_path: str | Path | None = None,
+    parallel_labels: bool = False,
+) -> Iterator[dict[str, complex] | dict[str, float]]:
+    """Streaming counterpart to ``fwht_pauli_terms`` - PLAN.md Phase
+    10. Yields one ``dict`` of terms per chunk instead of building one
+    combined ``dict`` for the whole operator.
+
+    Why this exists (the actual problem, not just a memory
+    workaround): each chunk of active rows is a fully independent
+    sub-problem - there is no cross-chunk combination step anywhere in
+    the underlying math (unlike, say, tiled matrix multiply's
+    block-sum reduction). ``fwht_pauli_terms`` re-fuses every chunk's
+    result into one dict before the caller ever sees it, which is an
+    artificial recombination the math does not require, not a
+    necessary step - the actual divide-and-conquer strategy for this
+    problem is to keep each tile a tile all the way to the caller (see
+    PLAN.md Phase 10's design notes). This matters beyond just fitting
+    in memory: at N=150, the full combined result is ~134M terms
+    (~4.3 GiB for the raw data alone, more once label strings and a
+    single dict's hash-table overhead are added - see
+    ``profiling/phase9/phase9_findings.md``), too large for a
+    dict-returning API to handle at all on modest hardware, regardless
+    of any per-chunk memory bound. A caller that only needs to, e.g.,
+    write terms to disk, filter them, or fold them into a running sum
+    never needs the full combined dict to exist at once.
+
+    Args:
+        operator: Same contract as ``fwht_pauli_terms``.
+        chunk_size: Required (no default) - unlike
+            ``fwht_pauli_terms``, there is no dense/whole-array mode
+            here; streaming without chunking is not a meaningful
+            combination (see PLAN.md Phase 10 design question 2).
+        atol: Same as ``fwht_pauli_terms`` - applied per-chunk inside
+            ``fwht_pauli_coefficients``.
+        assume_hermitian: Same as ``fwht_pauli_terms``, but checked
+            per-chunk rather than for the whole operator at once: a
+            ``ValueError`` raised on chunk *k* means chunks
+            ``0..k-1`` were already yielded to the caller before the
+            error - see PLAN.md Phase 10 design question 4. This is a
+            real behavior difference from ``fwht_pauli_terms``, which
+            either returns a fully valid dict or raises before
+            returning anything; a streaming caller that needs
+            all-or-nothing Hermiticity validation should call
+            ``fwht_pauli_terms`` (non-streaming) instead.
+        checkpoint_path: Same as ``fwht_pauli_terms`` - passed through
+            to ``fwht_pauli_coefficients``'s chunked accumulation
+            internals for crash/resume (PLAN.md Phase 9). Note this
+            checkpoints the underlying coefficient computation, not
+            this generator's own iteration state - resuming a
+            streaming consumer that was itself interrupted partway
+            through consuming chunks means simply calling this
+            function again with the same ``checkpoint_path``; already
+            checkpointed chunks are replayed as one combined tile (see
+            ``_iter_chunked_coefficients``), not re-yielded
+            chunk-by-chunk in their original grouping.
+        parallel_labels: If ``True``, uses the oneTBB-parallel label
+            kernel (``pauli_label_batch_parallel``) per chunk instead
+            of the serial kernel. Measured (PLAN.md Phase 10,
+            ``profiling/phase10/tbb_labeling_n150_findings.md``) as a
+            real ~1.1-1.4x wall-clock win at N=150-representative
+            scale, at the cost of a modest cache-locality regression
+            (cache-miss/stall percentages each rise a few points) -
+            not a universal win, so left opt-in (default ``False``)
+            rather than replacing the serial kernel outright.
+
+    Yields:
+        One ``dict`` per chunk, same value-type contract as
+        ``fwht_pauli_terms`` (``float`` values if
+        ``assume_hermitian=True``, ``complex`` otherwise). A chunk
+        with no surviving terms above ``atol`` yields an empty dict,
+        not a skipped chunk - callers that want to skip empty chunks
+        should filter for truthiness themselves.
+
+    Raises:
+        ValueError: If ``operator`` is not square or its dimension is
+            not a power of two (raised immediately, before the first
+            chunk is yielded - this check does not depend on any
+            chunk's data). Also raised mid-stream, after already
+            yielding zero or more prior chunks, if
+            ``assume_hermitian=True`` and a term in the current chunk
+            has a non-negligible imaginary part - see the
+            ``assume_hermitian`` parameter above.
+    """
+    operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz = _prepare_operator_for_fwht(
+        operator
+    )
+    active_x, inverse = np.unique(x_nz, return_inverse=True)
+    n_active = len(active_x)
+    z_indices = np.arange(dim)[np.newaxis, :]
+
+    for chunk_x, chunk_z, chunk_coeff in _iter_chunked_coefficients(
+        operator, is_sparse_input, active_x, inverse, p_nz, q_nz, dim, n_qubits,
+        n_active, z_indices, chunk_size, atol, checkpoint_path,
+    ):
+        labels = _pauli_label_batch(chunk_x, chunk_z, n_qubits, parallel=parallel_labels)
+
+        if assume_hermitian:
+            real_terms: dict[str, float] = {}
+            for label, c in zip(labels, chunk_coeff.tolist()):
+                if abs(c.imag) > max(atol, 1e-6 * abs(c)):
+                    raise ValueError(
+                        f"term {label!r} has non-negligible "
+                        f"imaginary part {c.imag!r} - operator may not be Hermitian; "
+                        "pass assume_hermitian=False to decompose it anyway"
+                    )
+                real_terms[label] = float(c.real)
+            yield real_terms
+        else:
+            yield {
+                label: complex(c) for label, c in zip(labels, chunk_coeff.tolist())
+            }
+
+
 _WARNED_NO_NATIVE = False
 
 
 def _pauli_label_batch(
-    x_indices: NDArray[np.integer], z_indices: NDArray[np.integer], n_qubits: int
+    x_indices: NDArray[np.integer],
+    z_indices: NDArray[np.integer],
+    n_qubits: int,
+    parallel: bool = False,
 ) -> list[str]:
     """Batch IXYZ labels for parallel arrays of (x, z) indices.
 
@@ -685,10 +858,27 @@ def _pauli_label_batch(
     fast Pauli decomposition, so running the slow path unknowingly
     would defeat the point of the package - a warning fires once per
     process the first time the fallback is actually used.
+
+    Args:
+        parallel: If ``True`` and the native extension is available,
+            uses ``pauli_label_batch_parallel`` (oneTBB-parallel)
+            instead of the serial ``pauli_label_batch`` kernel. Real
+            wall-clock win at large batch sizes (~1.1-1.4x measured at
+            40M terms) at the cost of a modest cache-locality
+            regression (cache-miss/stall percentages each rise a few
+            points - see PLAN.md Phase 10 and
+            ``profiling/phase10/tbb_labeling_n150_findings.md`` for the
+            measured tradeoff) - not a universal win, so left opt-in
+            rather than the default. Ignored (falls back to serial, or
+            the pure-Python loop) if the native extension is
+            unavailable - the ``parallel`` and native-availability
+            questions are independent.
     """
     if _native is not None:
         x_masks = np.asarray(x_indices, dtype=np.uint32)
         z_masks = np.asarray(z_indices, dtype=np.uint32)
+        if parallel:
+            return _native.pauli_label_batch_parallel(x_masks, z_masks, n_qubits)
         return _native.pauli_label_batch(x_masks, z_masks, n_qubits)
 
     global _WARNED_NO_NATIVE
