@@ -39,6 +39,16 @@ narrative; this directory holds the supporting measurements.
    `n150_pipeline_perf_parallel.py` (whole-pipeline `perf stat`), raw
    output in the two `n150_pipeline_perf_*.txt` files.
 
+4. [`n_scaling_streaming_findings.md`](n_scaling_streaming_findings.md) -
+   a steady-state N=25/50/100/150 timing table using the real
+   streaming path uniformly at every N (not dense-then-sparse like the
+   historical `../cache_locality/steady_state_decompose.py`). The
+   first successful N=150 data point in any such table in this
+   project's history - every earlier attempt OOM-killed or failed to
+   complete before Phase 10. Mean time: 0.069s (N=25) -> 1.329s (N=50)
+   -> 22.064s (N=100) -> 101.310s (N=150, single rep). Script:
+   `steady_state_streaming_sweep.py`.
+
 ## Takeaway if you only read one thing
 
 `--parallel-labels` is not a meaningful lever for this pipeline's
