@@ -1,0 +1,22 @@
+total_terms=91652096
+
+ Performance counter stats for '/home/desadm/.venvs/paulikit/bin/python /tmp/claude-1000/-home-desadm-Projects---0--science-tools---openqcp-lab/7d304dd7-a962-4527-b27b-fcc890dd8a51/scratchpad/n150_pipeline_perf_serial.py':
+
+         96,902.89 msec task-clock:u                                                          
+   253,151,569,620      cycles:u                                                                (39.98%)
+   451,077,120,024      instructions:u                                                          (49.99%)
+    17,168,899,342      cache-references:u                                                      (50.03%)
+     7,842,083,632      cache-misses:u                                                          (50.04%)
+   123,632,159,761      L1-dcache-loads:u                                                       (50.02%)
+     8,798,848,653      L1-dcache-load-misses:u                                                 (50.03%)
+     2,274,249,271      LLC-loads:u                                                             (39.99%)
+     1,036,175,440      LLC-load-misses:u                                                       (39.97%)
+    85,817,736,481      cycle_activity.stalls_total:u                                           (39.97%)
+    77,935,801,651      cycle_activity.stalls_mem_any:u                                         (39.97%)
+
+      96.957043036 seconds time elapsed
+
+      89.581029000 seconds user
+       6.139262000 seconds sys
+
+
