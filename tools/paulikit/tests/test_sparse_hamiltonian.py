@@ -104,19 +104,27 @@ def test_fwht_pauli_coefficients_sparse_output_mode_matches_with_sparse_input():
 
 
 def test_fwht_pauli_coefficients_sparse_input_with_chunking():
+    """chunk_size switches fwht_pauli_coefficients to the already-
+    thresholded COO (x, z, coefficient) triple return form (PLAN.md
+    Phase 9) - reconstructed here and compared against the dense
+    result with the same atol applied, rather than a raw bit-for-bit
+    comparison (which would not hold once near-zero entries are
+    dropped inside the chunked path itself)."""
     spring_constants = _spring_constants(5)
     masses = _masses(5)
     sparse = build_hamiltonian(5, spring_constants, masses, sparse=True)
     padded_sparse, _ = pad_to_power_of_two(sparse, sparse=True)
     dim = padded_sparse.shape[0]
+    atol = 1e-10
 
-    active_x, active_coefficients = fwht_pauli_coefficients(
-        padded_sparse, sparse=True, chunk_size=1
+    x_out, z_out, coeff_out = fwht_pauli_coefficients(
+        padded_sparse, sparse=True, chunk_size=1, atol=atol
     )
     full = np.zeros((dim, dim), dtype=complex)
-    full[active_x] = active_coefficients
+    full[x_out, z_out] = coeff_out
 
     dense_result = fwht_pauli_coefficients(padded_sparse.toarray())
+    dense_result = np.where(np.abs(dense_result) > atol, dense_result, 0.0)
     assert np.max(np.abs(full - dense_result)) == 0.0
 
 
