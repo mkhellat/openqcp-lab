@@ -33,7 +33,11 @@ import sys
 import time
 
 from paulikit import __version__
-from paulikit.algorithms.fwht import fwht_pauli_coefficients, fwht_pauli_terms
+from paulikit.algorithms.fwht import (
+    fwht_pauli_coefficients,
+    fwht_pauli_terms,
+    fwht_pauli_terms_iter,
+)
 from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
 
 
@@ -66,6 +70,40 @@ def cmd_decompose(args):
     print(f"N={n} oscillators, {n_qubits} qubits, {padded.shape[0]}x{padded.shape[0]} "
           f"padded Hamiltonian")
 
+    if args.stream:
+        # Exercises fwht_pauli_terms_iter directly (PLAN.md Phase 10):
+        # yields one dict per chunk instead of building one combined
+        # dict for the whole operator - see that function's docstring
+        # for why this is a real divide-and-conquer decomposition, not
+        # just a memory workaround. --show-terms prints each chunk's
+        # terms as they arrive, rather than sorting the full combined
+        # set at the end (which would defeat the point at large N).
+        if not args.chunk_size:
+            print("--stream requires --chunk-size (no whole-array streaming mode)",
+                  file=sys.stderr)
+            return 1
+
+        start = time.perf_counter()
+        total_terms = 0
+        n_chunks = 0
+        for chunk_terms in fwht_pauli_terms_iter(
+            padded,
+            chunk_size=args.chunk_size,
+            atol=args.atol,
+            checkpoint_path=args.checkpoint_path,
+            parallel_labels=args.parallel_labels,
+        ):
+            n_chunks += 1
+            total_terms += len(chunk_terms)
+            if args.show_terms:
+                for label in sorted(chunk_terms):
+                    print(f"  {label}: {chunk_terms[label]!r}")
+        elapsed = time.perf_counter() - start
+
+        print(f"Decomposition time (streamed): {elapsed:.4f}s")
+        print(f"Chunks: {n_chunks}, nonzero Pauli terms: {total_terms}")
+        return 0
+
     if args.sparse_output:
         # Exercises fwht_pauli_coefficients(sparse=True) directly. With
         # no --chunk-size, returns the dense-block (active_x,
@@ -76,7 +114,11 @@ def cmd_decompose(args):
         # fwht_pauli_terms's own algorithm.
         start = time.perf_counter()
         result = fwht_pauli_coefficients(
-            padded, sparse=True, chunk_size=args.chunk_size, atol=args.atol
+            padded,
+            sparse=True,
+            chunk_size=args.chunk_size,
+            atol=args.atol,
+            checkpoint_path=args.checkpoint_path,
         )
         elapsed = time.perf_counter() - start
 
@@ -91,14 +133,22 @@ def cmd_decompose(args):
 
         if args.show_terms:
             terms = fwht_pauli_terms(
-                padded, atol=args.atol, chunk_size=args.chunk_size
+                padded,
+                atol=args.atol,
+                chunk_size=args.chunk_size,
+                checkpoint_path=args.checkpoint_path,
             )
             for label in sorted(terms):
                 print(f"  {label}: {terms[label]!r}")
         return 0
 
     start = time.perf_counter()
-    terms = fwht_pauli_terms(padded, atol=args.atol, chunk_size=args.chunk_size)
+    terms = fwht_pauli_terms(
+        padded,
+        atol=args.atol,
+        chunk_size=args.chunk_size,
+        checkpoint_path=args.checkpoint_path,
+    )
     elapsed = time.perf_counter() - start
 
     print(f"Decomposition time: {elapsed:.4f}s")
@@ -232,7 +282,35 @@ def build_parser():
              "at large N where the whole-array approach exhausts memory "
              "(default: None, i.e. no chunking; see PLAN.md Phase 6 "
              "follow-up on N=150). Not yet auto-tuned - pick a value, or "
-             "omit this flag if N is small enough not to need it.",
+             "omit this flag if N is small enough not to need it. Required "
+             "if --stream is set.",
+    )
+    decompose_parser.add_argument(
+        "--stream", action="store_true",
+        help="Use fwht_pauli_terms_iter instead of fwht_pauli_terms: "
+             "yields one label->coefficient dict per chunk instead of "
+             "building one combined dict for the whole operator, so peak "
+             "memory never depends on the total term count - needed at "
+             "N where the full result (e.g. ~134M terms at N=150) does "
+             "not fit in memory even after Phase 9's accumulator fix "
+             "(see PLAN.md Phase 10). Requires --chunk-size.",
+    )
+    decompose_parser.add_argument(
+        "--parallel-labels", action="store_true",
+        help="With --stream, use the oneTBB-parallel label kernel "
+             "instead of the serial one for each chunk - a real "
+             "~1.1-1.4x wall-clock win at large scale, at the cost of a "
+             "modest cache-locality regression (see PLAN.md Phase 10 and "
+             "profiling/phase10/tbb_labeling_n150_findings.md for the "
+             "measured tradeoff). Ignored without --stream.",
+    )
+    decompose_parser.add_argument(
+        "--checkpoint-path", type=str, default=None,
+        help="With --chunk-size set (streamed or not), checkpoint each "
+             "completed chunk's terms to this file so an interrupted run "
+             "can resume from where it left off on the next invocation "
+             "with the same path (see PLAN.md Phase 9). Omit for no "
+             "checkpointing (default).",
     )
     decompose_parser.set_defaults(func=cmd_decompose)
 
