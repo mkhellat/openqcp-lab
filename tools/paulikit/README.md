@@ -321,8 +321,20 @@ gated behind a clear `ImportError` rather than a silent dense
 fallback. A real N=150 attempt with this in place confirms the
 densification ceiling is cleared, but surfaced a **new, distinct**
 memory ceiling one step later, inside `fwht_pauli_coefficients`'s own
-output accumulator (unrelated to Hamiltonian sparsity) - see `PLAN.md`
-Phase 9 (scoped, not yet implemented).
+output accumulator (unrelated to Hamiltonian sparsity). `PLAN.md`
+Phase 9 (2026-08-27) closes that too: the chunked path now thresholds
+each chunk against `atol` immediately and accumulates only surviving
+`(x, z, coefficient)` triples in an amortized-growth array, instead of
+one dense `(n_active, dim)` block regardless of `chunk_size` - plus an
+opt-in `checkpoint_path` for crash/resume. Confirmed via real,
+memory-capped N=150 runs (see `profiling/phase9/phase9_findings.md`):
+the fix works exactly as designed, but the genuine result size at
+N=150 (`atol=1e-10`) is ~134M terms (~4.3 GiB), which exceeds this
+machine's available RAM once label-string generation and dict
+construction are added on top - `fwht_pauli_terms`'s fully-materialized
+`dict` contract has an inherent ceiling no memory size removes in
+general. A mandatory streaming/generator output is scoped as `PLAN.md`
+Phase 10 (not yet designed).
 
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the
