@@ -4,26 +4,23 @@ Status: Phases 0-3c complete. Phase 6 (sparse output for
 `fwht_pauli_coefficients`, plus two follow-on memory-footprint fixes
 and an optional `chunk_size` tiling parameter - see Phase 6's
 "Update 2026-08-26" below) is implemented and correctness-verified.
-Phase 8 (sparse Hamiltonian construction/storage/input) and Phase 9
-(chunked-accumulator space-complexity fix, with opt-in
-checkpoint/resume) are both implemented and correctness-verified (see
-each phase's own status below). Together they clear N=150's original
-densification ceiling (~4 GiB) and the accumulator ceiling that
-followed it (~11.8 GiB) - confirmed via real, memory-capped N=150
-attempts (see `profiling/phase9/phase9_findings.md`). What remains at
-N=150 is not a bug: the genuine result size (~134M terms at
-`atol=1e-10`, ~4.3 GiB) exceeds this machine's available RAM once
-label-string generation and dict construction are added on top of the
-accumulator - the user has directed this be closed with a mandatory
-(not optional) streaming/generator output, scoped as Phase 10, not
-yet designed. Phase 4 (final write-up), Phase 5 (prebuilt wheels +
-hard-require the native extension), and Phase 7 (remaining items from
-the 2026-08-25 Gemini-transcript review: TBB false sharing/partitioner
-tuning - conditional on TBB re-entering the hot path, statistical
-rigor for perf measurements, PyPI publishing strategy) are all scoped
-but not started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7
-scoped 2026-08-25; Phase 8 scoped 2026-08-26, implemented 2026-08-27;
-Phase 9 scoped and implemented 2026-08-27; Phase 10 scoped 2026-08-27.
+Phases 8, 9, and 10 (sparse Hamiltonian input; chunked-accumulator
+space-complexity fix with opt-in checkpoint/resume; and
+streaming/generator output, respectively) are all implemented and
+correctness-verified (see each phase's own status below). Together
+they fully resolve N=150: `fwht_pauli_terms_iter` (Phase 10) streams
+all 91,652,096 real terms to completion under a 2 GB memory cap,
+down from a design that needed well over 13.5 GB and still failed
+before Phase 10 - see `profiling/phase10/phase10_streaming_findings.md`.
+N=150 is now a solved, repeatable case, not an open problem. Phase 4
+(final write-up), Phase 5 (prebuilt wheels + hard-require the native
+extension), and Phase 7 (remaining items from the 2026-08-25
+Gemini-transcript review: TBB false sharing/partitioner tuning -
+conditional on TBB re-entering the hot path, statistical rigor for
+perf measurements, PyPI publishing strategy) are all scoped but not
+started. Phase 5 scoped 2026-08-19; Phase 6 and Phase 7 scoped
+2026-08-25; Phase 8 scoped 2026-08-26, implemented 2026-08-27; Phase
+9 and Phase 10 both scoped and implemented 2026-08-27.
 Last updated: 2026-08-27.
 
 
@@ -1305,7 +1302,7 @@ The user explicitly decided this is **mandatory follow-up work, not
 optional** - scoped as Phase 10 below.
 
 
-### Phase 10 — Streaming/generator output for `fwht_pauli_terms` (scoped 2026-08-27, not yet designed)
+### Phase 10 — Streaming/generator output for `fwht_pauli_terms` (scoped 2026-08-27, implemented and verified 2026-08-27)
 
 **Motivation.** Phase 9 proved the chunked/checkpointed COO
 accumulator itself is correct and scales past the old artificial
@@ -1328,29 +1325,100 @@ immediately - or write them incrementally to the existing
 labels is ever held in memory, and the final result is never required
 to exist as a single in-memory `dict`.
 
-**Open questions for next session:**
-1. New function, or a mode on `fwht_pauli_terms` itself (e.g. a
-   `stream: bool` flag returning a generator instead of a dict, or a
-   sibling `fwht_pauli_terms_iter`)? Changing `fwht_pauli_terms`'s
-   return type conditionally is an awkward API shape; a clearly-named
-   sibling function may be cleaner - not yet decided.
-2. Should streaming be chunk_size-only (mirroring Phase 9), or should
-   it also work without chunking for smaller N where a dict is fine
-   but a caller wants streaming anyway (e.g. writing straight to
-   disk)?
-3. Does the existing `checkpoint_path` file (newline-delimited JSON of
-   `{"x":.., "z":.., "re":.., "im":..}`) become the *product* itself
-   for very large N (i.e. the "streamed result" is simply reading that
-   file back, post-hoc converting x/z to labels only as needed), or is
-   a separate in-process generator (no required file I/O) the primary
-   target, with file-backed streaming as a secondary option?
-4. What does the existing `atol`/`assume_hermitian` Hermiticity check
-   in `fwht_pauli_terms` need to become in a streaming context - can
-   it still raise `ValueError` partway through a stream (after some
-   terms have already been yielded), or does that behavior need to
-   change (e.g. validate per-term instead of failing the whole call)?
+**Design reframing (2026-08-27, direct discussion with the user before
+implementation).** The user explicitly redirected the framing: the
+MIT 6.172 tiling example (studied at the user's request earlier this
+project) was meant to teach the *general principle* of
+divide-and-conquer, not to be copy-pasted as a chunking recipe -
+"designing/implementing the right strategy for divide-and-conquer is
+on us." Reasoned through properly: each chunk of active rows is
+already a fully independent sub-problem - there is no cross-chunk
+combination step anywhere in the underlying math (unlike tiled matrix
+multiply, which requires *summing* blocks - a real combination step).
+`fwht_pauli_terms`'s actual defect was never really about chunk
+size; it was re-fusing every chunk's result into one combined `dict`
+before the caller ever saw it - an artificial recombination the math
+does not require, forced only by the caller's contract. The correct
+divide-and-conquer strategy is therefore to keep each tile a tile all
+the way out to the caller, not to bolt a generic generator/chunking
+mechanism onto the existing accumulate-then-return shape. See
+[[feedback_divide_and_conquer_strategy]] (memory) for this principle
+recorded for future similar problems, and
+[[feedback_perf_priority_order]] for the refined priority order
+established alongside it: **(1) performance/time complexity
+(cache-locality, vectorization, parallelism), (2) reliability,
+(3) scalability/space complexity, (4) resumability only if
+essentially free.**
 
-**Status: scoped 2026-08-27, not yet designed or implemented.**
+**Resolved design questions:**
+1. **New sibling function**, `fwht_pauli_terms_iter` - not a `stream:
+   bool` flag on `fwht_pauli_terms` (avoids an awkward
+   conditional-return-type API).
+2. **`chunk_size` is required** (no default, no whole-array streaming
+   mode) - streaming without chunking is not a meaningful combination;
+   a caller with no chunking need should call `fwht_pauli_terms`
+   directly.
+3. Primary target is an **in-process generator** yielding one `dict`
+   per chunk; the existing `checkpoint_path` file (newline-delimited
+   JSON) remains a secondary, opt-in resumability mechanism (passed
+   through to the same `fwht_pauli_coefficients`/`_iter_chunked_coefficients`
+   internals as the non-streaming chunked path), not the primary
+   streamed product.
+4. The Hermiticity `ValueError` **does** raise mid-stream (after zero
+   or more prior chunks have already been yielded) rather than
+   deferring to an all-or-nothing check - documented explicitly as a
+   real behavior difference from `fwht_pauli_terms`, not silently
+   changed.
+
+**Implementation.** `fwht_pauli_terms_iter(operator, chunk_size, atol,
+assume_hermitian, checkpoint_path, parallel_labels)` added to
+`fwht.py`. Internally, the chunked path's per-chunk body (previously
+inline in `fwht_pauli_coefficients`'s `chunk_size` branch) was
+factored into a shared generator, `_iter_chunked_coefficients`,
+consumed by both `fwht_pauli_coefficients` (which still accumulates
+every tile into one COO triple, unchanged behavior) and
+`fwht_pauli_terms_iter` (which converts each tile to labels and
+yields it immediately, never accumulating). Shared
+operator-validation/setup logic (shape checks, sparse-input CSR
+conversion, the XOR-index gather) was similarly factored into
+`_prepare_operator_for_fwht`, used by both `fwht_pauli_coefficients`
+and `fwht_pauli_terms_iter` (previously duplicated). Along the way,
+`_pauli_label_batch` gained a `parallel: bool` parameter, dispatching
+to the existing (previously unused-in-production) oneTBB
+`pauli_label_batch_parallel` native kernel - re-measured first at
+N=150-representative scale (see
+`profiling/phase10/tbb_labeling_n150_findings.md`): a real 1.1-1.4x
+wall-clock win, at a modest, explicitly-recorded cache-locality cost
+(cache-miss/stall percentages each rise a few points) - adopted per
+direct user decision, with cache-locality behavior at real N=150+
+scale to be **re-investigated iteratively**, not treated as closed.
+CLI (`cli.py`): `decompose` gained `--stream` (requires `--chunk-size`),
+`--parallel-labels`, and `--checkpoint-path` (also wired into the
+existing non-streaming `fwht_pauli_terms`/`fwht_pauli_coefficients`
+call sites for consistency). 16 new tests in `tests/test_streaming.py`
+- combined-output parity against `fwht_pauli_terms` across chunk
+sizes/fixtures, disjoint-labels-across-chunks, empty-chunk handling,
+parallel-vs-serial label parity, a full checkpoint-interrupt-and-resume
+round trip through the generator interface, and both the mid-stream
+and immediate-validation `ValueError` paths. Full suite: 71/71
+passing. Sphinx docs build clean.
+
+**Real N=150 result, confirmed via direct measurement (see
+`profiling/phase10/phase10_streaming_findings.md` for the full run log
+and `profiling/phase10/n150_streaming_test.py` for the script used):**
+N=150 now **completes fully** end to end - 91,652,096 terms streamed
+successfully under both a 4 GB and a 2 GB `ulimit -v` cap (~100s each,
+identical term counts both runs), compared to Phase 9's finding that
+the non-streaming accumulator needed at least 10 GB just to finish
+accumulation, and never completed even at 13.5 GB once label
+generation and dict construction were included. This is the
+qualitative result the divide-and-conquer reframing predicted: peak
+memory is now decoupled from total term count, not merely raised to a
+higher fixed ceiling - no `ulimit` value fixed N=150 before this
+phase; only decomposing the problem differently did.
+
+**Status: implemented and verified 2026-08-27.** N=150 is now a
+solved, repeatable case on this machine.
 
 
 ## 6. Explicitly out of scope
