@@ -1,0 +1,22 @@
+total_terms=20299776
+
+ Performance counter stats for '/home/desadm/.venvs/paulikit/bin/python /tmp/claude-1000/-home-desadm-Projects---0--science-tools---openqcp-lab/7d304dd7-a962-4527-b27b-fcc890dd8a51/scratchpad/chunk_perf_n100_cs32.py':
+
+         16,965.58 msec task-clock:u                                                          
+    47,761,849,368      cycles:u                                                                (40.01%)
+    99,754,592,211      instructions:u                                                          (49.99%)
+     3,557,534,718      cache-references:u                                                      (50.00%)
+       755,984,405      cache-misses:u                                                          (49.95%)
+    27,418,817,169      L1-dcache-loads:u                                                       (50.03%)
+     1,913,505,395      L1-dcache-load-misses:u                                                 (50.03%)
+       385,366,401      LLC-loads:u                                                             (40.03%)
+        74,734,735      LLC-load-misses:u                                                       (40.02%)
+    11,870,930,961      cycle_activity.stalls_total:u                                           (40.01%)
+    10,423,657,348      cycle_activity.stalls_mem_any:u                                         (39.94%)
+
+      16.981173946 seconds time elapsed
+
+      16.470390000 seconds user
+       0.258121000 seconds sys
+
+
