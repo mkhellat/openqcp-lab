@@ -1,0 +1,22 @@
+done, 40000000 labels
+
+ Performance counter stats for '/home/desadm/.venvs/paulikit/bin/python /tmp/claude-1000/-home-desadm-Projects---0--science-tools---openqcp-lab/7d304dd7-a962-4527-b27b-fcc890dd8a51/scratchpad/label_serial_only.py':
+
+          4,582.08 msec task-clock:u                                                          
+    10,938,701,131      cycles:u                                                                (40.04%)
+    27,827,780,477      instructions:u                                                          (50.04%)
+       382,131,850      cache-references:u                                                      (50.03%)
+       223,185,218      cache-misses:u                                                          (50.01%)
+     5,089,790,874      L1-dcache-loads:u                                                       (49.99%)
+       201,847,370      L1-dcache-load-misses:u                                                 (49.97%)
+        36,933,788      LLC-loads:u                                                             (39.99%)
+        16,160,488      LLC-load-misses:u                                                       (40.00%)
+     1,722,787,303      cycle_activity.stalls_total:u                                           (40.01%)
+     1,347,579,755      cycle_activity.stalls_mem_any:u                                         (40.02%)
+
+       4.589743369 seconds time elapsed
+
+       3.543138000 seconds user
+       0.993516000 seconds sys
+
+
