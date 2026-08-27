@@ -329,12 +329,24 @@ one dense `(n_active, dim)` block regardless of `chunk_size` - plus an
 opt-in `checkpoint_path` for crash/resume. Confirmed via real,
 memory-capped N=150 runs (see `profiling/phase9/phase9_findings.md`):
 the fix works exactly as designed, but the genuine result size at
-N=150 (`atol=1e-10`) is ~134M terms (~4.3 GiB), which exceeds this
-machine's available RAM once label-string generation and dict
-construction are added on top - `fwht_pauli_terms`'s fully-materialized
-`dict` contract has an inherent ceiling no memory size removes in
-general. A mandatory streaming/generator output is scoped as `PLAN.md`
-Phase 10 (not yet designed).
+N=150 (`atol=1e-10`) is ~92-134M terms (varies slightly by exact run
+parameters), which exceeds this machine's available RAM once
+label-string generation and dict construction are added on top -
+`fwht_pauli_terms`'s fully-materialized `dict` contract has an
+inherent ceiling no memory size removes in general. `PLAN.md` Phase 10
+(2026-08-27) closes this too: a new `fwht_pauli_terms_iter` generator
+yields one `dict` per chunk directly to the caller instead of
+re-fusing every chunk into one combined result first - each chunk is
+already an independent sub-problem (no cross-chunk combination exists
+in the math), so this is a genuine divide-and-conquer decomposition,
+not a memory workaround. `--stream`/`--parallel-labels`/
+`--checkpoint-path` are exposed on the `decompose` CLI subcommand.
+Confirmed via real, memory-capped N=150 runs (see
+`profiling/phase10/phase10_streaming_findings.md`): **N=150 now
+completes fully** - all 91,652,096 terms stream successfully under
+both a 4 GB and a 2 GB memory cap, down from a design that needed
+well over 13.5 GB and still failed. N=150 is a solved, repeatable
+case, not an open problem.
 
 Exploiting Hamiltonian sparsity further (rather than the current
 skip-empty-rows approach) and migrating to prebuilt wheels so the
