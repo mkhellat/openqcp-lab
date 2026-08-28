@@ -255,6 +255,212 @@ Surveyed this session, informing methodology (not code reuse):
   algorithm was in scope (see Section 5, Phase 1 note below) and that
   release to PyPI was a real possibility, not just an internal tool.
 
+### Phase 0.5 — `configure` / per-tool build system (2026-08-28)
+
+**Motivation:** the repo-wide `bootstrap` script is scoped to
+provisioning Python 3.12 for `classiq` compatibility (the tutorials'
+constraint) — irrelevant to paulikit, which has its own build system
+entirely (meson-python, Cython, optional C++/oneTBB native
+extension). This surfaced concretely while setting up an environment
+to cross-validate paulikit against PennyLane: three separate
+build-isolation bugs (missing cython on PATH during the editable
+rebuild-on-import hook, a stale numpy include path baked in from an
+ephemeral pip build-isolation env deleted right after install, meson
+rejecting an absolute in-tree numpy include path when a venv is
+created inside `tools/paulikit/`) had to be fought by hand before
+PennyLane could even be installed. Per-tool build systems, scoped to
+each tool's actual needs, are more practical than one universal
+bootstrap.
+
+**Design, in the spirit of GNU-style `configure`/`Makefile.in` but
+hand-written POSIX `/bin/sh`** (no autotools/autoreconf/M4
+dependency, portable to non-GNU userlands): `./configure` runs a
+battery of independent diagnostic compile-tests (musl/zlib-style —
+write a tiny source file, invoke the compiler, check the result) and
+prints an itemized capability report, covers venv creation, then
+generates `Makefile` from `Makefile.in` via literal-value shell
+substitution (no GNU-make-only or BSD-make-only conditional syntax
+needed in the emitted file, since every value is already resolved by
+configure itself before writing it out).
+
+**Explicitly does NOT duplicate meson-python's own build-gating
+compiler/dependency detection** — that stays solely meson's job,
+invoked from the Makefile's `build` target. `configure`'s checks are
+diagnostic/observability, not build-gating: the point, per direct
+user instruction, is that "the developer should be fully aware of
+... what exactly are needed in terms of compiler features and system
+capabilities for what is needed under the hood for different
+features of paulikit," warned explicitly when a feature won't be
+available on this machine — not a second, potentially-drifting source
+of build-gating truth.
+
+**Scope, split into v1 (implemented) / v2 (scoped, not implemented)**
+after 4 rounds of critical review (profiling/ read in full across 3
+rounds, PLAN.md/pyproject.toml/src/ cross-checked, a design-readiness
+pass covering implementation ordering and failure-mode philosophy,
+plus a PEP 405/668/517/518 citation check to settle whether
+Python-dependent checks should run against system Python or venv
+Python — settled: PEP 405 makes interpreter-selection-before-venv-
+creation definitional, not a preference, but "which Python should
+diagnostics run against" is genuinely unaddressed by any PEP; the
+tool-design choice made here is venv Python, since that's the
+environment paulikit will actually run in):
+
+- **v1 (implemented, `tools/paulikit/configure` +
+  `tools/paulikit/Makefile.in`):** Python interpreter + venv (default
+  `~/.venvs/paulikit`, outside the source tree — an established prior
+  convention confirmed from historical `perf stat` command lines, and
+  necessary since meson rejects an absolute in-tree numpy include
+  path), C++ compiler + C++17 compile-test, Cython >=3.0, meson
+  >=1.1.0 (plus reporting the existing `-Dnative` feature option),
+  oneTBB (compile-test against `<tbb/tbb.h>`, checking
+  `TBB_ROOT`/`CMAKE_PREFIX_PATH` on macOS, `CMAKE_TOOLCHAIN_FILE` on
+  Windows, per the committed Phase 5 wheel-matrix policy), cache
+  hierarchy L1/L2/L3 via `getconf LEVEL*_*CACHE_SIZE` (POSIX-standard,
+  verified working; note `getconf` reports per-core sizes, `lscpu`
+  reports per-socket — not directly comparable without dividing by
+  instance count; feeds Phase 12's chunk_size auto-tuner directly),
+  NumPy's linked BLAS backend + thread count (`threadpoolctl`
+  preferred, falls back to `numpy.show_config()` — surfaces the
+  OpenBLAS idle-worker-pool confound from
+  `profiling/cache_locality/stall_floor_mystery_solved.md`), Python
+  version vs. `requires-python` (warns "untested" not "violation" —
+  no declared upper bound exists), git commit + working-tree
+  clean/dirty state, `lscpu` output including its own
+  `Vulnerabilities:` section. Failure-mode philosophy: only Python/venv
+  and the C++ compiler are allowed to partially-abort (skip the
+  dependent report section, never kill the whole script — paulikit's
+  pure-Python fallback works with zero compiler present); every other
+  check degrades to "not found"/"unknown" and the report continues.
+- **v2 (scoped, not implemented)** — deferred because each item's
+  value is either forward-looking (nothing in paulikit consumes it
+  yet) or only matters during an active profiling session, not
+  routine build/install: CPU SIMD AVX2/AVX-512 via real
+  compile-and-execute micro-tests (diagnostic only, must never
+  auto-apply `-march=native` — known SIGILL wheel-portability hazard
+  per `profiling/`'s `compiler_flags_findings.md`), GPU/CUDA presence
+  (`nvidia-smi`/`nvcc`), MPI toolchain presence (`mpicc`/`mpirun`),
+  `psutil` presence (Phase 12 open question #4), container/VM
+  detection (`systemd-detect-virt` — cgroup limits differ from
+  bare-metal `ulimit -v`, and every N=150 memory-cap finding this
+  session assumed bare metal), `/proc/sys/kernel/perf_event_paranoid`
+  (currently copy-pasted identically in 6 separate
+  `profiling/*/run_*.sh` scripts — centralize here instead), CPU
+  frequency scaling/governor state (confirmed dynamic and never
+  checked in any measurement this session — a real gap), total
+  RAM/swap presence, current system load average, actual available
+  `perf list` event set (`cycle_activity.stalls_*` confirmed
+  Skylake-family-specific, not universal), NumPy's own runtime SIMD
+  dispatch tier (distinct from paulikit's native-extension build
+  flags), musl-host awareness (`skip = "*-musllinux*"` is deliberate
+  cibuildwheel policy, not an oversight — report "no wheel target
+  exists here by design" rather than implying unverified support),
+  disk I/O type (`lsblk -d -o rota` — relevant only to
+  `checkpoint_path`'s write throughput, lower priority than the rest).
+
+**Real bugs found and fixed while integration-testing the generated
+Makefile** (not just designed — actually run to completion,
+`make build && make test`, 71/71 passing with the native TBB
+extension loaded, not the pure-Python fallback):
+1. The stale-build-isolation-path bug reproduced exactly as
+   diagnosed by hand earlier this session. Fix: `make build`
+   pre-installs `numpy`/`meson-python`/`cython`/`ninja` into the venv
+   itself, then installs paulikit with `--no-build-isolation`, so the
+   paths meson records in `build.ninja` are the venv's own permanent
+   ones, not an ephemeral temp dir deleted right after install.
+2. Even with `--no-build-isolation`, meson's own compiler-detection
+   subprocess looks up `cython`/`cython3` via a bare `PATH` search,
+   and `pip` does not activate the venv just because
+   `--no-build-isolation` was passed — fixed by prepending the venv's
+   own `bin/` onto `PATH` for both the `build` and `test` targets.
+3. **A generated `Makefile` almost silently overwrote the
+   pre-existing, committed, hand-written `tools/paulikit/Makefile`**
+   (targets `install`/`test`/`test-native`/`docs`/`clean`), which the
+   *repo-root* Makefile's `test-tools`/`docs-tools`/`clean` targets
+   depend on via a specific calling convention (`make -C
+   tools/paulikit test PYTHON=<repo-shared-venv-python> PIP="... -m
+   pip" PYTEST=<repo-shared-venv-pytest>`, using the repo-wide
+   `bootstrap`-provisioned venv, not paulikit's own dedicated one).
+   Caught before committing (via `git status` showing "Modified" not
+   "new file"). Resolved by making `Makefile.in` support both calling
+   conventions simultaneously: `PYTHON`/`PIP`/`PYTEST` stay
+   `?=`-overridable (honoring the repo-root's override), defaulting
+   to this package's own dedicated venv when invoked standalone; the
+   old `test-native` target (standalone C/C++ kernel checks, no
+   Python binding) was carried over unchanged. `Makefile`/`config.log`
+   are now gitignored (generated artifacts, autotools convention) and
+   the repo-root Makefile's `clean`/`test-tools`/`docs-tools` loops
+   now run `./configure` automatically in any `tools/*/` directory
+   that has a `configure` script but no `Makefile` yet, so a fresh
+   clone doesn't silently skip paulikit.
+
+**GNU Coding Standards compliance pass (2026-08-28, same day):**
+direct user question ("we had to abide by GNU coding and formatting
+conventions — do you think configure abides by that?!") prompted a
+dedicated audit against the actual GNU Coding Standards
+(https://www.gnu.org/prep/standards/), not just the musl/zlib-style
+compile-test *technique* the diagnostic checks were originally
+modeled on — these are different standards serving different
+purposes, and the first `configure` draft only satisfied the latter.
+Audit found one real bug and several defensible-but-real scope gaps;
+user's explicit instruction was full compliance now, not deferral:
+
+- **Fixed: `all` as the default target.** GCS requires the first
+  rule in the Makefile be `all`, and bare `make` build by default.
+  The first draft's first target was `help`, meaning bare `make`
+  printed help instead of building — a genuine bug against the
+  standard, now fixed (`all: build`).
+- **Added the full standard GNU directory-variable option set**
+  (`--prefix`, `--exec-prefix`, `--bindir`, `--libdir`,
+  `--sysconfdir`, `--datadir`, `--includedir`, `--mandir`,
+  `--infodir`, `--docdir`, `--htmldir`, `--dvidir`, `--pdfdir`,
+  `--psdir`, etc.) — resolved the one real design ambiguity first:
+  most of these have no real target for a pip/meson-python-installed
+  package (pip already owns all binary/library placement inside the
+  venv), so only `--prefix` (install-root concept) and `--docdir`
+  (where `make docs` output lands) actually change behavior; the rest
+  are accepted, explicitly reported in `config.log` as
+  accepted-but-inert, and documented in `--help` — never silently
+  dropped, never a hard error either (a user scripting a generic
+  GNU-style build invocation shouldn't get surprised).
+- **Added `VAR=value` positional-argument overrides**
+  (`./configure CXX=clang++`), the GCS convention, alongside the
+  pre-existing `CXX` environment-variable pickup.
+- **Added `--srcdir`** — accepted, but out-of-tree builds are
+  honestly reported as unsupported (every value `configure` emits is
+  already a resolved literal, not a build-tree-relative path; adding
+  real VPATH support was judged out of scope for this pass).
+- **Added `config.status`** — a minimal re-runnable record of the
+  exact `./configure` invocation (not full autoconf-style
+  `--recheck`/cache machinery, just enough to replay the same flags
+  without having to remember them).
+- **Added missing standard targets**: `install-strip` (alias — no
+  compiled binaries land outside the venv to strip), `installdirs`,
+  `installcheck` (caught and fixed a real bug while testing: the
+  first draft ran `pytest --pyargs paulikit`, which collects **zero**
+  tests, since paulikit's tests live in `tests/`, outside the
+  package itself, not inside `src/paulikit/` — `--pyargs` only
+  discovers package-internal tests; fixed to a plain `$(PYTEST)`
+  run), `mostlyclean` (deliberately preserves `build/`'s compiled
+  native extension — genuinely expensive to relink against TBB,
+  unlike the cheap-to-regenerate cache/egg-info clutter `clean`
+  removes), `maintainer-clean`, `dist` (`python -m build`, sdist +
+  wheel), `TAGS` (ctags preferred, etags fallback).
+- **Added the `Makefile: Makefile.in configure` self-regeneration
+  rule** GCS requires — verified it actually fires (touched
+  `Makefile.in`, confirmed the next `make` invocation reran
+  `./configure` automatically before proceeding).
+- **Confirmed already-correct**: `#!/bin/sh` + POSIX-only constructs
+  throughout, the `Makefile.in` generated-file header comment, and
+  the one hard error message (`configure: unrecognized option
+  '$arg'`) already matched GCS's `program: message` format exactly.
+
+Every new/changed target was actually run to completion during this
+pass, not just written — `make`/`make check`/`make installcheck`/
+`make installdirs`/`make mostlyclean`/`make maintainer-clean`/
+`make TAGS`/`make dist`, plus the self-regeneration rule, all
+verified working (71/71 tests passing throughout).
+
 ### Phase 1 — Original pure-Python FWHT implementation
 - Correctness fixtures first, independent of implementation: N=2 (hand
   cross-checked this session against PennyLane and the repo's own

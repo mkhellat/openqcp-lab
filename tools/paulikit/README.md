@@ -37,9 +37,32 @@ paulikit is built with [meson-python](https://mesonbuild.com/meson-python/)
 native (Cython/C++) `pauli_label` kernel for a ~2.5-2.9x end-to-end
 speedup — see [Native extension](#native-extension) below.
 
-From this directory (editable install, recommended for development):
+**Recommended for development:** run `./configure` from this
+directory. It creates/reuses a dedicated venv (default
+`~/.venvs/paulikit`, deliberately outside the source tree — meson
+rejects an absolute in-tree numpy include path if the venv lives
+inside `tools/paulikit/`), prints an itemized capability/environment
+diagnostic report (compiler, Cython, TBB, cache hierarchy, NumPy's
+BLAS backend, etc. — see `PLAN.md`'s Phase 0.5 for the full list and
+rationale), and generates a `Makefile` with the standard GNU set of
+targets (`all`/`build`/`install`/`install-strip`/`installdirs`/
+`check`/`test`/`installcheck`/`uninstall`/`docs`/`dist`/`TAGS`/
+`clean`/`mostlyclean`/`distclean`/`maintainer-clean`/`report`) that
+handle the `--no-build-isolation` editable-install sequencing below
+correctly and automatically:
 
 ```bash
+./configure                 # accepts --prefix/--docdir/--srcdir/VAR=value
+                             # and the standard GNU dir-var options too, see --help
+make                         # = make all = make build (editable install)
+make check                   # run the test suite
+```
+
+If you'd rather not use `./configure`, the manual sequence it
+automates is:
+
+```bash
+pip install numpy meson-python cython ninja
 pip install -e . --no-build-isolation
 ```
 
@@ -47,8 +70,11 @@ pip install -e . --no-build-isolation
 NumPy's include path gets baked in from a throwaway build-isolation
 environment that goes stale on later rebuilds (this is NumPy's own
 documented practice for meson-python editable installs, not a
-paulikit-specific quirk). A regular, non-editable `pip install .` does
-not need the flag.
+paulikit-specific quirk) — and `numpy`/`meson-python`/`cython`/`ninja`
+must already be installed in the target environment first, since
+`--no-build-isolation` means pip won't fetch them into a throwaway
+env for you the way it normally would. A regular, non-editable
+`pip install .` does not need any of this.
 
 With test/profiling dependencies:
 
