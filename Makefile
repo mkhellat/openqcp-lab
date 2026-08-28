@@ -44,6 +44,9 @@ clean:
 	find . -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
 	@for tool_dir in tools/*/; do \
+		if [ ! -f "$$tool_dir/Makefile" ] && [ -x "$$tool_dir/configure" ]; then \
+			(cd "$$tool_dir" && ./configure >/dev/null); \
+		fi; \
 		if [ -f "$$tool_dir/Makefile" ]; then $(MAKE) -C "$$tool_dir" clean; fi; \
 	done
 
@@ -74,6 +77,10 @@ test-run:
 test-tools:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	@for tool_dir in tools/*/; do \
+		if [ ! -f "$$tool_dir/Makefile" ] && [ -x "$$tool_dir/configure" ]; then \
+			echo "Bootstrapping $$tool_dir via its own configure..."; \
+			(cd "$$tool_dir" && ./configure >/dev/null); \
+		fi; \
 		if [ -f "$$tool_dir/Makefile" ]; then \
 			echo "Testing $$tool_dir..."; \
 			$(MAKE) -C "$$tool_dir" test PYTHON="$(abspath $(PYTHON))" \
@@ -85,6 +92,9 @@ test-tools:
 docs-tools:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	@for tool_dir in tools/*/; do \
+		if [ ! -f "$$tool_dir/Makefile" ] && [ -x "$$tool_dir/configure" ]; then \
+			(cd "$$tool_dir" && ./configure >/dev/null); \
+		fi; \
 		if [ -f "$$tool_dir/docs/conf.py" ] && [ -f "$$tool_dir/Makefile" ]; then \
 			echo "Building docs for $$tool_dir..."; \
 			$(MAKE) -C "$$tool_dir" docs PYTHON="$(abspath $(PYTHON))" \
