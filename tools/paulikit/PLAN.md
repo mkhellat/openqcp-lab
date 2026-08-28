@@ -461,6 +461,89 @@ pass, not just written — `make`/`make check`/`make installcheck`/
 `make TAGS`/`make dist`, plus the self-regeneration rule, all
 verified working (71/71 tests passing throughout).
 
+### Phase 0.6 — Exhaustive correctness verification (closed 2026-08-28)
+
+**Problem.** `tests/test_benchmark_reference.py`'s existing PennyLane
+comparison (Section 3.4) only checked term *counts* at large N
+(N=50/100), not coefficient values — a real correctness gap, since two
+decompositions could have the same term count but wrong coefficients.
+Non-Hermitian input had zero PennyLane cross-check at any N.
+Strengthening the existing test to check coefficients directly hits a
+hard wall: `qml.pauli_decompose` is O(n·4^n) **regardless of input
+sparsity** — confirmed by reading its own source (its sparse-input
+support only avoids densifying the *input*, not the exponential
+*output*). Measured directly: PennyLane took 34s at N=25 and 51s at
+N=30 on a genuinely sparse Hamiltonian; paulikit computes 91.65
+million terms at N=150 in ~100s. PennyLane can never verify paulikit
+at its target scale — a mathematical ceiling, not an inefficiency to
+optimize away.
+
+**Design.** Two independent oracles, N-scoped by tractability:
+- **Small N (≤20, where PennyLane is tractable)**: full PennyLane
+  decomposition (`check_hermitian=False`, confirmed to correctly
+  handle non-Hermitian operators too) AND a second, differently
+  derived method — direct per-term projection — both required to
+  match paulikit exactly, every term.
+- **Large N (50 through 150+, where PennyLane cannot finish)**:
+  PennyLane is not invoked. Every single term paulikit outputs (true
+  100% coverage, not a sample — required per explicit direction) is
+  individually checked via the same projection method.
+
+**The projection method**: for a Pauli label with symplectic bitmasks
+`(x_mask, z_mask)`, its coefficient is `Tr(H @ P_label^dagger) / dim`,
+computed without ever materializing the full Pauli matrix, by
+exploiting that `H[r,c]` contributes only where `r XOR c == x_mask`
+with a closed-form sign/phase from `popcount`. This is mathematically
+independent of paulikit's own FWHT algorithm — a direct definitional
+check, not a re-derivation of the same shortcut. Fully vectorized in
+NumPy (sort-then-`searchsorted`-then-grouped-broadcast, no
+Python-level loop over labels or nonzeros) after 3 slower iterations
+were tried and rejected (naive per-label matrix rebuild, per-label
+Python loop, dict-bucketed loop — the last one looked fast at N=50 but
+did not scale to N=80).
+
+**Real measured results** (all exact to float64 noise floor, every
+term individually verified — see
+`verification/FINDINGS.md` and `verification/results/*.json` for full
+provenance):
+
+| N | terms | wall time | max abs error |
+|---|---|---|---|
+| 20 (Hermitian + non-Hermitian, dual-oracle w/ PennyLane) | 24,448 / 49,024 | 0.05–0.10s | 1.39e-17 |
+| 50 | 1,261,568 | 5.5s | 3.47e-18 |
+| 80 | 6,473,728 | 30.3s | 1.04e-17 |
+| 100 | 20,299,776 | 124.8s | 2.60e-18 |
+| **150** | **91,652,096** | **369.7s** | **8.67e-19** |
+
+**N=150 required a fix, not just patience.** The first 3 attempts
+OOM-killed the machine (once observed live via swap usage). Root
+cause: calling the dict-returning `fwht_pauli_terms` API, which
+Phase 9/10's own findings already document as unable to complete at
+N=150 *regardless of available RAM* (it re-fuses all ~91.65M terms
+into one dict before returning). Fixed by switching to the
+already-built streaming `fwht_pauli_terms_iter` API and verifying each
+chunk as it arrives, never holding the combined term set — exactly
+Phase 10's own streaming design, just not the API reached for first.
+Diagnosed via `ulimit -v <cap>` for a clean `MemoryError` instead of
+further swap-thrashing; see `verification/FINDINGS.md` §6 for the full
+debugging narrative.
+
+**Deliverables** (committed, not scratch — commit `05f1835`):
+- `verification/exhaustive_projection.py` — the method itself,
+  reusable (`project_labels`, `verify_terms`, `verify_terms_streaming`).
+- `verification/run_verification.py` — single reproducible CLI entry
+  point; every result JSON records its exact command, git commit, and
+  dependency versions.
+- `verification/results/*.json` — committed result files.
+- `verification/FINDINGS.md` / `verification/README.md` — full
+  writeup and reproduction instructions.
+- `tests/test_exhaustive_verification.py` — real pytest integration
+  (fast N≤20 cases in CI, N=50/80/100/150 marked `slow`).
+
+**Status: closed.** No open items remain in this plan; any future
+verification at a new N or Hamiltonian family should reuse
+`run_verification.py` rather than re-deriving the method.
+
 ### Phase 1 — Original pure-Python FWHT implementation
 - Correctness fixtures first, independent of implementation: N=2 (hand
   cross-checked this session against PennyLane and the repo's own
