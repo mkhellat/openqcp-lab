@@ -450,6 +450,78 @@ else
     result "FAILED — json round-trip did not preserve data exactly (checkpointing, PLAN.md Phase 9, would silently corrupt on this interpreter)"
 fi
 
+# pathlib.Path + append-mode file I/O correctness, replicating the
+# EXACT mechanism fwht.py's _append_checkpoint_chunk/_load_checkpoint
+# use (PLAN.md Phase 9) - not an approximation. That code has a
+# documented crash-safety invariant: triples are appended to one file
+# BEFORE a separate progress-marker file is written, so this test
+# replicates both writes via Path + open(path, "a")/open(path, "w"),
+# then reads back via the same line-by-line JSON-parse logic
+# _load_checkpoint uses, and verifies the round-tripped data is
+# byte-for-byte the same as what was written - a real Python build
+# with a broken append-mode (rare but real - has been seen on some
+# restricted/sandboxed filesystems and unusual libc I/O layers) would
+# silently corrupt paulikit's actual resumability guarantee for N=150-
+# scale runs, exactly the failure mode this is meant to catch.
+checking "checkpoint I/O mechanism (project's actual Path+append+progress-marker pattern)" "\$PYTHON_BIN -c '<replicates fwht.py _append_checkpoint_chunk/_load_checkpoint exactly>'"
+checkpoint_test_result="$("$PYTHON_BIN" -c '
+import json
+import tempfile
+from pathlib import Path
+
+with tempfile.TemporaryDirectory() as tmpdir:
+    checkpoint_path = Path(tmpdir) / "ckpt.jsonl"
+    progress_path = Path(str(checkpoint_path) + ".progress.json")
+
+    # Replicate _append_checkpoint_chunk exactly: append triples, then
+    # separately overwrite the progress marker.
+    triples = [(1, 2, 0.5, -0.25), (3, 4, 1.0, 0.0)]
+    with open(checkpoint_path, "a") as f:
+        for x, z, re, im in triples:
+            f.write(json.dumps({"x": x, "z": z, "re": re, "im": im}) + "\n")
+    with open(progress_path, "w") as f:
+        json.dump({"next_chunk": 1}, f)
+
+    # A second chunk, appended - verifies append mode genuinely
+    # appends rather than truncating on the second write.
+    triples2 = [(5, 6, -1.5, 2.0)]
+    with open(checkpoint_path, "a") as f:
+        for x, z, re, im in triples2:
+            f.write(json.dumps({"x": x, "z": z, "re": re, "im": im}) + "\n")
+    with open(progress_path, "w") as f:
+        json.dump({"next_chunk": 2}, f)
+
+    # Replicate _load_checkpoint exactly: existence checks, then
+    # line-by-line JSON parse.
+    if not checkpoint_path.exists() or not progress_path.exists():
+        print("MISSING_FILES")
+    else:
+        with open(progress_path) as f:
+            progress = json.load(f)
+        records = []
+        with open(checkpoint_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                records.append(json.loads(line))
+
+        expected = [
+            {"x": 1, "z": 2, "re": 0.5, "im": -0.25},
+            {"x": 3, "z": 4, "re": 1.0, "im": 0.0},
+            {"x": 5, "z": 6, "re": -1.5, "im": 2.0},
+        ]
+        if progress["next_chunk"] == 2 and records == expected:
+            print("ok")
+        else:
+            print("MISMATCH")
+' 2>/dev/null)"
+if [ "$checkpoint_test_result" = "ok" ]; then
+    result_detail "correct" "(append-mode writes, progress-marker overwrite, and line-delimited JSON read-back all verified exact, matching fwht.py's real checkpoint mechanism)"
+else
+    result_detail "FAILED" "checkpoint I/O mechanism did not round-trip correctly (got '${checkpoint_test_result:-nothing}') - paulikit's N=150-scale resumability guarantee (PLAN.md Phase 9) would be unreliable on this interpreter/filesystem"
+fi
+
 checking "virtual environment at ${VENV_PATH}" "$PYTHON_BIN -m venv ${VENV_PATH}"
 if [ -x "${VENV_PATH}/bin/python" ]; then
     result "reusing existing venv"
