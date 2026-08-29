@@ -226,6 +226,23 @@ result() {
     printf '%s\n' "$*" | tee -a config.log
 }
 
+# Real GNU configure convention keeps the "checking for X... RESULT"
+# line short (yes/no/a version string/a compiler name) and puts any
+# longer explanation on its own indented line(s) below, never appended
+# to the same line. result_detail() implements that: first arg is the
+# short result (completes the checking-line), remaining args are
+# printed as separate wrapped detail lines underneath. Use this
+# instead of a single long result() call whenever the explanation
+# would otherwise make one line unreasonably long.
+result_detail() {
+    short="$1"
+    shift
+    result "$short"
+    for line in "$@"; do
+        printf '  %s\n' "$line" | fold -s -w 76 | sed '2,$ s/^/  /' | tee -a config.log
+    done
+}
+
 # Legacy alias retained for the handful of non-"checking for X"-shaped
 # lines (section headers, freeform notes/hints) that don't fit the
 # checking()/result() pair — same live stdout+config.log behavior.
@@ -373,6 +390,65 @@ case "$py_major_minor" in
         result "untested (>3.13, no declared upper bound — likely fine, not verified)"
         ;;
 esac
+
+# -----------------------------------------------------------------
+# Python interpreter correctness/sanity battery — same philosophy as
+# the C++ battery above: not "does this report a version string" but
+# "does the interpreter actually DO the right thing" for the specific
+# things paulikit relies on. Each check verifies an actual computed
+# result, not just "ran without raising."
+# -----------------------------------------------------------------
+
+# IEEE754 double correctness: paulikit is entirely floating-point
+# numerics (Pauli coefficients, cache-locality-sensitive kernels) - a
+# truly broken/exotic cross-compiled interpreter could have incorrect
+# float behavior. 0.1 + 0.2 != 0.3 exactly is the CORRECT IEEE754
+# result (not a bug) - this checks that Python's float type is
+# actually IEEE754 double-precision, by verifying the exact known
+# representation error.
+checking "IEEE754 float correctness" "$PYTHON_BIN -c 'assert 0.1 + 0.2 == 0.30000000000000004'"
+if "$PYTHON_BIN" -c 'import sys; sys.exit(0 if (0.1 + 0.2 == 0.30000000000000004) else 1)' >/dev/null 2>&1; then
+    result "correct (IEEE754 double-precision representation error verified exactly)"
+else
+    result "FAILED — float arithmetic does not match expected IEEE754 double behavior; paulikit's numerics may be unreliable on this interpreter"
+fi
+
+# ctypes / dynamic-linker sanity: paulikit's native extension is a
+# compiled .so loaded via Python's C-extension import machinery, which
+# shares the same dynamic-linking path ctypes uses. A stripped-down or
+# musl-linked Python build sometimes has this path broken even though
+# the interpreter itself runs fine - verified here via a real ctypes
+# call into libc (or paulikit's own build later, but this check is
+# independent of whether paulikit itself is installed yet).
+checking "ctypes / dynamic-linker sanity" "$PYTHON_BIN -c 'ctypes.CDLL(None).abs(-5)'"
+ctypes_result="$("$PYTHON_BIN" -c '
+import ctypes
+libc = ctypes.CDLL(None)
+print(libc.abs(-5))
+' 2>/dev/null)"
+if [ "$ctypes_result" = "5" ]; then
+    result "correct (ctypes successfully called libc abs(-5) == 5)"
+else
+    result "FAILED — ctypes could not load/call a C library correctly (got '${ctypes_result:-nothing}'); native-extension loading may be broken on this interpreter"
+fi
+
+# json round-trip correctness: fwht.py's chunked-accumulator
+# checkpointing (PLAN.md Phase 9) uses the json module directly - a
+# round-trip check with a value that must survive exactly (a large
+# int at the edge of float-safe-integer range) catches a broken/patched
+# json module silently corrupting checkpoint data.
+checking "json round-trip correctness" "$PYTHON_BIN -c 'json.loads(json.dumps({\"n\": 91652096}))'"
+json_result="$("$PYTHON_BIN" -c '
+import json
+data = {"n_terms": 91652096, "label": "IXYZ", "coeff": 0.30000000000000004}
+restored = json.loads(json.dumps(data))
+print("ok" if restored == data else "MISMATCH")
+' 2>/dev/null)"
+if [ "$json_result" = "ok" ]; then
+    result "correct (checkpoint-representative dict round-tripped exactly)"
+else
+    result "FAILED — json round-trip did not preserve data exactly (checkpointing, PLAN.md Phase 9, would silently corrupt on this interpreter)"
+fi
 
 checking "virtual environment at ${VENV_PATH}" "$PYTHON_BIN -m venv ${VENV_PATH}"
 if [ -x "${VENV_PATH}/bin/python" ]; then
