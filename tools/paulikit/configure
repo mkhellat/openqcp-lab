@@ -347,6 +347,199 @@ fi
 log ""
 
 # ---------------------------------------------------------------------
+# Machine identity — CPU info, cache hierarchy, and NUMA topology,
+# grouped as one block right after OS/arch/git detection (same
+# category: facts about the machine itself that ground everything
+# downstream, not gated on any language toolchain). Previously
+# scattered across the file (CPU info near the SIMD section, cache
+# hierarchy/NUMA topology near NumPy/BLAS) - moved here per direct
+# review, since none of these three checks depend on $CXX/$VENV_PY.
+#
+# CPU info: lscpu on Linux (includes its own Vulnerabilities: section,
+# so no separate CPU-mitigation check needed there), sysctl on
+# macOS/BSD. The sysctl key names below (hw.ncpu, hw.physicalcpu,
+# machdep.cpu.brand_string, hw.optional.avx2_0, hw.optional.avx512f)
+# are the standard, long-documented Darwin/BSD MIB names (Apple's own
+# sysctl(3) docs, FreeBSD's sysctl(8) man page) — NOT independently
+# executed/verified on this machine, since this project has only ever
+# run configure on Linux. If a value looks wrong on macOS/BSD, this is
+# the section to check first.
+# ---------------------------------------------------------------------
+
+case "$OS_FAMILY" in
+    linux)
+        log "== CPU (lscpu) =="
+        if have lscpu; then
+            lscpu 2>/dev/null | tee -a config.log || true
+        else
+            result_detail "not found" \
+                "unexpected on Linux — is procps installed?"
+        fi
+        ;;
+    macos)
+        log "== CPU (sysctl) =="
+        checking "CPU model" "sysctl -n machdep.cpu.brand_string"
+        result "$(sysctl -n machdep.cpu.brand_string 2>/dev/null \
+            || echo unknown)"
+        checking "logical/physical cores" \
+            "sysctl -n hw.ncpu hw.physicalcpu"
+        ncpu="$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
+        nphys="$(sysctl -n hw.physicalcpu 2>/dev/null || echo unknown)"
+        result "logical=$ncpu, physical=$nphys"
+        checking "SIMD (sysctl hw.optional.*)" \
+            "sysctl -n hw.optional.avx2_0 hw.optional.avx512f"
+        avx2_sysctl="$(sysctl -n hw.optional.avx2_0 2>/dev/null \
+            || echo unknown)"
+        avx512_sysctl="$(sysctl -n hw.optional.avx512f 2>/dev/null \
+            || echo unknown)"
+        result_detail \
+            "avx2_0=$avx2_sysctl, avx512f=$avx512_sysctl" \
+            "(cross-check against the compile-and-execute SIMD test" \
+            "further below, in the C++ toolchain section, which is" \
+            "the authoritative result)"
+        ;;
+    freebsd|dragonflybsd)
+        log "== CPU (sysctl) =="
+        checking "CPU model" "sysctl -n hw.model"
+        result "$(sysctl -n hw.model 2>/dev/null || echo unknown)"
+        checking "logical cores" "sysctl -n hw.ncpu"
+        result "$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
+        ;;
+    openbsd|netbsd)
+        log "== CPU (sysctl) =="
+        checking "CPU model" "sysctl -n hw.model"
+        result "$(sysctl -n hw.model 2>/dev/null || echo unknown)"
+        checking "logical cores" \
+            "sysctl -n hw.ncpuonline || sysctl -n hw.ncpu"
+        result "$(sysctl -n hw.ncpuonline 2>/dev/null \
+            || sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
+        ;;
+    *)
+        log "== CPU info =="
+        checking "CPU info" "(no known command for this OS)"
+        result_detail "unknown" \
+            "OS family ($OS_KERNEL) — no native CPU-info command" \
+            "known for this platform"
+        ;;
+esac
+
+log ""
+
+log "== Cache hierarchy (feeds Phase 12 chunk_size auto-tuning) =="
+
+checking "L1/L2/L3 cache sizes" "getconf LEVEL{1,2,3}_*CACHE_SIZE"
+if have getconf; then
+    l1="$(getconf LEVEL1_DCACHE_SIZE 2>/dev/null || echo -1)"
+    l2="$(getconf LEVEL2_CACHE_SIZE 2>/dev/null || echo -1)"
+    l3="$(getconf LEVEL3_CACHE_SIZE 2>/dev/null || echo -1)"
+    if [ "$l1" -gt 0 ] 2>/dev/null; then
+        l1_display="$((l1 / 1024)) KiB"
+        if [ "$l2" -gt 0 ] 2>/dev/null; then
+            l2_display="$((l2 / 1024)) KiB"
+        else
+            l2_display="unknown"
+        fi
+        if [ "$l3" -gt 0 ] 2>/dev/null; then
+            l3_display="$((l3 / 1024 / 1024)) MiB"
+        else
+            l3_display="unknown"
+        fi
+        result_detail \
+            "L1=$l1_display, L2=$l2_display, L3=$l3_display" \
+            "(per-core)"
+    else
+        result "unknown (getconf returned no value on this platform)"
+    fi
+    log "  Note: getconf reports PER-CORE L1/L2 size, not per-socket"
+    log "  aggregate. Compare against the lscpu section above, which"
+    log "  reports 'N instances' at the per-socket level — the two"
+    log "  are not directly comparable without dividing by instance"
+    log "  count. Phase 12's chunk_size auto-tuner should use these"
+    log "  getconf per-core values directly, since a single chunk's"
+    log "  working set competes for one core's L1/L2, not the"
+    log "  socket-wide aggregate."
+else
+    result_detail "unknown" \
+        "getconf not found on this platform — see PLAN.md" \
+        "Phase 12 open question re: Windows"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — NUMA topology and per-cache-level CPU sharing (multi-socket/
+# HPC-node awareness). getconf above reports one flat cache-size
+# number with NO concept of sockets, NUMA nodes, or which cores
+# actually SHARE a given cache instance - on a real multi-socket
+# workstation or HPC/supercomputer compute node (2-8+ sockets, many
+# NUMA domains is common), that single number silently misrepresents
+# the machine: a chunk_size tuned against "the" L3 size is meaningless
+# if the process's threads are spread across multiple sockets, each
+# with its own separate L3 and NUMA-local memory. oneTBB itself
+# (checked separately, in the C++ toolchain section) is a single-node,
+# shared-memory parallelism library with NO cluster/multi-node
+# awareness at all - these checks are about correctly characterizing a
+# single node's internal topology, not distributed/cluster parallelism
+# (MPI, already checked informationally elsewhere, is the relevant
+# tool for that, not oneTBB).
+# ---------------------------------------------------------------------
+
+log "== NUMA topology (multi-socket/HPC-node awareness) =="
+
+checking "NUMA node count and per-node memory" "numactl --hardware"
+if have numactl; then
+    numa_out="$(numactl --hardware 2>/dev/null)"
+    numa_nodes_line="$(printf '%s\n' "$numa_out" | grep '^available:')"
+    result "${numa_nodes_line:-unknown}"
+    if [ "$VERBOSE" -eq 1 ]; then
+        printf '%s\n' "$numa_out" | tee -a config.log
+    fi
+    node_count="$(printf '%s\n' "$numa_nodes_line" \
+        | sed -n 's/^available: \([0-9]*\).*/\1/p')"
+    if [ -n "$node_count" ] && [ "$node_count" -gt 1 ] 2>/dev/null; then
+        log "  Multi-node machine detected ($node_count NUMA nodes)."
+        log "  Phase 12's chunk_size auto-tuner should account for"
+        log "  which NUMA node a chunk's threads actually run on, not"
+        log "  assume a single flat cache/memory topology - see the"
+        log "  node distances above (numactl --hardware) for relative"
+        log "  remote-access cost between nodes."
+    fi
+else
+    result_detail "unknown" \
+        "numactl not found — cannot detect multi-socket/NUMA" \
+        "topology; if this is a multi-socket machine, cache-size" \
+        "tuning above may not reflect the real per-socket topology"
+fi
+
+checking "per-cache-level CPU sharing (cpu0's L3)" \
+    "cat /sys/devices/system/cpu/cpu0/cache/index*/shared_cpu_list"
+cache_dir="/sys/devices/system/cpu/cpu0/cache"
+if [ -d "$cache_dir" ]; then
+    l3_shared="unknown"
+    for idx in "$cache_dir"/index*; do
+        [ -r "$idx/level" ] || continue
+        [ -r "$idx/type" ] || continue
+        level="$(cat "$idx/level" 2>/dev/null)"
+        type="$(cat "$idx/type" 2>/dev/null)"
+        if [ "$level" = "3" ] && [ "$type" = "Unified" ]; then
+            l3_shared="$(cat "$idx/shared_cpu_list" 2>/dev/null \
+                || echo unknown)"
+        fi
+    done
+    result_detail "cpu0's L3 is shared by CPUs: $l3_shared" \
+        "on a multi-socket machine, other sockets' L3 instances" \
+        "cover a disjoint CPU range - chunk_size tuning should use" \
+        "the shared_cpu_list for the CPUs a chunk's threads actually" \
+        "run on, not assume this is the whole machine's L3"
+else
+    result_detail "unknown" \
+        "/sys/devices/system/cpu/cpu0/cache not present — Linux-only" \
+        "sysfs path; cannot determine per-cache CPU sharing here"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
 # 1. Python interpreter + venv (MUST-SUCCEED-OR-PARTIAL-ABORT)
 # ---------------------------------------------------------------------
 
@@ -1373,127 +1566,6 @@ else
     result_detail "skipped" "no working C++17 compiler — see above"
 fi
 
-log ""
-
-# ---------------------------------------------------------------------
-# 6. Cache hierarchy (best-effort) — feeds Phase 12's chunk_size
-#    auto-tuner directly.
-# ---------------------------------------------------------------------
-
-log "== Cache hierarchy (feeds Phase 12 chunk_size auto-tuning) =="
-
-checking "L1/L2/L3 cache sizes" "getconf LEVEL{1,2,3}_*CACHE_SIZE"
-if have getconf; then
-    l1="$(getconf LEVEL1_DCACHE_SIZE 2>/dev/null || echo -1)"
-    l2="$(getconf LEVEL2_CACHE_SIZE 2>/dev/null || echo -1)"
-    l3="$(getconf LEVEL3_CACHE_SIZE 2>/dev/null || echo -1)"
-    if [ "$l1" -gt 0 ] 2>/dev/null; then
-        l1_display="$((l1 / 1024)) KiB"
-        if [ "$l2" -gt 0 ] 2>/dev/null; then
-            l2_display="$((l2 / 1024)) KiB"
-        else
-            l2_display="unknown"
-        fi
-        if [ "$l3" -gt 0 ] 2>/dev/null; then
-            l3_display="$((l3 / 1024 / 1024)) MiB"
-        else
-            l3_display="unknown"
-        fi
-        result_detail \
-            "L1=$l1_display, L2=$l2_display, L3=$l3_display" \
-            "(per-core)"
-    else
-        result "unknown (getconf returned no value on this platform)"
-    fi
-    log "  Note: getconf reports PER-CORE L1/L2 size, not per-socket"
-    log "  aggregate. Compare against the lscpu section below, which"
-    log "  reports 'N instances' at the per-socket level — the two"
-    log "  are not directly comparable without dividing by instance"
-    log "  count. Phase 12's chunk_size auto-tuner should use these"
-    log "  getconf per-core values directly, since a single chunk's"
-    log "  working set competes for one core's L1/L2, not the"
-    log "  socket-wide aggregate."
-else
-    result_detail "unknown" \
-        "getconf not found on this platform — see PLAN.md" \
-        "Phase 12 open question re: Windows"
-fi
-
-log ""
-
-# ---------------------------------------------------------------------
-# v2 — NUMA topology and per-cache-level CPU sharing (multi-socket/
-# HPC-node awareness). getconf above reports one flat cache-size
-# number with NO concept of sockets, NUMA nodes, or which cores
-# actually SHARE a given cache instance - on a real multi-socket
-# workstation or HPC/supercomputer compute node (2-8+ sockets, many
-# NUMA domains is common), that single number silently misrepresents
-# the machine: a chunk_size tuned against "the" L3 size is meaningless
-# if the process's threads are spread across multiple sockets, each
-# with its own separate L3 and NUMA-local memory. oneTBB itself
-# (checked separately below) is a single-node, shared-memory
-# parallelism library with NO cluster/multi-node awareness at all -
-# these checks are about correctly characterizing a single node's
-# internal topology, not distributed/cluster parallelism (MPI,
-# already checked informationally elsewhere, is the relevant tool for
-# that, not oneTBB).
-# ---------------------------------------------------------------------
-
-log "== NUMA topology (multi-socket/HPC-node awareness) =="
-
-checking "NUMA node count and per-node memory" "numactl --hardware"
-if have numactl; then
-    numa_out="$(numactl --hardware 2>/dev/null)"
-    numa_nodes_line="$(printf '%s\n' "$numa_out" | grep '^available:')"
-    result "${numa_nodes_line:-unknown}"
-    if [ "$VERBOSE" -eq 1 ]; then
-        printf '%s\n' "$numa_out" | tee -a config.log
-    fi
-    node_count="$(printf '%s\n' "$numa_nodes_line" \
-        | sed -n 's/^available: \([0-9]*\).*/\1/p')"
-    if [ -n "$node_count" ] && [ "$node_count" -gt 1 ] 2>/dev/null; then
-        log "  Multi-node machine detected ($node_count NUMA nodes)."
-        log "  Phase 12's chunk_size auto-tuner should account for"
-        log "  which NUMA node a chunk's threads actually run on, not"
-        log "  assume a single flat cache/memory topology - see the"
-        log "  node distances above (numactl --hardware) for relative"
-        log "  remote-access cost between nodes."
-    fi
-else
-    result_detail "unknown" \
-        "numactl not found — cannot detect multi-socket/NUMA" \
-        "topology; if this is a multi-socket machine, cache-size" \
-        "tuning above may not reflect the real per-socket topology"
-fi
-
-checking "per-cache-level CPU sharing (cpu0's L3)" \
-    "cat /sys/devices/system/cpu/cpu0/cache/index*/shared_cpu_list"
-cache_dir="/sys/devices/system/cpu/cpu0/cache"
-if [ -d "$cache_dir" ]; then
-    l3_shared="unknown"
-    for idx in "$cache_dir"/index*; do
-        [ -r "$idx/level" ] || continue
-        [ -r "$idx/type" ] || continue
-        level="$(cat "$idx/level" 2>/dev/null)"
-        type="$(cat "$idx/type" 2>/dev/null)"
-        if [ "$level" = "3" ] && [ "$type" = "Unified" ]; then
-            l3_shared="$(cat "$idx/shared_cpu_list" 2>/dev/null \
-                || echo unknown)"
-        fi
-    done
-    result_detail "cpu0's L3 is shared by CPUs: $l3_shared" \
-        "on a multi-socket machine, other sockets' L3 instances" \
-        "cover a disjoint CPU range - chunk_size tuning should use" \
-        "the shared_cpu_list for the CPUs a chunk's threads actually" \
-        "run on, not assume this is the whole machine's L3"
-else
-    result_detail "unknown" \
-        "/sys/devices/system/cpu/cpu0/cache not present — Linux-only" \
-        "sysfs path; cannot determine per-cache CPU sharing here"
-fi
-
-log ""
-
 # ---------------------------------------------------------------------
 # 9. NumPy's linked BLAS backend + thread count (best-effort, venv
 #    Python — per the PEP 405/668-grounded decision that diagnostics
@@ -1636,74 +1708,6 @@ else
 fi
 
 log ""
-
-# ---------------------------------------------------------------------
-# CPU info — lscpu on Linux (includes its own Vulnerabilities: section,
-# so no separate CPU-mitigation check needed there), sysctl on
-# macOS/BSD. The sysctl key names below (hw.ncpu, hw.physicalcpu,
-# machdep.cpu.brand_string, hw.l1/l2/l3cachesize, hw.optional.avx2_0,
-# hw.optional.avx512f) are the standard, long-documented Darwin/BSD
-# MIB names (Apple's own sysctl(3) docs, FreeBSD's sysctl(8) man
-# page) — NOT independently executed/verified on this machine, since
-# this project has only ever run configure on Linux. If a value looks
-# wrong on macOS/BSD, this is the section to check first.
-# ---------------------------------------------------------------------
-
-case "$OS_FAMILY" in
-    linux)
-        log "== CPU (lscpu) =="
-        if have lscpu; then
-            lscpu 2>/dev/null | tee -a config.log || true
-        else
-            result_detail "not found" \
-                "unexpected on Linux — is procps installed?"
-        fi
-        ;;
-    macos)
-        log "== CPU (sysctl) =="
-        checking "CPU model" "sysctl -n machdep.cpu.brand_string"
-        result "$(sysctl -n machdep.cpu.brand_string 2>/dev/null \
-            || echo unknown)"
-        checking "logical/physical cores" \
-            "sysctl -n hw.ncpu hw.physicalcpu"
-        ncpu="$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
-        nphys="$(sysctl -n hw.physicalcpu 2>/dev/null || echo unknown)"
-        result "logical=$ncpu, physical=$nphys"
-        checking "SIMD (sysctl hw.optional.*)" \
-            "sysctl -n hw.optional.avx2_0 hw.optional.avx512f"
-        avx2_sysctl="$(sysctl -n hw.optional.avx2_0 2>/dev/null \
-            || echo unknown)"
-        avx512_sysctl="$(sysctl -n hw.optional.avx512f 2>/dev/null \
-            || echo unknown)"
-        result_detail \
-            "avx2_0=$avx2_sysctl, avx512f=$avx512_sysctl" \
-            "(cross-check against the compile-and-execute SIMD test" \
-            "below, which is the authoritative result)"
-        ;;
-    freebsd|dragonflybsd)
-        log "== CPU (sysctl) =="
-        checking "CPU model" "sysctl -n hw.model"
-        result "$(sysctl -n hw.model 2>/dev/null || echo unknown)"
-        checking "logical cores" "sysctl -n hw.ncpu"
-        result "$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
-        ;;
-    openbsd|netbsd)
-        log "== CPU (sysctl) =="
-        checking "CPU model" "sysctl -n hw.model"
-        result "$(sysctl -n hw.model 2>/dev/null || echo unknown)"
-        checking "logical cores" \
-            "sysctl -n hw.ncpuonline || sysctl -n hw.ncpu"
-        result "$(sysctl -n hw.ncpuonline 2>/dev/null \
-            || sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
-        ;;
-    *)
-        log "== CPU info =="
-        checking "CPU info" "(no known command for this OS)"
-        result_detail "unknown" \
-            "OS family ($OS_KERNEL) — no native CPU-info command" \
-            "known for this platform"
-        ;;
-esac
 
 # ---------------------------------------------------------------------
 # v2 — SIMD (AVX2/AVX-512) real compile-and-execute micro-tests
