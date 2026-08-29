@@ -1221,9 +1221,11 @@ EOF
     # -Lpath); POSIX sh has no arrays, so unquoted word-splitting is
     # the intended mechanism here, not an oversight. Passed to
     # verbose_run the same way, for the same reason.
+    tbb_link_ok=0
     # shellcheck disable=SC2086
     if verbose_run "$CXX" -std=c++17 $tbb_flags -o "$tmpexe" "$tmpc" -ltbb
     then
+        tbb_link_ok=1
         result_detail "found" \
             "links successfully (native parallel labeling available)"
     else
@@ -1241,6 +1243,77 @@ EOF
         fi
     fi
     rm -f "$tmpexe"
+
+    # -----------------------------------------------------------
+    # oneTBB correctness battery — the link-test above only proves
+    # <tbb/tbb.h> compiles and -ltbb links; it never calls a single
+    # TBB API, so it can't catch a TBB that links but produces wrong
+    # results, races, or silently runs serially. Read
+    # _native/pauli_label_parallel.cpp directly (not assumed): the
+    # real code uses the SPECIFIC headers <oneapi/tbb/parallel_for.h>
+    # + <oneapi/tbb/blocked_range.h> (not the umbrella <tbb/tbb.h>
+    # this link-test uses), calling tbb::parallel_for over a
+    # tbb::blocked_range<int64_t> with a capturing lambda - exactly
+    # this project's own parallel-loop pattern. This test replicates
+    # it: parallel-fills a buffer via that exact API shape, then
+    # verifies the actual summed result is correct, matching how
+    # pauli_label_batch_parallel's own correctness is defined (see
+    # tests/test_pauli_label_parallel.cpp's compare-against-serial
+    # discipline, mirrored here as compare-against-known-sum since
+    # this diagnostic doesn't have the serial kernel to compare
+    # against directly).
+    # -----------------------------------------------------------
+
+    if [ "$tbb_link_ok" -eq 1 ]; then
+        cat >"$tmpc" <<'EOF'
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <cstdint>
+#include <vector>
+
+int main() {
+    const int64_t n = 100000;
+    std::vector<uint32_t> out(n, 0);
+    tbb::parallel_for(
+        tbb::blocked_range<int64_t>(0, n),
+        [&](const tbb::blocked_range<int64_t> &range) {
+            for (int64_t i = range.begin(); i != range.end(); ++i) {
+                out[i] = static_cast<uint32_t>(i);
+            }
+        }
+    );
+    uint64_t sum = 0;
+    for (int64_t i = 0; i < n; ++i) sum += out[i];
+    // 0+1+...+99999 = 99999*100000/2 = 4999950000
+    return (sum == 4999950000ULL) ? 0 : 1;
+}
+EOF
+        checking "oneTBB parallel_for correctness" \
+            "\$CXX ... -ltbb, verify parallel-filled sum is exact"
+        tbb_correct_ok=0
+        # shellcheck disable=SC2086
+        if verbose_run "$CXX" -std=c++17 $tbb_flags -o "$tmpexe" "$tmpc" \
+            -ltbb
+        then
+            { "$tmpexe" >/dev/null 2>&1 && tbb_correct_ok=1 || true; } \
+                2>/dev/null
+        fi
+        if [ "$tbb_correct_ok" = 1 ]; then
+            result_detail "correct" \
+                "tbb::parallel_for over tbb::blocked_range<int64_t>" \
+                "with a capturing lambda produced the exact expected" \
+                "sum, matching pauli_label_batch_parallel's own" \
+                "API usage exactly"
+        else
+            result_detail "FAILED" \
+                "parallel_for compiled/linked but produced a wrong" \
+                "result, or crashed - the native extension's parallel" \
+                "labeling path (pauli_label_batch_parallel) may be" \
+                "unreliable on this TBB installation even though it" \
+                "builds successfully"
+        fi
+        rm -f "$tmpexe"
+    fi
 else
     result_detail "skipped" "no working C++17 compiler — see above"
 fi
