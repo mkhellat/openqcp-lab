@@ -1313,6 +1313,61 @@ EOF
                 "builds successfully"
         fi
         rm -f "$tmpexe"
+
+        # oneTBB's own NUMA-awareness: tbb::info::numa_nodes() +
+        # tbb::info::default_concurrency(numa_id), from
+        # <oneapi/tbb/info.h> - confirmed present in this project's
+        # actual TBB headers before writing this check, not assumed.
+        # paulikit does not currently use these APIs (its own
+        # parallel_for usage above has no explicit NUMA pinning), but
+        # on a real multi-socket/HPC node this reports whether the
+        # installed TBB version CAN pin work to specific NUMA nodes -
+        # relevant if Phase 12's chunk_size auto-tuner (or any future
+        # work) ever wants oneTBB itself to be NUMA-aware, not just
+        # for this diagnostic to passively report node count via
+        # numactl separately below.
+        cat >"$tmpc" <<'EOF'
+#include <oneapi/tbb/info.h>
+#include <cstdio>
+int main() {
+    auto nodes = tbb::info::numa_nodes();
+    if (nodes.empty()) return 1;
+    int total_concurrency = 0;
+    for (auto n : nodes) {
+        int c = tbb::info::default_concurrency(n);
+        if (c <= 0) return 1;
+        total_concurrency += c;
+    }
+    printf("%zu %d\n", nodes.size(), total_concurrency);
+    return 0;
+}
+EOF
+        checking "oneTBB NUMA awareness (tbb::info API)" \
+            "\$CXX ... -ltbb, verify tbb::info::numa_nodes() works"
+        tbb_numa_ok=0
+        tbb_numa_out=""
+        # shellcheck disable=SC2086
+        if verbose_run "$CXX" -std=c++17 $tbb_flags -o "$tmpexe" "$tmpc" \
+            -ltbb
+        then
+            tbb_numa_out="$("$tmpexe" 2>/dev/null || true)"
+            [ -n "$tbb_numa_out" ] && tbb_numa_ok=1
+        fi
+        if [ "$tbb_numa_ok" = 1 ]; then
+            numa_node_n="$(printf '%s' "$tbb_numa_out" | cut -d' ' -f1)"
+            numa_conc="$(printf '%s' "$tbb_numa_out" | cut -d' ' -f2)"
+            result_detail "available" \
+                "tbb::info reports $numa_node_n NUMA node(s)," \
+                "total default_concurrency=$numa_conc across them" \
+                "(paulikit does not currently use this API - informational)"
+        else
+            result_detail "unavailable" \
+                "tbb::info::numa_nodes()/default_concurrency() did" \
+                "not work on this TBB installation (older TBB version," \
+                "or built without NUMA support) - not currently used" \
+                "by paulikit, informational only"
+        fi
+        rm -f "$tmpexe"
     fi
 else
     result_detail "skipped" "no working C++17 compiler — see above"
@@ -1362,6 +1417,79 @@ else
     result_detail "unknown" \
         "getconf not found on this platform — see PLAN.md" \
         "Phase 12 open question re: Windows"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — NUMA topology and per-cache-level CPU sharing (multi-socket/
+# HPC-node awareness). getconf above reports one flat cache-size
+# number with NO concept of sockets, NUMA nodes, or which cores
+# actually SHARE a given cache instance - on a real multi-socket
+# workstation or HPC/supercomputer compute node (2-8+ sockets, many
+# NUMA domains is common), that single number silently misrepresents
+# the machine: a chunk_size tuned against "the" L3 size is meaningless
+# if the process's threads are spread across multiple sockets, each
+# with its own separate L3 and NUMA-local memory. oneTBB itself
+# (checked separately below) is a single-node, shared-memory
+# parallelism library with NO cluster/multi-node awareness at all -
+# these checks are about correctly characterizing a single node's
+# internal topology, not distributed/cluster parallelism (MPI,
+# already checked informationally elsewhere, is the relevant tool for
+# that, not oneTBB).
+# ---------------------------------------------------------------------
+
+log "== NUMA topology (multi-socket/HPC-node awareness) =="
+
+checking "NUMA node count and per-node memory" "numactl --hardware"
+if have numactl; then
+    numa_out="$(numactl --hardware 2>/dev/null)"
+    numa_nodes_line="$(printf '%s\n' "$numa_out" | grep '^available:')"
+    result "${numa_nodes_line:-unknown}"
+    if [ "$VERBOSE" -eq 1 ]; then
+        printf '%s\n' "$numa_out" | tee -a config.log
+    fi
+    node_count="$(printf '%s\n' "$numa_nodes_line" \
+        | sed -n 's/^available: \([0-9]*\).*/\1/p')"
+    if [ -n "$node_count" ] && [ "$node_count" -gt 1 ] 2>/dev/null; then
+        log "  Multi-node machine detected ($node_count NUMA nodes)."
+        log "  Phase 12's chunk_size auto-tuner should account for"
+        log "  which NUMA node a chunk's threads actually run on, not"
+        log "  assume a single flat cache/memory topology - see the"
+        log "  node distances above (numactl --hardware) for relative"
+        log "  remote-access cost between nodes."
+    fi
+else
+    result_detail "unknown" \
+        "numactl not found — cannot detect multi-socket/NUMA" \
+        "topology; if this is a multi-socket machine, cache-size" \
+        "tuning above may not reflect the real per-socket topology"
+fi
+
+checking "per-cache-level CPU sharing (cpu0's L3)" \
+    "cat /sys/devices/system/cpu/cpu0/cache/index*/shared_cpu_list"
+cache_dir="/sys/devices/system/cpu/cpu0/cache"
+if [ -d "$cache_dir" ]; then
+    l3_shared="unknown"
+    for idx in "$cache_dir"/index*; do
+        [ -r "$idx/level" ] || continue
+        [ -r "$idx/type" ] || continue
+        level="$(cat "$idx/level" 2>/dev/null)"
+        type="$(cat "$idx/type" 2>/dev/null)"
+        if [ "$level" = "3" ] && [ "$type" = "Unified" ]; then
+            l3_shared="$(cat "$idx/shared_cpu_list" 2>/dev/null \
+                || echo unknown)"
+        fi
+    done
+    result_detail "cpu0's L3 is shared by CPUs: $l3_shared" \
+        "on a multi-socket machine, other sockets' L3 instances" \
+        "cover a disjoint CPU range - chunk_size tuning should use" \
+        "the shared_cpu_list for the CPUs a chunk's threads actually" \
+        "run on, not assume this is the whole machine's L3"
+else
+    result_detail "unknown" \
+        "/sys/devices/system/cpu/cpu0/cache not present — Linux-only" \
+        "sysfs path; cannot determine per-cache CPU sharing here"
 fi
 
 log ""
