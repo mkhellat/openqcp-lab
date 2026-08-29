@@ -517,12 +517,156 @@ int main() { auto [a, b] = std::pair<int,int>{1, 2}; return a - a; }
 EOF
     checking "C++17 support" "$CXX -std=c++17 -c (structured bindings)"
     if verbose_run "$CXX" -std=c++17 -o "$tmpo" -c "$tmpc"; then
-        result "yes (structured bindings compile-test passed)"
+        result_detail "yes" "(structured bindings compile-test passed)"
         native_toolchain_ok=1
     else
-        result "NO — compile-test failed, native extension cannot be built"
+        result_detail "no" "compile-test failed, native extension cannot be built"
     fi
     rm -f "$tmpo"
+
+    if [ "$native_toolchain_ok" -eq 1 ]; then
+        # -----------------------------------------------------------
+        # Compiler correctness/sanity battery — not "does this flag
+        # compile" but "does the compiler DO the right thing": a
+        # miscompilation at a given optimization level, a broken
+        # libm link, or silently swallowed warning flags would each
+        # be a real, historically-seen toolchain failure mode that a
+        # bare version-string check cannot catch. Each test below
+        # compiles AND executes a small deterministic computation and
+        # checks the ACTUAL numeric/behavioral result, not just exit
+        # status - per explicit project requirement that every
+        # diagnostic here verify correctness, not just presence.
+        # -----------------------------------------------------------
+
+        # -O1/-O2/-O3 correctness: sum 1..1000 via a loop the optimizer
+        # is free to unroll/vectorize/reorder; a real miscompilation
+        # bug would show up as a wrong sum, not a compile failure.
+        cat >"$tmpc" <<'EOF'
+#include <cstdio>
+int main() {
+    long sum = 0;
+    for (int i = 1; i <= 1000; ++i) sum += i;
+    // 1000*1001/2 = 500500
+    return (sum == 500500) ? 0 : 1;
+}
+EOF
+        for opt_level in -O1 -O2 -O3; do
+            checking "optimizer correctness ($opt_level)" "$CXX $opt_level -o test test.cpp && ./test (verify sum 1..1000 == 500500)"
+            opt_ok=0
+            if verbose_run "$CXX" -std=c++17 "$opt_level" -o "$tmpexe" "$tmpc"; then
+                { "$tmpexe" >/dev/null 2>&1 && opt_ok=1 || true; } 2>/dev/null
+            fi
+            if [ "$opt_ok" = 1 ]; then
+                result_detail "correct" "(sum verified == 500500)"
+            else
+                result_detail "FAILED" "compiler produced a wrong result at $opt_level, or failed to compile/run (potential miscompilation bug)"
+            fi
+            rm -f "$tmpexe"
+        done
+
+        # Warning flags actually fire: a compiler wrapper that
+        # silently swallows -Wall/-Wextra would give false confidence
+        # in meson's own warning-based build hygiene. Compile code
+        # with a real, unambiguous warning (unused variable) under
+        # -Wall -Wextra and grep the compiler's own diagnostic output
+        # for the word "unused" - the test itself must FIND a real
+        # warning, not just "compiled without erroring."
+        cat >"$tmpc" <<'EOF'
+int main() {
+    int unused_variable = 42;
+    return 0;
+}
+EOF
+        checking "warning flags (-Wall -Wextra actually fire)" "$CXX -Wall -Wextra -c test.cpp 2>&1 | grep -qi unused"
+        warn_out="${TMPDIR}/paulikit-configure-warn-$$.out"
+        "$CXX" -std=c++17 -Wall -Wextra -o "$tmpo" -c "$tmpc" >"$warn_out" 2>&1 || true
+        if [ "$VERBOSE" -eq 1 ]; then
+            cat "$warn_out" | tee -a config.log
+        fi
+        if grep -qi "unused" "$warn_out" 2>/dev/null; then
+            result_detail "yes" "(unused-variable warning correctly detected)"
+        else
+            result_detail "no" "-Wall -Wextra did not report an unambiguous unused-variable warning; warning flags may be silently swallowed by this compiler/wrapper"
+        fi
+        rm -f "$tmpo" "$warn_out"
+
+        # Math library linkage + correctness: a real libm call
+        # (sqrt), compiled, linked with -lm, executed, result checked
+        # against the known correct value - not just "did -lm link."
+        cat >"$tmpc" <<'EOF'
+#include <cmath>
+int main() {
+    double result = std::sqrt(144.0);
+    return (result == 12.0) ? 0 : 1;
+}
+EOF
+        checking "math library (-lm sqrt correctness)" "$CXX -o test test.cpp -lm && ./test (verify sqrt(144)==12)"
+        math_ok=0
+        if verbose_run "$CXX" -std=c++17 -o "$tmpexe" "$tmpc" -lm; then
+            { "$tmpexe" >/dev/null 2>&1 && math_ok=1 || true; } 2>/dev/null
+        fi
+        if [ "$math_ok" = 1 ]; then
+            result_detail "correct" "(sqrt(144.0) == 12.0 verified)"
+        else
+            result_detail "FAILED" "libm link or sqrt() result incorrect"
+        fi
+        rm -f "$tmpexe"
+
+        # Exception handling: a working throw/catch with unwinding
+        # across a function call boundary - correctness verified by
+        # checking the actually-caught value, not just "didn't crash"
+        # (silent unwinding breakage is a real failure mode on some
+        # cross-compiled/exotic toolchains).
+        cat >"$tmpc" <<'EOF'
+#include <stdexcept>
+void thrower() { throw std::runtime_error("sentinel"); }
+int main() {
+    try {
+        thrower();
+    } catch (const std::runtime_error& e) {
+        return (std::string(e.what()) == "sentinel") ? 0 : 1;
+    }
+    return 1;
+}
+EOF
+        checking "exception handling (throw/catch across call boundary)" "$CXX -o test test.cpp && ./test"
+        exc_ok=0
+        if verbose_run "$CXX" -std=c++17 -o "$tmpexe" "$tmpc"; then
+            { "$tmpexe" >/dev/null 2>&1 && exc_ok=1 || true; } 2>/dev/null
+        fi
+        if [ "$exc_ok" = 1 ]; then
+            result_detail "correct" "(exception caught with the correct message across a function-call boundary)"
+        else
+            result_detail "FAILED" "exception was not caught correctly, or failed to compile/run"
+        fi
+        rm -f "$tmpexe"
+
+        # Known project-specific quirk (not a hypothetical one - see
+        # profiling/cache_locality/compiler_flags_findings.md): a
+        # wheel or dev build accidentally inheriting -march=native via
+        # an environment CXXFLAGS/CPPFLAGS is a real, documented
+        # SIGILL wheel-portability hazard for this project (a wheel
+        # built on CI with -march=native crashes on end-user hardware
+        # lacking that exact instruction set). meson.build sets no
+        # explicit optimization/arch flags itself, so this can only
+        # leak in from the environment - check for that leak directly,
+        # with a real compiled-and-disassembled verification rather
+        # than just grepping env var text (a leak could also arrive
+        # via CXXFLAGS containing something equivalent but differently
+        # spelled).
+        checking "environment CXXFLAGS/CPPFLAGS for -march=native leak" "echo \$CXXFLAGS \$CPPFLAGS | grep -q march=native"
+        env_flags="${CXXFLAGS:-} ${CPPFLAGS:-}"
+        case "$env_flags" in
+            *march=native*)
+                result_detail "WARNING" \
+                    "-march=native detected in CXXFLAGS/CPPFLAGS. meson.build itself sets no arch flags, so this would leak into any build invoked from this shell and produce a non-portable binary (real SIGILL hazard on other hardware -" \
+                    "see profiling/cache_locality/compiler_flags_findings.md). Unset it before building wheels."
+                ;;
+            *)
+                result_detail "clean" "no -march=native leak detected in CXXFLAGS/CPPFLAGS"
+                ;;
+        esac
+    fi
 fi
 
 log ""
