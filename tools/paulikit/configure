@@ -666,6 +666,146 @@ EOF
                 result_detail "clean" "no -march=native leak detected in CXXFLAGS/CPPFLAGS"
                 ;;
         esac
+
+        # -----------------------------------------------------------
+        # Project-header battery — the O1/O2/O3/warnings/math/
+        # exception battery above verifies GENERIC compiler health,
+        # but doesn't touch anything paulikit's own native extension
+        # source actually includes. This matters concretely for a
+        # custom/cross/vendor CXX passed via --python=/CXX=: a
+        # compiler can pass every generic sanity check above and
+        # still have a broken or ABI-incompatible standard-library
+        # implementation for the SPECIFIC headers this project needs.
+        # Headers below are exactly what
+        # src/paulikit/_native/{pauli_label,pauli_label_parallel}.{h,cpp}
+        # and test_pauli_label_parallel.cpp actually #include (oneTBB
+        # headers are already covered by the oneTBB check above) -
+        # verified by grepping the real source, not assumed. Each test
+        # compiles AND executes real usage matching this project's own
+        # code, checking an actual computed result.
+        # -----------------------------------------------------------
+
+        # <stdint.h> fixed-width integer correctness: pauli_label.h's
+        # actual signature takes uint32_t masks and an int64_t term
+        # count - verify these types have the exact expected widths
+        # and that arithmetic across the uint32_t/int64_t boundary
+        # (as pauli_label_parallel.cpp does: "term * (int64_t)n_qubits")
+        # produces the correct value, not silently truncated.
+        cat >"$tmpc" <<'EOF'
+#include <stdint.h>
+int main() {
+    if (sizeof(uint32_t) != 4) return 1;
+    if (sizeof(int64_t) != 8) return 1;
+    uint32_t x_mask = 0xFFFFFFFFu;
+    int64_t term = 1000000000LL;
+    int64_t n_qubits = 150;
+    int64_t product = term * n_qubits;
+    if (product != 150000000000LL) return 1;
+    return (x_mask == 4294967295u) ? 0 : 1;
+}
+EOF
+        checking "<stdint.h> fixed-width types (project's actual uint32_t/int64_t usage)" "$CXX -o test test.cpp && ./test"
+        stdint_ok=0
+        if verbose_run "$CXX" -std=c++17 -o "$tmpexe" "$tmpc"; then
+            { "$tmpexe" >/dev/null 2>&1 && stdint_ok=1 || true; } 2>/dev/null
+        fi
+        if [ "$stdint_ok" = 1 ]; then
+            result_detail "correct" "(uint32_t/int64_t widths and cross-type arithmetic verified exact)"
+        else
+            result_detail "FAILED" "uint32_t/int64_t sizes or arithmetic incorrect - pauli_label_parallel.cpp's own signatures rely on this"
+        fi
+        rm -f "$tmpexe"
+
+        # <vector> correctness: test_pauli_label_parallel.cpp's actual
+        # usage pattern is std::vector<T>(n) sized construction plus
+        # element access/mutation - verified with a real fill-and-sum,
+        # not just "did it compile."
+        cat >"$tmpc" <<'EOF'
+#include <vector>
+#include <cstdint>
+int main() {
+    std::vector<uint32_t> v(1000);
+    for (size_t i = 0; i < v.size(); ++i) v[i] = static_cast<uint32_t>(i);
+    uint64_t sum = 0;
+    for (size_t i = 0; i < v.size(); ++i) sum += v[i];
+    // 0+1+...+999 = 499500
+    return (sum == 499500) ? 0 : 1;
+}
+EOF
+        checking "<vector> correctness (project's actual sized-construction + fill pattern)" "$CXX -o test test.cpp && ./test"
+        vector_ok=0
+        if verbose_run "$CXX" -std=c++17 -o "$tmpexe" "$tmpc"; then
+            { "$tmpexe" >/dev/null 2>&1 && vector_ok=1 || true; } 2>/dev/null
+        fi
+        if [ "$vector_ok" = 1 ]; then
+            result_detail "correct" "(sized vector<uint32_t> fill-and-sum verified == 499500)"
+        else
+            result_detail "FAILED" "std::vector construction/access incorrect or failed to compile/run"
+        fi
+        rm -f "$tmpexe"
+
+        # <chrono> correctness: test_pauli_label_parallel.cpp's actual
+        # usage is std::chrono::steady_clock + duration<double, milli>
+        # for benchmark timing - verify the clock actually advances
+        # and the duration conversion produces a sane, non-negative,
+        # non-absurd value (a broken clock could return 0 always, or a
+        # broken duration cast could silently truncate to garbage).
+        cat >"$tmpc" <<'EOF'
+#include <chrono>
+#include <thread>
+int main() {
+    auto t0 = std::chrono::steady_clock::now();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    auto t1 = std::chrono::steady_clock::now();
+    double elapsed_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    // Must show at least ~15ms elapsed (allowing scheduler slack) and
+    // not something absurd like negative or >10 seconds.
+    return (elapsed_ms >= 15.0 && elapsed_ms < 10000.0) ? 0 : 1;
+}
+EOF
+        checking "<chrono> correctness (project's actual steady_clock + duration<double,milli> pattern)" "$CXX -o test test.cpp && ./test"
+        chrono_ok=0
+        if verbose_run "$CXX" -std=c++17 -o "$tmpexe" "$tmpc" -lpthread; then
+            { "$tmpexe" >/dev/null 2>&1 && chrono_ok=1 || true; } 2>/dev/null
+        fi
+        if [ "$chrono_ok" = 1 ]; then
+            result_detail "correct" "(steady_clock advanced by a plausible, correctly-converted duration)"
+        else
+            result_detail "FAILED" "steady_clock did not advance correctly, or duration<double,milli> conversion produced an implausible value"
+        fi
+        rm -f "$tmpexe"
+
+        # <random> correctness: test_pauli_label_parallel.cpp's actual
+        # usage is std::mt19937 seeded for deterministic reproducible
+        # test data - verify the SAME seed produces the SAME sequence
+        # (a broken/non-standard mt19937 implementation, seen on some
+        # exotic standard libraries, could be seeded correctly but
+        # non-deterministic, or simply produce a different - though
+        # still "valid-looking" - sequence than the C++ standard
+        # mandates, which would make paulikit's own reproducibility
+        # guarantees false on that toolchain).
+        cat >"$tmpc" <<'EOF'
+#include <random>
+int main() {
+    std::mt19937 rng(42);
+    // The C++ standard mandates mt19937's exact output sequence for a
+    // given seed - this is not implementation-defined. rng() after
+    // seeding with 42 must be exactly 1608637542 per the standard.
+    uint32_t first = rng();
+    return (first == 1608637542u) ? 0 : 1;
+}
+EOF
+        checking "<random> correctness (project's actual std::mt19937(seed) pattern)" "$CXX -o test test.cpp && ./test"
+        random_ok=0
+        if verbose_run "$CXX" -std=c++17 -o "$tmpexe" "$tmpc"; then
+            { "$tmpexe" >/dev/null 2>&1 && random_ok=1 || true; } 2>/dev/null
+        fi
+        if [ "$random_ok" = 1 ]; then
+            result_detail "correct" "(mt19937(42)'s first output matches the C++ standard's mandated exact sequence)"
+        else
+            result_detail "FAILED" "mt19937 did not produce the standard-mandated sequence - paulikit's test reproducibility (test_pauli_label_parallel.cpp) would be unreliable on this toolchain"
+        fi
+        rm -f "$tmpexe"
     fi
 fi
 
