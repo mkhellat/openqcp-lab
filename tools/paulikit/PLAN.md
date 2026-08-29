@@ -487,6 +487,91 @@ pass, not just written — `make`/`make check`/`make installcheck`/
 `make TAGS`/`make dist`, plus the self-regeneration rule, all
 verified working (71/71 tests passing throughout).
 
+**Update (2026-08-29): comprehensive correctness batteries + output
+format overhaul.** A comprehensive-sanity/bonus-tests review found the
+v1/v2 diagnostic checks were mostly presence/version checks, not
+correctness checks — e.g. the Cython check only verified `import
+Cython; print(version)`, never that Cython could actually build
+anything. Closed for every toolchain layer, each verified to catch
+real breakage via a deliberately-broken stub before being trusted:
+
+- **C++**: `-O1`/`-O2`/`-O3` numeric-correctness (not just "compiles"
+  — a real miscompilation bug would show as a wrong sum, not a compile
+  error), `-Wall -Wextra` warnings actually fire, `-lm` math-library
+  correctness, exception handling across a call boundary, a
+  project-header battery matching `_native/pauli_label_parallel.cpp`'s
+  real includes exactly (`<stdint.h>`, `<vector>`, `<chrono>`,
+  `<random>` — `std::mt19937(42)`'s first output checked against the
+  C++-standard-mandated exact value), and a known-quirk check for
+  `-march=native` leaking in via `CXXFLAGS`/`CPPFLAGS` (the real,
+  documented SIGILL wheel-portability hazard from
+  `profiling/cache_locality/compiler_flags_findings.md`).
+- **Python**: IEEE754 float correctness, ctypes/dynamic-linker
+  sanity, json round-trip correctness, and a full replication of
+  `fwht.py`'s real checkpoint I/O mechanism (`_append_checkpoint_chunk`/
+  `_load_checkpoint`'s exact Path+append-mode+progress-marker pattern).
+- **Cython**: a real `cython --cplus` transpile → C++ compile → link →
+  import → execute pipeline exercising `cimport numpy`, C-level
+  `libc.stdint` typing, and typed `ndarray` buffer access — the actual
+  capabilities `pauli_label_native.pyx` depends on.
+- **meson**: fixed a real pre-existing bug (`mesonbuild.coredata`
+  isn't auto-imported, so meson's version was silently always
+  "unknown"), and added a real `meson setup` run in a throwaway temp
+  dir — the same command `make build` itself depends on — checking
+  meson's own reported findings for the `cython` language module and
+  `tbb` dependency resolution.
+- **oneTBB**: replaced the link-only test with a real
+  `tbb::parallel_for`/`tbb::blocked_range<int64_t>` correctness check
+  matching `pauli_label_parallel.cpp`'s exact API usage, plus a
+  `tbb::info::numa_nodes()` NUMA-awareness check.
+- **NumPy/BLAS**: found that paulikit's actual FWHT
+  (`_walsh_hadamard_transform_rows`) is pure elementwise complex
+  add/subtract on reshaped views — no BLAS-backed call anywhere — so
+  BLAS's own correctness isn't load-bearing for paulikit's math. Added
+  two separate, honestly-labeled checks instead: the real FWHT
+  butterfly pattern verified against known Walsh-Hadamard-transform
+  identities, and a generic BLAS matmul check explicitly labeled "not
+  currently used by paulikit."
+
+**CPU/cache/NUMA moved right after OS/arch detection** (previously
+scattered across the file), matching the same "machine-identity fact"
+category as OS detection. Added a `getconf`-vs-sysfs cache-size
+cross-check (two independent OS sources, previously never compared),
+a real empirical cache-latency probe (`--probe-cache-latency`, opt-in
+since ~3s vs. <1s for every other check) written in raw x86_64
+assembly — deliberately not compiled C++, since this section runs
+before C++ toolchain detection populates `$CXX` later in the file;
+assembled/linked directly with `as`/`ld`, zero compiler dependency,
+raw `mmap`/`munmap`/`write`/`exit` syscalls — and Slurm/PBS-Torque/LSF
+job-scheduler-context detection (honest about the real limitation:
+`configure` runs once on one node and cannot see a whole
+supercomputer's cross-node topology, which lives in the scheduler).
+
+**Report format overhaul**: replaced the original post-hoc itemized-
+table style with the classic incremental GNU `checking for X...
+yes/no` format (live, one line at a time, matching real
+autoconf-generated scripts), `--verbose` now shows the underlying
+probe/command for every check (not just the compile-tests), and a
+full manual line-length sweep brought the whole script to real GNU
+~79-column discipline (verified against the actual `config.guess`
+source, not assumed) — caught 2 real orphaned-output bugs along the
+way (unknown-OS fallback branches missing their `checking()` call).
+
+**Open, scoped but not started**: ARM64 and RISC-V ports of the
+assembly cache-latency probe (PowerPC explicitly out of scope for
+now — legacy Summit/Sierra-class systems, not a current new-build
+target). Real HPC deployments exist on both target architectures
+(Fugaku/AWS Graviton for ARM64; active RISC-V HPC research). Needs
+real syscall-number/register-convention verification per architecture
+before writing any code (not assumed from memory), and genuine
+execution testing via QEMU user-mode emulation once
+`aarch64-linux-gnu-binutils`/`riscv64-linux-gnu-binutils` are
+installed — note QEMU user-mode won't produce a trustworthy *latency*
+curve (no real cache-hierarchy timing under emulation), so cross-arch
+testing there can only validate assembly/syscall *correctness*, not
+the measured numbers; that distinction must be stated explicitly
+whenever this is picked back up, not glossed over.
+
 ### Phase 0.6 — Exhaustive correctness verification (closed 2026-08-28)
 
 **Problem.** `tests/test_benchmark_reference.py`'s existing PennyLane
