@@ -1533,6 +1533,103 @@ print(blas.get("name", "unknown"), blas.get("version", ""))
     log "  at 'import numpy' — set OPENBLAS_NUM_THREADS=1 for clean"
     log "  perf stat measurements (see"
     log "  profiling/cache_locality/stall_floor_mystery_solved.md)"
+
+    # -----------------------------------------------------------
+    # FWHT butterfly-pattern correctness — read
+    # _walsh_hadamard_transform_rows in algorithms/fwht.py directly
+    # (not assumed): paulikit's actual transform is PURE elementwise
+    # complex add/subtract on reshaped array views (reshape,
+    # slice-assign, +, -) - no np.dot/@/matmul/linalg call anywhere.
+    # This means BLAS's own correctness is NOT actually load-bearing
+    # for paulikit's math (see the separate, explicitly-labeled
+    # generic BLAS check below for that different question). What
+    # IS load-bearing is this specific reshape+slice-assign+add/
+    # subtract pattern working correctly on complex arrays - checked
+    # here by replicating the exact algorithm and verifying it
+    # against two known Walsh-Hadamard-transform identities: the
+    # unnormalized WHT of a delta function [1,0,0,0] is the all-ones
+    # vector [1,1,1,1], and WHT is involutive up to a factor of dim,
+    # so WHT([1,1,1,1]) = [4,0,0,0].
+    # -----------------------------------------------------------
+
+    checking "FWHT butterfly pattern correctness" \
+        "\$VENV_PY -c '<replicates _walsh_hadamard_transform_rows>'"
+    fwht_check_result="$("$VENV_PY" -c '
+import numpy as np
+
+def wht_rows(array):
+    transformed = array.copy()
+    dim = array.shape[1]
+    span = 1
+    while span < dim:
+        transformed = transformed.reshape(
+            transformed.shape[0], dim // (2 * span), 2, span)
+        left = transformed[:, :, 0, :]
+        right = transformed[:, :, 1, :]
+        left, right = left + right, left - right
+        transformed[:, :, 0, :] = left
+        transformed[:, :, 1, :] = right
+        transformed = transformed.reshape(transformed.shape[0], dim)
+        span *= 2
+    return transformed
+
+delta = np.array([[1, 0, 0, 0]], dtype=complex)
+ones_expected = np.array([[1, 1, 1, 1]], dtype=complex)
+ones_result = wht_rows(delta)
+
+ones = np.array([[1, 1, 1, 1]], dtype=complex)
+delta4_expected = np.array([[4, 0, 0, 0]], dtype=complex)
+delta4_result = wht_rows(ones)
+
+if (np.array_equal(ones_result, ones_expected)
+        and np.array_equal(delta4_result, delta4_expected)):
+    print("ok")
+else:
+    print("MISMATCH")
+' 2>/dev/null)"
+    if [ "$fwht_check_result" = "ok" ]; then
+        result_detail "correct" \
+            "reshape+slice-assign+complex add/subtract pattern" \
+            "verified against known WHT identities" \
+            "(delta<->all-ones), matching paulikit's real algorithm"
+    else
+        result_detail "FAILED" \
+            "the reshape/slice-assign/complex-arithmetic pattern did" \
+            "not reproduce known WHT identities - paulikit's core" \
+            "transform (_walsh_hadamard_transform_rows) may be" \
+            "unreliable on this NumPy build"
+    fi
+
+    # -----------------------------------------------------------
+    # Generic BLAS correctness — separate, explicitly-labeled
+    # question from the above: not currently load-bearing for
+    # paulikit's own math (no BLAS-backed call exists in the hot
+    # path today), but a broken BLAS install is diagnostically
+    # interesting on its own, and this remains forward-looking in
+    # case a BLAS-backed path is ever added. A small matmul checked
+    # against an exact known answer.
+    # -----------------------------------------------------------
+
+    checking "generic BLAS correctness (not currently used by paulikit)" \
+        "\$VENV_PY -c '<small matmul against a known answer>'"
+    blas_check_result="$("$VENV_PY" -c '
+import numpy as np
+a = np.array([[1.0, 2.0], [3.0, 4.0]])
+b = np.array([[5.0, 6.0], [7.0, 8.0]])
+c = a @ b
+expected = np.array([[19.0, 22.0], [43.0, 50.0]])
+print("ok" if np.allclose(c, expected) else "MISMATCH")
+' 2>/dev/null)"
+    if [ "$blas_check_result" = "ok" ]; then
+        result_detail "correct" \
+            "2x2 matmul against a known exact answer verified" \
+            "(informational — not currently used by paulikit)"
+    else
+        result_detail "FAILED" \
+            "BLAS-backed matmul produced a wrong result - this" \
+            "specific NumPy/BLAS install may be broken, though it" \
+            "would not currently affect paulikit's own math"
+    fi
 else
     result_detail "not installed in venv" \
         "run 'make install' first, or this venv creation failed above"
