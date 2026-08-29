@@ -25,14 +25,20 @@
 # detection (uname -s/-m, per real GNU config.guess precedent), venv
 # creation, C++ compiler + C++17, Cython >=3.0, meson >=1.1.0, oneTBB,
 # cache hierarchy (L1/L2/L3), NumPy's linked BLAS backend + thread
-# count, Python version, git commit + working-tree state, lscpu
-# (including its own Vulnerabilities: section), SIMD (AVX2/AVX-512
-# real compile-and-execute tests, diagnostic only — never auto-applied
-# as -march=native), GPU/CUDA presence, MPI toolchain presence,
-# psutil presence, container/VM detection, perf_event_paranoid, CPU
-# frequency governor state, total RAM/swap, system load average,
-# perf list event availability, NumPy's own runtime SIMD dispatch
-# tier, musl-libc awareness, disk I/O type.
+# count, Python version, git commit + working-tree state, CPU info
+# (lscpu on Linux incl. its own Vulnerabilities: section; sysctl on
+# macOS/FreeBSD/OpenBSD/NetBSD — see the CPU-info section's own note:
+# standard documented MIB names, not independently executed/verified
+# on non-Linux since this project has only run configure on Linux),
+# SIMD (AVX2/AVX-512 real compile-and-execute tests, diagnostic only —
+# never auto-applied as -march=native), GPU/CUDA presence, MPI
+# toolchain presence, psutil presence, container/VM detection,
+# perf_event_paranoid (genuinely Linux-only, no BSD/macOS equivalent),
+# CPU frequency governor state (same), total RAM/swap (native path per
+# OS family: free/proc on Linux, sysctl+vm_stat on macOS, sysctl+
+# swapctl/swapinfo on BSD), system load average, perf list event
+# availability, NumPy's own runtime SIMD dispatch tier, musl-libc
+# awareness, disk I/O type.
 #
 # Report format: classic incremental GNU-configure style ("checking
 # for X... yes/no", printed live one line at a time as each check
@@ -595,17 +601,56 @@ fi
 log ""
 
 # ---------------------------------------------------------------------
-# lscpu (best-effort, Linux-only; includes its own Vulnerabilities:
-# section, so no separate CPU-mitigation check is needed)
+# CPU info — lscpu on Linux (includes its own Vulnerabilities: section,
+# so no separate CPU-mitigation check needed there), sysctl on
+# macOS/BSD. The sysctl key names below (hw.ncpu, hw.physicalcpu,
+# machdep.cpu.brand_string, hw.l1/l2/l3cachesize, hw.optional.avx2_0,
+# hw.optional.avx512f) are the standard, long-documented Darwin/BSD
+# MIB names (Apple's own sysctl(3) docs, FreeBSD's sysctl(8) man
+# page) — NOT independently executed/verified on this machine, since
+# this project has only ever run configure on Linux. If a value looks
+# wrong on macOS/BSD, this is the section to check first.
 # ---------------------------------------------------------------------
 
-log "== CPU (lscpu) =="
-
-if have lscpu; then
-    lscpu 2>/dev/null | tee -a config.log || true
-else
-    report "lscpu" "not found (Linux-only tool; on macOS use 'sysctl -a machdep.cpu', on BSD 'sysctl hw')"
-fi
+case "$OS_FAMILY" in
+    linux)
+        log "== CPU (lscpu) =="
+        if have lscpu; then
+            lscpu 2>/dev/null | tee -a config.log || true
+        else
+            report "lscpu" "not found (unexpected on Linux — is procps installed?)"
+        fi
+        ;;
+    macos)
+        log "== CPU (sysctl) =="
+        checking "CPU model" "sysctl -n machdep.cpu.brand_string"
+        result "$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
+        checking "logical/physical cores" "sysctl -n hw.ncpu hw.physicalcpu"
+        result "logical=$(sysctl -n hw.ncpu 2>/dev/null || echo unknown), physical=$(sysctl -n hw.physicalcpu 2>/dev/null || echo unknown)"
+        checking "SIMD (sysctl hw.optional.*)" "sysctl -n hw.optional.avx2_0 hw.optional.avx512f"
+        avx2_sysctl="$(sysctl -n hw.optional.avx2_0 2>/dev/null || echo unknown)"
+        avx512_sysctl="$(sysctl -n hw.optional.avx512f 2>/dev/null || echo unknown)"
+        result "hw.optional.avx2_0=$avx2_sysctl, hw.optional.avx512f=$avx512_sysctl (cross-check against the compile-and-execute SIMD test below, which is the authoritative result)"
+        ;;
+    freebsd|dragonflybsd)
+        log "== CPU (sysctl) =="
+        checking "CPU model" "sysctl -n hw.model"
+        result "$(sysctl -n hw.model 2>/dev/null || echo unknown)"
+        checking "logical cores" "sysctl -n hw.ncpu"
+        result "$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
+        ;;
+    openbsd|netbsd)
+        log "== CPU (sysctl) =="
+        checking "CPU model" "sysctl -n hw.model"
+        result "$(sysctl -n hw.model 2>/dev/null || echo unknown)"
+        checking "logical cores" "sysctl -n hw.ncpuonline || sysctl -n hw.ncpu"
+        result "$(sysctl -n hw.ncpuonline 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
+        ;;
+    *)
+        log "== CPU info =="
+        report "CPU info" "unknown OS family ($OS_KERNEL) — no native CPU-info command known for this platform"
+        ;;
+esac
 
 # ---------------------------------------------------------------------
 # v2 — SIMD (AVX2/AVX-512) real compile-and-execute micro-tests
@@ -802,14 +847,54 @@ log ""
 
 log "== RAM / swap =="
 
-checking "total RAM / swap" "free -h"
-if have free; then
-    mem_total="$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')"
-    swap_total="$(free -h 2>/dev/null | awk '/^Swap:/ {print $2}')"
-    result "RAM=${mem_total:-unknown}, swap=${swap_total:-unknown}"
-else
-    result "unknown ('free' not found — Linux-only tool; on macOS use 'vm_stat'/'sysctl hw.memsize')"
-fi
+case "$OS_FAMILY" in
+    linux)
+        checking "total RAM / swap" "free -h"
+        if have free; then
+            mem_total="$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')"
+            swap_total="$(free -h 2>/dev/null | awk '/^Swap:/ {print $2}')"
+            result "RAM=${mem_total:-unknown}, swap=${swap_total:-unknown}"
+        else
+            result "unknown ('free' not found — unexpected on Linux)"
+        fi
+        ;;
+    macos)
+        # hw.memsize (bytes) and sysctl vm.swapusage are the standard
+        # Darwin MIB names (Apple's sysctl(3) docs) — not independently
+        # verified on this machine, see the CPU-info section's note.
+        checking "total RAM" "sysctl -n hw.memsize"
+        mem_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
+        if [ "$mem_bytes" -gt 0 ] 2>/dev/null; then
+            result "$((mem_bytes / 1024 / 1024 / 1024)) GiB"
+        else
+            result "unknown"
+        fi
+        checking "swap usage" "sysctl vm.swapusage"
+        result "$(sysctl vm.swapusage 2>/dev/null || echo unknown)"
+        ;;
+    freebsd|dragonflybsd|openbsd|netbsd)
+        # hw.physmem (bytes) is the standard BSD MIB name across all
+        # four families — not independently verified on this machine.
+        checking "total RAM" "sysctl -n hw.physmem"
+        mem_bytes="$(sysctl -n hw.physmem 2>/dev/null || echo 0)"
+        if [ "$mem_bytes" -gt 0 ] 2>/dev/null; then
+            result "$((mem_bytes / 1024 / 1024 / 1024)) GiB"
+        else
+            result "unknown"
+        fi
+        checking "swap" "swapctl -l (or swapinfo -h on FreeBSD)"
+        if have swapctl; then
+            result "$(swapctl -l 2>/dev/null | tail -n +2 || echo unknown)"
+        elif have swapinfo; then
+            result "$(swapinfo -h 2>/dev/null | tail -n +2 || echo unknown)"
+        else
+            result "unknown (neither swapctl nor swapinfo found)"
+        fi
+        ;;
+    *)
+        report "RAM / swap" "unknown OS family ($OS_KERNEL) — no native memory-info command known for this platform"
+        ;;
+esac
 
 log ""
 
