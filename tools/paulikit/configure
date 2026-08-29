@@ -1003,6 +1003,95 @@ else
     result "not found (native extension cannot be built without it)"
 fi
 
+# -----------------------------------------------------------------
+# Cython correctness battery — same philosophy as the C++/Python
+# batteries: a bare version-string check does not verify Cython can
+# actually build THIS project's real code. pauli_label_native.pyx
+# (verified by reading it directly, not assumed) does 4 specific
+# things a version check never exercises: `cimport numpy as cnp` +
+# `cnp.import_array()` (the NumPy C-API — a real, historically common
+# failure mode when NumPy's Cython headers aren't discoverable or a
+# Cython/NumPy ABI mismatch exists), `from libc.stdint cimport
+# uint32_t, int64_t` (C-level integer typing), typed
+# `cnp.ndarray[T, ndim=1]` buffer access, and compiling to C++ (this
+# project's meson.build sets override_options:
+# ['cython_language=cpp'], not the Cython default of C). This test
+# replicates all four exactly: transpiles a minimal .pyx doing real
+# NumPy-buffer arithmetic to C++ via `cython --cplus`, compiles the
+# result with the SAME $CXX already validated above, links against
+# the venv's real NumPy/Python headers, imports the resulting
+# extension module, and checks an actual computed sum — not just
+# "did every step exit 0."
+# -----------------------------------------------------------------
+
+if [ -n "$VENV_PY" ] && [ -n "$CXX" ] && [ "$native_toolchain_ok" -eq 1 ] \
+    && "$VENV_PY" -c 'import Cython' >/dev/null 2>&1
+then
+    venv_cython="$(dirname "$VENV_PY")/cython"
+    if [ -x "$venv_cython" ]; then
+        cy_battery_dir="${TMPDIR}/paulikit-configure-cybattery-$$"
+        mkdir -p "$cy_battery_dir"
+        cy_src="$cy_battery_dir/paulikit_cy_check.pyx"
+        cat >"$cy_src" <<'EOF'
+# cython: language_level=3
+import numpy as np
+cimport numpy as cnp
+from libc.stdint cimport uint32_t, int64_t
+
+cnp.import_array()
+
+def sum_uint32_array(cnp.ndarray[uint32_t, ndim=1] arr):
+    cdef cnp.ndarray[uint32_t, ndim=1] c_arr = \
+        np.ascontiguousarray(arr, dtype=np.uint32)
+    cdef int64_t total = 0
+    cdef int64_t i
+    for i in range(c_arr.shape[0]):
+        total += c_arr[i]
+    return total
+EOF
+        checking "Cython -> C++ -> NumPy buffer round-trip" \
+            "cython --cplus, then \$CXX, then import + verify sum"
+        cy_ok=0
+        np_include="$("$VENV_PY" -c \
+            'import numpy; print(numpy.get_include())' 2>/dev/null)"
+        py_include="$("$VENV_PY" -c \
+            'import sysconfig; print(sysconfig.get_path("include"))' \
+            2>/dev/null)"
+        if verbose_run "$venv_cython" --cplus -3 "$cy_src"; then
+            cy_cpp="${cy_src%.pyx}.cpp"
+            cy_so="$cy_battery_dir/paulikit_cy_check.so"
+            if verbose_run "$CXX" -shared -fPIC -std=c++17 \
+                -I"$np_include" -I"$py_include" "$cy_cpp" -o "$cy_so"
+            then
+                cy_result="$("$VENV_PY" -c "
+import sys
+sys.path.insert(0, '$cy_battery_dir')
+import numpy as np
+import paulikit_cy_check
+result = paulikit_cy_check.sum_uint32_array(
+    np.array([1, 2, 3, 4, 5], dtype=np.uint32))
+print('ok' if result == 15 else 'MISMATCH')
+" 2>/dev/null)"
+                [ "$cy_result" = "ok" ] && cy_ok=1
+            fi
+        fi
+        rm -rf "$cy_battery_dir"
+        if [ "$cy_ok" = 1 ]; then
+            result_detail "correct" \
+                "cimport numpy, C-level stdint typing, and typed" \
+                "ndarray buffer access all verified working end to" \
+                "end (transpile, compile as C++, link, import, execute)"
+        else
+            result_detail "FAILED" \
+                "the Cython->C++->NumPy pipeline did not produce a" \
+                "working, correct extension module - see" \
+                "src/paulikit/_native/pauli_label_native.pyx for the" \
+                "real code this mirrors; native extension may fail" \
+                "to build even though Cython itself is present"
+        fi
+    fi
+fi
+
 log ""
 
 # ---------------------------------------------------------------------
