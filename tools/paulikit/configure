@@ -21,17 +21,26 @@
 # project's own history repeatedly did (see PLAN.md, profiling/).
 #
 # Scope (v1 + v2 — see PLAN.md's Phase 0.5 section for the full
-# split and rationale, both now implemented): venv creation, C++
-# compiler + C++17, Cython >=3.0, meson >=1.1.0, oneTBB, cache
-# hierarchy (L1/L2/L3), NumPy's linked BLAS backend + thread count,
-# Python version, git commit + working-tree state, lscpu (including
-# its own Vulnerabilities: section), SIMD (AVX2/AVX-512 real
-# compile-and-execute tests, diagnostic only — never auto-applied as
-# -march=native), GPU/CUDA presence, MPI toolchain presence, psutil
-# presence, container/VM detection, perf_event_paranoid, CPU
+# split and rationale, both now implemented): OS/architecture
+# detection (uname -s/-m, per real GNU config.guess precedent), venv
+# creation, C++ compiler + C++17, Cython >=3.0, meson >=1.1.0, oneTBB,
+# cache hierarchy (L1/L2/L3), NumPy's linked BLAS backend + thread
+# count, Python version, git commit + working-tree state, lscpu
+# (including its own Vulnerabilities: section), SIMD (AVX2/AVX-512
+# real compile-and-execute tests, diagnostic only — never auto-applied
+# as -march=native), GPU/CUDA presence, MPI toolchain presence,
+# psutil presence, container/VM detection, perf_event_paranoid, CPU
 # frequency governor state, total RAM/swap, system load average,
 # perf list event availability, NumPy's own runtime SIMD dispatch
 # tier, musl-libc awareness, disk I/O type.
+#
+# Report format: classic incremental GNU-configure style ("checking
+# for X... yes/no", printed live one line at a time as each check
+# runs — see the checking()/result() helper pair below), not a
+# post-hoc itemized table. Every check also accepts an optional
+# --verbose-only probe description shown via the same mechanism, so
+# --verbose surfaces the underlying command/probe for every check, not
+# only the ones that invoke a compiler.
 #
 # Failure-mode philosophy: only two checks are allowed to block
 # anything (partial-abort, never a hard script-kill) — Python/venv
@@ -173,22 +182,47 @@ if [ "$SRCDIR" != "." ]; then
     echo "configure: proceeding as if --srcdir=. was given." >&2
 fi
 
-# log()/report() write to stdout immediately AND append to config.log
-# as each line is produced — matching how real GNU configure scripts
-# behave ("checking for X... yes" prints live, one line at a time, not
-# buffered until the whole script finishes). Earlier versions of this
-# script buffered the entire report into a temp file and dumped it all
-# at once at the very end, which is not how configure scripts are
+# log()/checking()/result() write to stdout immediately AND append to
+# config.log as each line is produced — matching how real GNU
+# configure scripts behave: "checking for X... " prints live before
+# the check runs, then "yes"/"no" completes the same line once it's
+# done, one check at a time, never buffered until the whole script
+# finishes. `tee -a` is POSIX.1-2017-specified (confirmed via `man 1p
+# tee` — the -a/-i short options are the POSIX-guaranteed subset,
+# distinct from GNU tee's long-form --append/--ignore-interrupts,
+# which are NOT assumed here). Earlier versions of this script
+# buffered the entire report into a temp file and dumped it all at
+# once at the very end, which is not how configure scripts are
 # expected to behave and gives no feedback during long-running checks
-# (e.g. compile tests, venv creation).
+# (venv creation, compile tests).
 log() {
     printf '%s\n' "$*" | tee -a config.log
 }
 
-# Runs a check; never lets a failing check abort the whole script
-# (matches the documented "best-effort, report-unknown" philosophy
-# for every item except Python/venv and the C++ compiler, which are
-# handled separately with explicit partial-abort logic below).
+# checking()/result() are the GNU-style incremental pair: checking()
+# prints "checking for LABEL... " with NO trailing newline (so it's
+# visible immediately, before the check itself runs), and result()
+# later completes that same line with the outcome. Optionally pass a
+# second argument to checking() — the underlying probe command/action
+# about to be run — which is shown under --verbose only (every check
+# supports this, not just compiler invocations, so --verbose is
+# meaningful everywhere, not just for compile-tests).
+checking() {
+    label="$1"
+    probe="${2:-}"
+    printf 'checking for %s... ' "$label" | tee -a config.log
+    if [ "$VERBOSE" -eq 1 ] && [ -n "$probe" ]; then
+        printf '\n  + %s\n  ' "$probe" | tee -a config.log
+    fi
+}
+
+result() {
+    printf '%s\n' "$*" | tee -a config.log
+}
+
+# Legacy alias retained for the handful of non-"checking for X"-shaped
+# lines (section headers, freeform notes/hints) that don't fit the
+# checking()/result() pair — same live stdout+config.log behavior.
 report() {
     label="$1"
     value="$2"
@@ -224,6 +258,31 @@ verbose_run() {
 }
 
 # ---------------------------------------------------------------------
+# OS/architecture detection (item new-1) — per real GNU config.guess
+# precedent (git.savannah.gnu.org/cgit/config.git/plain/config.guess):
+# uname -s as the primary OS-family discriminator (Linux/Darwin/
+# FreeBSD/OpenBSD/NetBSD/DragonFly/...), uname -m for machine arch.
+# This is NOT a reimplementation of config.guess's full canonical
+# cpu-vendor-os triplet machinery (that also handles dozens of legacy/
+# niche systems this script has no reason to care about) — just the
+# same primary-discriminator mechanism, used to select which native
+# per-OS command paths the checks below should try.
+# ---------------------------------------------------------------------
+
+OS_KERNEL="$(uname -s 2>/dev/null || echo unknown)"
+OS_ARCH="$(uname -m 2>/dev/null || echo unknown)"
+
+case "$OS_KERNEL" in
+    Linux) OS_FAMILY="linux" ;;
+    Darwin) OS_FAMILY="macos" ;;
+    FreeBSD) OS_FAMILY="freebsd" ;;
+    OpenBSD) OS_FAMILY="openbsd" ;;
+    NetBSD) OS_FAMILY="netbsd" ;;
+    DragonFly) OS_FAMILY="dragonflybsd" ;;
+    *) OS_FAMILY="unknown" ;;
+esac
+
+# ---------------------------------------------------------------------
 # Report header
 # ---------------------------------------------------------------------
 
@@ -234,7 +293,13 @@ verbose_run() {
 log "paulikit configure — capability/environment diagnostic report"
 log "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)"
 
+checking "operating system" "uname -s"
+result "$OS_KERNEL (family: $OS_FAMILY)"
+checking "machine architecture" "uname -m"
+result "$OS_ARCH"
+
 # --- Git state (item 21) ------------------------------------------
+checking "git repository state" "git rev-parse HEAD"
 if have git; then
     git_head="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
     if git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null; then
@@ -242,9 +307,9 @@ if have git; then
     else
         git_state="dirty (uncommitted changes present)"
     fi
-    log "Repository commit: ${git_head} (${git_state})"
+    result "${git_head} (${git_state})"
 else
-    log "Repository commit: unknown (git not found)"
+    result "unknown (git not found)"
 fi
 log ""
 
@@ -263,8 +328,9 @@ if [ -z "$PYTHON_BIN" ]; then
     done
 fi
 
+checking "Python 3 interpreter" "python3.13/python3.12/.../python3 on PATH"
 if [ -z "$PYTHON_BIN" ]; then
-    report "Python interpreter" "NOT FOUND — cannot proceed"
+    result "NOT FOUND — cannot proceed"
     log ""
     log "FATAL: no python3 interpreter found on PATH. paulikit requires"
     log "Python >=3.10 (see pyproject.toml's requires-python). Install a"
@@ -279,30 +345,34 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
+result "$PYTHON_BIN"
 py_version="$("$PYTHON_BIN" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
-report "Base interpreter" "$PYTHON_BIN ($py_version)"
+checking "Python version" "$PYTHON_BIN -c 'import sys; print(sys.version_info)'"
+result "$py_version"
 
 # Python-version-range check (item 19, corrected framing per review:
 # requires-python=">=3.10" has NO declared upper bound — classifiers
 # only listing through 3.13 is advisory metadata, not an enforced
 # ceiling, so a newer interpreter is "untested", not "out of range").
 py_major_minor="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+checking "version vs. pyproject.toml requires-python" "compare against >=3.10"
 case "$py_major_minor" in
     3.10|3.11|3.12|3.13)
-        report "Version vs. pyproject.toml" "within tested range (3.10-3.13)"
+        result "within tested range (3.10-3.13)"
         ;;
     3.[6-9]|3.0|3.1|3.2|3.3|3.4|3.5)
-        report "Version vs. pyproject.toml" "BELOW requires-python >=3.10 — will not work"
+        result "BELOW requires-python >=3.10 — will not work"
         ;;
     *)
-        report "Version vs. pyproject.toml" "untested (>3.13, no declared upper bound — likely fine, not verified)"
+        result "untested (>3.13, no declared upper bound — likely fine, not verified)"
         ;;
 esac
 
+checking "virtual environment at ${VENV_PATH}" "$PYTHON_BIN -m venv ${VENV_PATH}"
 if [ -x "${VENV_PATH}/bin/python" ]; then
-    report "Venv" "reusing existing venv at ${VENV_PATH}"
+    result "reusing existing venv"
 else
-    report "Venv" "creating at ${VENV_PATH}"
+    result "creating..."
     if "$PYTHON_BIN" -m venv "$VENV_PATH" 2>"${TMPDIR}/paulikit-configure-venv-err-$$"; then
         :
     else
@@ -345,8 +415,9 @@ if [ -z "$CXX" ]; then
 fi
 
 native_toolchain_ok=0
+checking "C++ compiler" "c++/g++/clang++ on PATH"
 if [ -z "$CXX" ]; then
-    report "C++ compiler" "NOT FOUND"
+    result "NOT FOUND"
     log ""
     log "Partial abort: the native Cython/C++/oneTBB extension cannot be"
     log "diagnosed further (Cython/TBB checks below are skipped for the"
@@ -356,17 +427,18 @@ if [ -z "$CXX" ]; then
     log "to enable the compiled fast path."
 else
     cxx_version="$("$CXX" --version 2>/dev/null | head -1)"
-    report "C++ compiler" "$CXX ($cxx_version)"
+    result "$CXX ($cxx_version)"
 
     cat >"$tmpc" <<'EOF'
 #include <utility>
 int main() { auto [a, b] = std::pair<int,int>{1, 2}; return a - a; }
 EOF
+    checking "C++17 support" "$CXX -std=c++17 -c (structured bindings)"
     if verbose_run "$CXX" -std=c++17 -o "$tmpo" -c "$tmpc"; then
-        report "C++17 support" "yes (structured bindings compile-test passed)"
+        result "yes (structured bindings compile-test passed)"
         native_toolchain_ok=1
     else
-        report "C++17 support" "NO — compile-test failed, native extension cannot be built"
+        result "NO — compile-test failed, native extension cannot be built"
     fi
     rm -f "$tmpo"
 fi
@@ -377,8 +449,7 @@ log ""
 # 3. Cython >=3.0 (best-effort)
 # ---------------------------------------------------------------------
 
-log "== Cython =="
-
+checking "Cython >=3.0" "\$VENV_PY -c 'import Cython'"
 if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import Cython' >/dev/null 2>&1; then
     cy_version="$("$VENV_PY" -c 'import Cython; print(Cython.__version__)' 2>/dev/null)"
     cy_check="$("$VENV_PY" -c "
@@ -388,15 +459,15 @@ major = int(parts[0])
 print('ok' if major >= 3 else 'old')
 " 2>/dev/null)"
     if [ "$cy_check" = "ok" ]; then
-        report "Cython (venv)" "$cy_version (>=3.0, OK)"
+        result "$cy_version (venv, OK)"
     else
-        report "Cython (venv)" "$cy_version (< 3.0 required — native extension needs upgrade)"
+        result "$cy_version (venv, < 3.0 required — native extension needs upgrade)"
     fi
 elif have cython; then
     cy_version="$(cython --version 2>&1 | head -1)"
-    report "Cython (system PATH)" "$cy_version (not in venv — will need 'pip install cython' in venv to build native extension)"
+    result "$cy_version (system PATH, not in venv — will need 'pip install cython' in venv to build native extension)"
 else
-    report "Cython" "not found (native extension cannot be built without it)"
+    result "not found (native extension cannot be built without it)"
 fi
 
 log ""
@@ -408,16 +479,15 @@ log ""
 #    tests, not meson invocations.
 # ---------------------------------------------------------------------
 
-log "== meson build backend =="
-
+checking "meson >=1.1.0" "\$VENV_PY -c 'import mesonbuild'"
 if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import mesonbuild' >/dev/null 2>&1; then
     meson_version="$("$VENV_PY" -c 'import mesonbuild; print(mesonbuild.coredata.version)' 2>/dev/null || echo unknown)"
-    report "meson (venv)" "$meson_version (required: >=1.1.0, per meson.build)"
+    result "$meson_version (venv, required: >=1.1.0, per meson.build)"
 elif have meson; then
     meson_version="$(meson --version 2>/dev/null)"
-    report "meson (system PATH)" "$meson_version (not in venv — pip install -e .[dev] will pull it in)"
+    result "$meson_version (system PATH, not in venv — pip install -e .[dev] will pull it in)"
 else
-    report "meson" "not found (will be pulled in automatically by pip's build isolation unless --no-build-isolation is used)"
+    result "not found (will be pulled in automatically by pip's build isolation unless --no-build-isolation is used)"
 fi
 
 report "Native-extension build option" "-Dnative={auto,enabled,disabled}, default 'auto' (see meson.options)"
@@ -429,8 +499,7 @@ log ""
 #    check strictly follows item 2, never precedes it)
 # ---------------------------------------------------------------------
 
-log "== oneTBB =="
-
+checking "oneTBB" "$CXX -std=c++17 -I<tbb> -o test test.cpp -ltbb"
 if [ "$native_toolchain_ok" -eq 1 ]; then
     cat >"$tmpc" <<'EOF'
 #include <tbb/tbb.h>
@@ -449,9 +518,9 @@ EOF
     # verbose_run the same way, for the same reason.
     # shellcheck disable=SC2086
     if verbose_run "$CXX" -std=c++17 $tbb_flags -o "$tmpexe" "$tmpc" -ltbb; then
-        report "oneTBB" "found, links successfully (native parallel labeling available)"
+        result "found, links successfully (native parallel labeling available)"
     else
-        report "oneTBB" "NOT found or failed to link (native ext falls back to serial-only or pure Python, per -Dnative policy)"
+        result "NOT found or failed to link (native ext falls back to serial-only or pure Python, per -Dnative policy)"
         if [ -n "${TBB_ROOT:-}" ] || [ -n "${CMAKE_PREFIX_PATH:-}" ]; then
             report "  TBB_ROOT / CMAKE_PREFIX_PATH" "set but did not resolve TBB — check the path is correct"
         else
@@ -460,7 +529,7 @@ EOF
     fi
     rm -f "$tmpexe"
 else
-    report "oneTBB" "skipped (no working C++17 compiler — see above)"
+    result "skipped (no working C++17 compiler — see above)"
 fi
 
 log ""
@@ -472,28 +541,19 @@ log ""
 
 log "== Cache hierarchy (feeds Phase 12 chunk_size auto-tuning) =="
 
+checking "L1/L2/L3 cache sizes" "getconf LEVEL{1,2,3}_*CACHE_SIZE"
 if have getconf; then
     l1="$(getconf LEVEL1_DCACHE_SIZE 2>/dev/null || echo -1)"
     l2="$(getconf LEVEL2_CACHE_SIZE 2>/dev/null || echo -1)"
     l3="$(getconf LEVEL3_CACHE_SIZE 2>/dev/null || echo -1)"
     if [ "$l1" -gt 0 ] 2>/dev/null; then
-        report "L1 data cache (per-core)" "$((l1 / 1024)) KiB"
+        result "L1=$((l1 / 1024)) KiB, L2=$([ "$l2" -gt 0 ] 2>/dev/null && echo "$((l2 / 1024)) KiB" || echo unknown), L3=$([ "$l3" -gt 0 ] 2>/dev/null && echo "$((l3 / 1024 / 1024)) MiB" || echo unknown) (per-core)"
     else
-        report "L1 data cache" "unknown (getconf returned no value on this platform)"
-    fi
-    if [ "$l2" -gt 0 ] 2>/dev/null; then
-        report "L2 cache (per-core)" "$((l2 / 1024)) KiB"
-    else
-        report "L2 cache" "unknown"
-    fi
-    if [ "$l3" -gt 0 ] 2>/dev/null; then
-        report "L3 cache (shared)" "$((l3 / 1024 / 1024)) MiB"
-    else
-        report "L3 cache" "unknown (this machine may not have a shared L3, or getconf doesn't expose it)"
+        result "unknown (getconf returned no value on this platform)"
     fi
     report "  Note" "getconf reports PER-CORE L1/L2 size, not per-socket aggregate. Compare against the lscpu section below, which reports 'N instances' at the per-socket level — the two are not directly comparable without dividing by instance count. Phase 12's chunk_size auto-tuner should use these getconf per-core values directly, since a single chunk's working set competes for one core's L1/L2, not the socket-wide aggregate."
 else
-    report "Cache hierarchy" "unknown (getconf not found on this platform — see PLAN.md Phase 12 open question re: Windows)"
+    result "unknown (getconf not found on this platform — see PLAN.md Phase 12 open question re: Windows)"
 fi
 
 log ""
@@ -509,8 +569,10 @@ log ""
 
 log "== NumPy / BLAS backend =="
 
+checking "NumPy BLAS backend" "\$VENV_PY -c 'import numpy, threadpoolctl'"
 if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import numpy' >/dev/null 2>&1; then
     if "$VENV_PY" -c 'import threadpoolctl' >/dev/null 2>&1; then
+        result "(threadpoolctl):"
         "$VENV_PY" -c '
 import threadpoolctl
 for info in threadpoolctl.threadpool_info():
@@ -523,12 +585,11 @@ cfg = numpy.show_config(mode="dicts")
 blas = cfg.get("Build Dependencies", {}).get("blas", {})
 print(blas.get("name", "unknown"), blas.get("version", ""))
 ' 2>/dev/null || echo "unknown (numpy not installed / show_config unavailable)")"
-        report "BLAS backend (numpy.show_config)" "$blas_summary"
-        report "  Hint" "pip install threadpoolctl in the venv for exact thread-count reporting"
+        result "$blas_summary (numpy.show_config — install threadpoolctl in the venv for exact thread-count reporting)"
     fi
     report "  Known confound" "OpenBLAS spawns an idle worker-thread pool at 'import numpy' — set OPENBLAS_NUM_THREADS=1 for clean perf stat measurements (see profiling/cache_locality/stall_floor_mystery_solved.md)"
 else
-    report "NumPy" "not installed in venv (run 'make install' first, or this venv creation failed above)"
+    result "not installed in venv (run 'make install' first, or this venv creation failed above)"
 fi
 
 log ""
@@ -566,6 +627,7 @@ int main() {
     return out[0] - 2;
 }
 EOF
+    checking "AVX2" "$CXX -mavx2 (compile + execute _mm256_add_epi32)"
     avx2_ok=0
     if verbose_run "$CXX" -mavx2 -o "$tmpexe" "$tmpc"; then
         # The execute step can die by SIGILL on a CPU without AVX2 —
@@ -578,9 +640,9 @@ EOF
         { "$tmpexe" >/dev/null 2>&1 && avx2_ok=1 || true; } 2>/dev/null
     fi
     if [ "$avx2_ok" = 1 ]; then
-        report "AVX2" "yes (compiled and executed a real AVX2 op)"
+        result "yes (compiled and executed a real AVX2 op)"
     else
-        report "AVX2" "no (compile or execute failed — either unsupported by this CPU or this compiler)"
+        result "no (compile or execute failed — either unsupported by this CPU or this compiler)"
     fi
     rm -f "$tmpexe"
 
@@ -594,6 +656,7 @@ int main() {
     return out[0] - 2;
 }
 EOF
+    checking "AVX-512F" "$CXX -mavx512f (compile + execute _mm512_add_epi32)"
     avx512_ok=0
     if verbose_run "$CXX" -mavx512f -o "$tmpexe" "$tmpc"; then
         # Same SIGILL-suppression rationale as the AVX2 execute step
@@ -601,9 +664,9 @@ EOF
         { "$tmpexe" >/dev/null 2>&1 && avx512_ok=1 || true; } 2>/dev/null
     fi
     if [ "$avx512_ok" = 1 ]; then
-        report "AVX-512F" "yes (compiled and executed a real AVX-512F op)"
+        result "yes (compiled and executed a real AVX-512F op)"
     else
-        report "AVX-512F" "no (compile or execute failed — either unsupported by this CPU or this compiler)"
+        result "no (compile or execute failed — either unsupported by this CPU or this compiler)"
     fi
     rm -f "$tmpexe"
 else
@@ -620,17 +683,19 @@ log ""
 
 log "== GPU / CUDA (informational — paulikit has no GPU code path) =="
 
+checking "nvidia-smi" "command -v nvidia-smi"
 if have nvidia-smi; then
     gpu_name="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
-    report "nvidia-smi" "found (${gpu_name:-unknown GPU})"
+    result "found (${gpu_name:-unknown GPU})"
 else
-    report "nvidia-smi" "not found"
+    result "not found"
 fi
+checking "nvcc" "command -v nvcc"
 if have nvcc; then
     nvcc_version="$(nvcc --version 2>/dev/null | tail -1)"
-    report "nvcc" "found ($nvcc_version)"
+    result "found ($nvcc_version)"
 else
-    report "nvcc" "not found"
+    result "not found"
 fi
 
 log ""
@@ -642,15 +707,17 @@ log ""
 
 log "== MPI (informational — paulikit has no MPI code path) =="
 
+checking "mpicc" "command -v mpicc"
 if have mpicc; then
-    report "mpicc" "found ($(mpicc --version 2>/dev/null | head -1))"
+    result "found ($(mpicc --version 2>/dev/null | head -1))"
 else
-    report "mpicc" "not found"
+    result "not found"
 fi
+checking "mpirun" "command -v mpirun"
 if have mpirun; then
-    report "mpirun" "found"
+    result "found"
 else
-    report "mpirun" "not found"
+    result "not found"
 fi
 
 log ""
@@ -660,13 +727,12 @@ log ""
 # auto-tuning can rely on psutil for live memory queries)
 # ---------------------------------------------------------------------
 
-log "== psutil (Phase 12 chunk_size auto-tuner candidate dependency) =="
-
+checking "psutil (Phase 12 chunk_size auto-tuner candidate dependency)" "\$VENV_PY -c 'import psutil'"
 if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import psutil' >/dev/null 2>&1; then
     psutil_version="$("$VENV_PY" -c 'import psutil; print(psutil.__version__)' 2>/dev/null)"
-    report "psutil (venv)" "$psutil_version"
+    result "$psutil_version"
 else
-    report "psutil (venv)" "not found (not currently a paulikit dependency; relevant only if Phase 12 adopts it for live memory queries)"
+    result "not found (not currently a paulikit dependency; relevant only if Phase 12 adopts it for live memory queries)"
 fi
 
 log ""
@@ -679,15 +745,16 @@ log ""
 
 log "== Container / VM detection =="
 
+checking "container/VM" "systemd-detect-virt"
 if have systemd-detect-virt; then
     virt="$(systemd-detect-virt 2>/dev/null || true)"
     if [ -z "$virt" ] || [ "$virt" = "none" ]; then
-        report "systemd-detect-virt" "none (bare metal)"
+        result "none (bare metal)"
     else
-        report "systemd-detect-virt" "$virt — cgroup memory limits may differ from bare-metal ulimit -v; see cgroup notes below if profiling here"
+        result "$virt — cgroup memory limits may differ from bare-metal ulimit -v; see cgroup notes below if profiling here"
     fi
 else
-    report "systemd-detect-virt" "not found (cannot determine bare-metal vs. container/VM automatically)"
+    result "unknown (systemd-detect-virt not found — cannot determine bare-metal vs. container/VM automatically)"
 fi
 
 log ""
@@ -698,13 +765,12 @@ log ""
 # here as a single source of truth)
 # ---------------------------------------------------------------------
 
-log "== perf_event_paranoid =="
-
+checking "perf_event_paranoid" "cat /proc/sys/kernel/perf_event_paranoid"
 if [ -r /proc/sys/kernel/perf_event_paranoid ]; then
     paranoid="$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo unknown)"
-    report "perf_event_paranoid" "$paranoid (0-1 allows unprivileged perf stat; 2+ requires sudo or a sysctl change)"
+    result "$paranoid (0-1 allows unprivileged perf stat; 2+ requires sudo or a sysctl change)"
 else
-    report "perf_event_paranoid" "not readable (Linux-only; on non-Linux, perf stat is unavailable regardless)"
+    result "not readable (Linux-only; on non-Linux, perf stat is unavailable regardless)"
 fi
 
 log ""
@@ -719,11 +785,12 @@ log ""
 log "== CPU frequency governor =="
 
 governor_file="/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+checking "CPU frequency governor" "cat $governor_file"
 if [ -r "$governor_file" ]; then
     governor="$(cat "$governor_file" 2>/dev/null || echo unknown)"
-    report "scaling_governor (cpu0)" "$governor (perf comparisons across runs assume this stays constant — 'performance' is the least noisy for benchmarking, 'powersave'/'schedutil' can introduce frequency-scaling noise)"
+    result "$governor (perf comparisons across runs assume this stays constant — 'performance' is the least noisy for benchmarking, 'powersave'/'schedutil' can introduce frequency-scaling noise)"
 else
-    report "scaling_governor" "not readable (no cpufreq sysfs on this system/OS, or non-Linux)"
+    result "not readable (no cpufreq sysfs on this system/OS, or non-Linux)"
 fi
 
 log ""
@@ -735,13 +802,13 @@ log ""
 
 log "== RAM / swap =="
 
+checking "total RAM / swap" "free -h"
 if have free; then
     mem_total="$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')"
     swap_total="$(free -h 2>/dev/null | awk '/^Swap:/ {print $2}')"
-    report "Total RAM" "${mem_total:-unknown}"
-    report "Total swap" "${swap_total:-unknown}"
+    result "RAM=${mem_total:-unknown}, swap=${swap_total:-unknown}"
 else
-    report "RAM / swap" "unknown ('free' not found — Linux-only tool; on macOS use 'vm_stat'/'sysctl hw.memsize')"
+    result "unknown ('free' not found — Linux-only tool; on macOS use 'vm_stat'/'sysctl hw.memsize')"
 fi
 
 log ""
@@ -753,13 +820,14 @@ log ""
 
 log "== System load average =="
 
+checking "system load average (1m 5m 15m)" "cat /proc/loadavg"
 if [ -r /proc/loadavg ]; then
     loadavg="$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null || echo unknown)"
-    report "Load average (1m 5m 15m)" "$loadavg"
+    result "$loadavg"
 elif have uptime; then
-    report "Load average" "$(uptime 2>/dev/null | sed 's/.*load average[s]*: //')"
+    result "$(uptime 2>/dev/null | sed 's/.*load average[s]*: //')"
 else
-    report "Load average" "unknown"
+    result "unknown"
 fi
 
 log ""
@@ -771,17 +839,16 @@ log ""
 # script that assumes it exists)
 # ---------------------------------------------------------------------
 
-log "== perf list (available hardware events) =="
-
+checking "perf list (cycle_activity.stalls_* availability)" "perf list | grep cycle_activity.stalls"
 if have perf; then
     stalls_events="$(perf list 2>/dev/null | grep -c 'cycle_activity.stalls' || true)"
     if [ "$stalls_events" -gt 0 ] 2>/dev/null; then
-        report "perf" "found; cycle_activity.stalls_* events available ($stalls_events matched — Skylake-family-specific, do not assume present on other microarchitectures)"
+        result "found; $stalls_events events available (Skylake-family-specific, do not assume present on other microarchitectures)"
     else
-        report "perf" "found; cycle_activity.stalls_* events NOT available (expected on non-Skylake-family CPUs — profiling scripts assuming this event exist will fail here)"
+        result "found; cycle_activity.stalls_* events NOT available (expected on non-Skylake-family CPUs — profiling scripts assuming this event exist will fail here)"
     fi
 else
-    report "perf" "not found (perf stat/perf list unavailable)"
+    result "unknown (perf not found — perf stat/perf list unavailable)"
 fi
 
 log ""
@@ -792,8 +859,7 @@ log ""
 # itself dispatches to at runtime for its own vectorized ops)
 # ---------------------------------------------------------------------
 
-log "== NumPy runtime SIMD dispatch tier =="
-
+checking "NumPy runtime SIMD dispatch tier" "\$VENV_PY -c 'numpy.core._multiarray_umath.__cpu_features__'"
 if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import numpy' >/dev/null 2>&1; then
     simd_info="$("$VENV_PY" -c "
 import numpy as np
@@ -804,9 +870,9 @@ try:
 except Exception as e:
     print('unavailable (%s)' % e)
 " 2>/dev/null)"
-    report "NumPy CPU features enabled" "${simd_info:-unknown}"
+    result "${simd_info:-unknown}"
 else
-    report "NumPy runtime SIMD" "unknown (NumPy not importable in venv — see NumPy BLAS section above)"
+    result "unknown (NumPy not importable in venv — see NumPy BLAS section above)"
 fi
 
 log ""
@@ -818,14 +884,13 @@ log ""
 # unverified support on a musl host)
 # ---------------------------------------------------------------------
 
-log "== musl libc awareness =="
-
+checking "libc" "ldd --version"
 if have ldd && ldd --version 2>&1 | grep -qi musl; then
-    report "libc" "musl detected — no prebuilt wheel target exists for this host by design (see .github/workflows/paulikit-wheels.yml's musllinux skip policy); source build required"
+    result "musl detected — no prebuilt wheel target exists for this host by design (see .github/workflows/paulikit-wheels.yml's musllinux skip policy); source build required"
 elif [ -r /lib/ld-musl-x86_64.so.1 ] || [ -r /lib/ld-musl-aarch64.so.1 ]; then
-    report "libc" "musl detected (ld-musl found) — no prebuilt wheel target exists for this host by design; source build required"
+    result "musl detected (ld-musl found) — no prebuilt wheel target exists for this host by design; source build required"
 else
-    report "libc" "glibc or unknown (not musl) — standard prebuilt wheel targets apply"
+    result "glibc or unknown (not musl) — standard prebuilt wheel targets apply"
 fi
 
 log ""
@@ -835,20 +900,19 @@ log ""
 # throughput; lowest priority of the v2 items)
 # ---------------------------------------------------------------------
 
-log "== Disk I/O type (relevant to checkpoint_path write throughput) =="
-
+checking "disk I/O type" "lsblk -d -o NAME,ROTA"
 if have lsblk; then
     rota_info="$(lsblk -d -o NAME,ROTA 2>/dev/null | tail -n +2)"
     if [ -n "$rota_info" ]; then
-        report "lsblk -d -o NAME,ROTA" "1=rotational (HDD), 0=non-rotational (SSD/NVMe) — see below"
+        result "1=rotational (HDD), 0=non-rotational (SSD/NVMe):"
         printf '%s\n' "$rota_info" | while IFS= read -r line; do
             log "    $line"
         done
     else
-        report "Disk I/O type" "unknown (lsblk returned no data)"
+        result "unknown (lsblk returned no data)"
     fi
 else
-    report "Disk I/O type" "unknown ('lsblk' not found — Linux-only tool)"
+    result "unknown ('lsblk' not found — Linux-only tool)"
 fi
 
 log ""
