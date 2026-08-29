@@ -89,6 +89,7 @@ tmpo="${TMPDIR}/paulikit-configure-$$.o"
 tmpexe="${TMPDIR}/paulikit-configure-$$.exe"
 
 VERBOSE=0
+PROBE_CACHE_LATENCY=0
 VENV_PATH="${HOME}/.venvs/paulikit"
 PYTHON_BIN=""
 SRCDIR="."
@@ -110,6 +111,7 @@ CONFIGURE_ARGS="$*"
 for arg in "$@"; do
     case "$arg" in
         --verbose) VERBOSE=1 ;;
+        --probe-cache-latency) PROBE_CACHE_LATENCY=1 ;;
         --venv=*) VENV_PATH="${arg#*=}" ;;
         --python=*) PYTHON_BIN="${arg#*=}" ;;
         --srcdir=*) SRCDIR="${arg#*=}" ;;
@@ -148,6 +150,14 @@ Usage: ./configure [options] [VAR=value ...]
                       PREFIX/share/doc/paulikit).
   --verbose           Print each check's raw command output, not just the
                       summary line.
+  --probe-cache-latency
+                      Run a real RDTSCP pointer-chasing microbenchmark
+                      in raw x86_64 assembly (~3s, assembled/linked
+                      directly with as/ld - no C/C++ compiler needed)
+                      to empirically find cache-level boundaries by
+                      latency, cross-checked against getconf/lscpu/
+                      sysfs's declared sizes. Off by default since it
+                      is much slower than every other check here.
   --version           Print version info and exit.
   --help              This message.
 
@@ -466,6 +476,310 @@ fi
 
 log ""
 
+# -----------------------------------------------------------------
+# Cross-source consistency: getconf and /sys/.../cache/index*/size
+# are two independent OS-level sources for the SAME per-core cache
+# sizes (unlike lscpu, which reports per-socket aggregates - already
+# correctly caveated above, not part of this comparison). Until now
+# these were reported as separate, never-verified facts; a mismatch
+# would indicate something genuinely worth knowing about (a
+# misconfigured cgroup view, an unusual kernel/firmware reporting
+# quirk, a virtualized environment presenting inconsistent topology
+# to different query mechanisms) rather than being silently assumed
+# to always agree.
+# -----------------------------------------------------------------
+
+checking "getconf vs sysfs cache-size consistency" \
+    "compare getconf LEVEL{1,2,3}_*CACHE_SIZE against /sys/.../size"
+sysfs_cache_dir="/sys/devices/system/cpu/cpu0/cache"
+if have getconf && [ -d "$sysfs_cache_dir" ]; then
+    sysfs_l1=-1
+    sysfs_l2=-1
+    sysfs_l3=-1
+    for idx in "$sysfs_cache_dir"/index*; do
+        [ -r "$idx/level" ] || continue
+        [ -r "$idx/type" ] || continue
+        [ -r "$idx/size" ] || continue
+        idx_level="$(cat "$idx/level" 2>/dev/null)"
+        idx_type="$(cat "$idx/type" 2>/dev/null)"
+        idx_size_raw="$(cat "$idx/size" 2>/dev/null)"
+        # sysfs sizes are like "32K" or "8192K" - strip the K suffix,
+        # convert to bytes, to compare against getconf's raw byte count.
+        idx_size_kb="${idx_size_raw%K}"
+        case "$idx_size_kb" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        idx_size_bytes=$((idx_size_kb * 1024))
+        if [ "$idx_level" = "1" ] && [ "$idx_type" = "Data" ]; then
+            sysfs_l1=$idx_size_bytes
+        elif [ "$idx_level" = "2" ]; then
+            sysfs_l2=$idx_size_bytes
+        elif [ "$idx_level" = "3" ]; then
+            sysfs_l3=$idx_size_bytes
+        fi
+    done
+
+    mismatch=""
+    [ "$sysfs_l1" -gt 0 ] 2>/dev/null && [ "$sysfs_l1" != "$l1" ] \
+        && mismatch="${mismatch}L1(getconf=$l1,sysfs=$sysfs_l1) "
+    [ "$sysfs_l2" -gt 0 ] 2>/dev/null && [ "$sysfs_l2" != "$l2" ] \
+        && mismatch="${mismatch}L2(getconf=$l2,sysfs=$sysfs_l2) "
+    [ "$sysfs_l3" -gt 0 ] 2>/dev/null && [ "$sysfs_l3" != "$l3" ] \
+        && mismatch="${mismatch}L3(getconf=$l3,sysfs=$sysfs_l3) "
+
+    if [ -z "$mismatch" ]; then
+        result "consistent (getconf and sysfs agree exactly)"
+    else
+        result_detail "MISMATCH" \
+            "$mismatch - these two independent OS-level sources" \
+            "disagree; treat the cache-size values above with" \
+            "caution (possible cgroup/virtualization/firmware" \
+            "reporting quirk on this machine)"
+    fi
+else
+    result_detail "unknown" \
+        "getconf or /sys/.../cache/index* unavailable — cannot" \
+        "cross-check on this platform"
+fi
+
+log ""
+
+# -----------------------------------------------------------------
+# Empirical cache-latency probe (opt-in, --probe-cache-latency): all
+# checks above report DECLARED sizes (from the OS/firmware) - this
+# instead MEASURES actual access latency via a real RDTSCP pointer-
+# chasing microbenchmark (a scrambled-stride linked-list walk,
+# defeats simple sequential-prefetch detection), independent of what
+# any OS interface claims. A latency jump between buffer sizes marks
+# a real empirical cache-level boundary. This answers a genuinely
+# different question ("what does the hardware actually do") than the
+# declared-size checks above ("what does the OS report") - kept
+# opt-in since it takes ~3s (13 buffer sizes, 300k timed reps each),
+# meaningfully slower than every other check in this script.
+# x86_64-only, written in raw assembly and assembled/linked directly
+# with as/ld (GNU binutils) - deliberately NOT compiled C/C++, since
+# this section runs before C++ toolchain detection even exists later
+# in the file (it is a machine-identity fact, same as the rest of
+# this block, not gated on any language toolchain being available).
+# -----------------------------------------------------------------
+
+if [ "$PROBE_CACHE_LATENCY" -eq 1 ]; then
+    # Deliberately RAW ASSEMBLY, not compiled C++ - this section runs
+    # before C++ toolchain detection (below) even exists, since it is
+    # conceptually a machine-identity fact independent of any language
+    # toolchain, same as the rest of this block. Assembling directly
+    # with as/ld (GNU binutils) has zero C/C++ compiler dependency:
+    # raw mmap/munmap/write/exit syscalls, no libc. This is a genuine
+    # pointer-chasing latency microbenchmark (not a toy) - each buffer
+    # size gets its own mmap'd region, a scrambled traversal order
+    # (index = (index + 104729) mod n_elems, a prime stride - not a
+    # full Fisher-Yates shuffle, but sufficient to defeat simple
+    # sequential-stride prefetch detection), a 3x-buffer warm-up walk,
+    # then a real RDTSCP-timed 300000-iteration pointer chase.
+    checking "empirical cache-latency boundaries (raw as/ld probe, ~3s)" \
+        "as+ld pointer-chase microbenchmark, 13 sizes, no C/C++ compiler"
+    case "$OS_ARCH" in
+        x86_64)
+            cat >"$tmpc" <<'EOF'
+.intel_syntax noprefix
+.global _start
+.text
+
+_start:
+    mov r15, 8192
+
+size_loop:
+    cmp r15, 33554432
+    jg  all_done
+
+    mov rax, 9
+    xor rdi, rdi
+    mov rsi, r15
+    mov rdx, 3
+    mov r10, 0x22
+    mov r8, -1
+    xor r9, r9
+    syscall
+    mov r14, rax
+
+    mov rcx, r15
+    shr rcx, 3
+    xor rbx, rbx
+    mov r13, rcx
+
+build_loop:
+    mov rax, rbx
+    add rax, 104729
+    xor rdx, rdx
+    div r13
+    mov [r14 + rbx*8], rdx
+    mov rbx, rdx
+    dec rcx
+    jnz build_loop
+
+    mov rbx, 0
+    mov rcx, r13
+    imul rcx, rcx, 3
+warmup_loop:
+    mov rbx, [r14 + rbx*8]
+    dec rcx
+    jnz warmup_loop
+
+    mfence
+    rdtscp
+    shl rdx, 32
+    or rax, rdx
+    mov r12, rax
+
+    mov rcx, 300000
+timed_loop:
+    mov rbx, [r14 + rbx*8]
+    dec rcx
+    jnz timed_loop
+
+    rdtscp
+    shl rdx, 32
+    or rax, rdx
+    sub rax, r12
+
+    mov rdi, r15
+    shr rdi, 10
+    call print_uint
+    mov al, ' '
+    call print_char
+    call print_uint_from_rax_holder
+    mov al, 10
+    call print_char
+
+    mov rax, 11
+    mov rdi, r14
+    mov rsi, r15
+    syscall
+
+    shl r15, 1
+    jmp size_loop
+
+all_done:
+    mov rax, 60
+    xor rdi, rdi
+    syscall
+
+.bss
+.lcomm numbuf, 32
+
+.text
+print_char:
+    push rax
+    push rdi
+    push rsi
+    push rdx
+    mov [rsp - 64], al
+    mov rax, 1
+    mov rdi, 1
+    lea rsi, [rsp - 64]
+    mov rdx, 1
+    syscall
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+    ret
+
+print_uint:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    lea rsi, [numbuf + 31]
+    mov rbx, 10
+    mov rax, rdi
+    mov byte ptr [rsi], 0
+digit_loop:
+    xor rdx, rdx
+    div rbx
+    add dl, '0'
+    dec rsi
+    mov [rsi], dl
+    test rax, rax
+    jnz digit_loop
+    lea rcx, [numbuf + 31]
+    sub rcx, rsi
+    mov rax, 1
+    mov rdi, 1
+    mov rdx, rcx
+    syscall
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    ret
+
+print_uint_from_rax_holder:
+    push rdi
+    mov rdi, rax
+    call print_uint
+    pop rdi
+    ret
+EOF
+            probe_ok=0
+            probe_out=""
+            asm_obj="${TMPDIR}/paulikit-configure-cacheprobe-$$.o"
+            asm_exe="${TMPDIR}/paulikit-configure-cacheprobe-$$.exe"
+            if have as && have ld \
+                && verbose_run as -o "$asm_obj" "$tmpc" \
+                && verbose_run ld -o "$asm_exe" "$asm_obj"
+            then
+                probe_out="$("$asm_exe" 2>/dev/null || true)"
+                [ -n "$probe_out" ] && probe_ok=1
+            fi
+            rm -f "$asm_obj" "$asm_exe"
+            if [ "$probe_ok" = 1 ]; then
+                if [ "$VERBOSE" -eq 1 ]; then
+                    printf '%s\n' "$probe_out" | tee -a config.log
+                fi
+                # probe_out is "size_kb total_cycles" lines (300000
+                # reps each) - convert to cycles/access and find the
+                # largest relative jumps between consecutive sizes,
+                # same boundary-detection logic as the declared-size
+                # checks above compare against.
+                boundaries="$(printf '%s\n' "$probe_out" | awk '
+                    { kb[NR] = $1; cyc[NR] = $2 / 300000.0; n = NR }
+                    END {
+                        for (i = 2; i <= n; i++) {
+                            ratio = cyc[i] / cyc[i-1]
+                            if (ratio > 1.3) {
+                                printf "%sKiB->%sKiB(x%.2f) ",
+                                    kb[i-1], kb[i], ratio
+                            }
+                        }
+                    }')"
+                result_detail "measured" \
+                    "empirical boundaries: ${boundaries:-none detected}" \
+                    "(compare against the declared L1/L2/L3 sizes above" \
+                    "- a genuine mismatch would mean the OS-reported" \
+                    "sizes don't reflect real access-latency behavior" \
+                    "on this hardware, e.g. an unusual virtualized" \
+                    "cache model)"
+            else
+                result_detail "FAILED" \
+                    "the raw assembly probe did not assemble/link/run —" \
+                    "requires GNU as+ld (binutils) and x86_64 RDTSCP" \
+                    "support; no C/C++ compiler needed or used"
+            fi
+            ;;
+        *)
+            result_detail "skipped" \
+                "raw assembly probe currently implemented for x86_64" \
+                "only (detected: $OS_ARCH)"
+            ;;
+    esac
+    log ""
+fi
+
 # ---------------------------------------------------------------------
 # v2 — NUMA topology and per-cache-level CPU sharing (multi-socket/
 # HPC-node awareness). getconf above reports one flat cache-size
@@ -535,6 +849,68 @@ else
     result_detail "unknown" \
         "/sys/devices/system/cpu/cpu0/cache not present — Linux-only" \
         "sysfs path; cannot determine per-cache CPU sharing here"
+fi
+
+log ""
+
+# -----------------------------------------------------------------
+# Job-scheduler context (Slurm/PBS-Torque/LSF): configure runs once,
+# on ONE node, and fundamentally cannot see a whole supercomputer's
+# cross-node topology (interconnect fabric, other nodes' hardware) -
+# that lives entirely in the job scheduler, not in anything a single
+# node's own OS interfaces expose. What CAN be honestly reported is
+# whether this invocation is running INSIDE an active job allocation,
+# using each scheduler's own standard, documented environment
+# variables (Slurm: SLURM_JOB_NODELIST/SLURM_NNODES/SLURM_JOB_ID;
+# PBS/Torque: PBS_NODEFILE/PBS_JOBID; LSF: LSB_HOSTS/LSB_JOBID) - this
+# is informational context about the allocation this node is part of,
+# not a substitute for per-node cache/NUMA data, which would require
+# running configure on every allocated node and aggregating results
+# (out of scope for a single build-time diagnostic script).
+# -----------------------------------------------------------------
+
+log "== Job scheduler context (Slurm/PBS/LSF, if running inside a job) =="
+
+checking "Slurm job allocation" \
+    "\$SLURM_JOB_ID / \$SLURM_NNODES / \$SLURM_JOB_NODELIST"
+if [ -n "${SLURM_JOB_ID:-}" ]; then
+    other_nodes="unknown"
+    case "${SLURM_NNODES:-}" in
+        ''|*[!0-9]*) ;;
+        *) other_nodes=$((SLURM_NNODES - 1)) ;;
+    esac
+    result_detail "job ${SLURM_JOB_ID}" \
+        "nodes=${SLURM_NNODES:-unknown}," \
+        "nodelist=${SLURM_JOB_NODELIST:-unknown} - this configure" \
+        "invocation only diagnoses THIS node; the other" \
+        "$other_nodes node(s) in this allocation are not probed" \
+        "(would require running configure on each and aggregating" \
+        "results, out of scope here)"
+else
+    result "not running inside a Slurm allocation"
+fi
+
+checking "PBS/Torque job allocation" "\$PBS_JOBID / \$PBS_NODEFILE"
+if [ -n "${PBS_JOBID:-}" ]; then
+    pbs_node_count="unknown"
+    if [ -n "${PBS_NODEFILE:-}" ] && [ -r "${PBS_NODEFILE:-}" ]; then
+        pbs_node_count="$(wc -l < "$PBS_NODEFILE" 2>/dev/null \
+            || echo unknown)"
+    fi
+    result_detail "job ${PBS_JOBID}" \
+        "PBS_NODEFILE line count=$pbs_node_count - same single-node" \
+        "diagnosis limitation as the Slurm check above"
+else
+    result "not running inside a PBS/Torque allocation"
+fi
+
+checking "LSF job allocation" "\$LSB_JOBID / \$LSB_HOSTS"
+if [ -n "${LSB_JOBID:-}" ]; then
+    result_detail "job ${LSB_JOBID}" \
+        "hosts=${LSB_HOSTS:-unknown} - same single-node diagnosis" \
+        "limitation as the Slurm check above"
+else
+    result "not running inside an LSF allocation"
 fi
 
 log ""
