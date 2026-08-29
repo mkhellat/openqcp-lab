@@ -1101,11 +1101,25 @@ log ""
 #    tests, not meson invocations.
 # ---------------------------------------------------------------------
 
-checking "meson >=1.1.0" "\$VENV_PY -c 'import mesonbuild'"
-if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import mesonbuild' >/dev/null 2>&1; then
-    meson_version="$("$VENV_PY" -c \
-        'import mesonbuild; print(mesonbuild.coredata.version)' \
-        2>/dev/null || echo unknown)"
+venv_meson="$([ -n "$VENV_PY" ] && dirname "$VENV_PY")/meson"
+checking "meson >=1.1.0" "\$VENV_PY -m mesonbuild.mesonmain --version"
+if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import mesonbuild' >/dev/null 2>&1
+then
+    # Real bug found and fixed: mesonbuild.coredata is NOT auto-
+    # imported as a submodule of the mesonbuild package - referencing
+    # it without an explicit `import mesonbuild.coredata` first always
+    # raised AttributeError, silently swallowed by this check's own
+    # `|| echo unknown` fallback, so meson's version was ALWAYS
+    # reported as "unknown" even when meson was present and working.
+    # `meson --version` (or, equivalently, the mesonmain module's own
+    # --version) is simpler and doesn't depend on mesonbuild's
+    # internal module layout.
+    if [ -x "$venv_meson" ]; then
+        meson_version="$("$venv_meson" --version 2>/dev/null || echo unknown)"
+    else
+        meson_version="$("$VENV_PY" -m mesonbuild.mesonmain --version \
+            2>/dev/null || echo unknown)"
+    fi
     result_detail "$meson_version (venv)" \
         "required: >=1.1.0, per meson.build"
 elif have meson; then
@@ -1121,6 +1135,65 @@ fi
 report "Native-extension build option" \
     "-Dnative={auto,enabled,disabled}, default 'auto'"
 log "  (see meson.options)"
+
+# -----------------------------------------------------------------
+# meson correctness battery — a version-string check never verifies
+# meson can actually configure THIS project. This project's
+# meson.build declares 3 languages including 'cython' (meson's cython
+# support is a much newer, narrower feature than core meson - not
+# every meson install/version handles it correctly), uses
+# import('python').find_installation(pure: false) for the extension-
+# module build, and _native/meson.build resolves dependency('tbb',
+# ...) via pkg-config/cmake. Rather than re-simulate any of that,
+# this runs the SAME real `meson setup` command `make build` itself
+# depends on, in a throwaway temp build directory, and checks its own
+# reported findings for the compilers/dependencies it actually
+# discovered - the most authoritative possible test, since it's
+# literally the real build's own first step, not a diagnostic
+# approximation of it.
+# -----------------------------------------------------------------
+
+if [ -x "$venv_meson" ]; then
+    meson_battery_dir="${TMPDIR}/paulikit-configure-mesonbattery-$$"
+    checking "meson setup (real configure of this project)" \
+        "$venv_meson setup <tmpdir>"
+    # meson's own compiler-detection subprocess looks up cython/cython3
+    # via a bare PATH search - same root cause already fixed in
+    # Makefile.in's build target (Phase 0.5) - so the venv's bin/ must
+    # be prepended here too, or this falsely reports FAILED even
+    # though `make build` itself would succeed.
+    #
+    # meson_setup_rc must be captured with `|| meson_setup_rc=$?`
+    # directly on the assignment, NOT via a separate `$?` statement
+    # afterward - under `set -e`, a command substitution whose
+    # underlying command exits nonzero kills the whole script at the
+    # assignment itself, before any later statement (including one
+    # meant to read $? for graceful handling) is ever reached.
+    meson_setup_rc=0
+    meson_setup_out="$(PATH="$(dirname "$VENV_PY"):$PATH" \
+        "$venv_meson" setup "$meson_battery_dir" 2>&1)" \
+        || meson_setup_rc=$?
+    if [ "$VERBOSE" -eq 1 ]; then
+        printf '%s\n' "$meson_setup_out" | tee -a config.log
+    fi
+    if [ "$meson_setup_rc" -eq 0 ]; then
+        result "succeeded"
+        cython_found="no"
+        tbb_found="no"
+        printf '%s\n' "$meson_setup_out" | grep -qi \
+            "^Cython compiler for the host machine:" && cython_found="yes"
+        printf '%s\n' "$meson_setup_out" | grep -qi \
+            "dependency tbb found: YES" && tbb_found="yes"
+        report "  Cython language module resolved" "$cython_found"
+        report "  tbb dependency resolved" "$tbb_found"
+    else
+        result_detail "FAILED" \
+            "meson setup could not configure this project - the" \
+            "native extension build (make build) will also fail;" \
+            "re-run with --verbose to see meson's own error output"
+    fi
+    rm -rf "$meson_battery_dir"
+fi
 
 log ""
 
