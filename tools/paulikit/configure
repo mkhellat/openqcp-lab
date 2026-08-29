@@ -173,8 +173,16 @@ if [ "$SRCDIR" != "." ]; then
     echo "configure: proceeding as if --srcdir=. was given." >&2
 fi
 
+# log()/report() write to stdout immediately AND append to config.log
+# as each line is produced — matching how real GNU configure scripts
+# behave ("checking for X... yes" prints live, one line at a time, not
+# buffered until the whole script finishes). Earlier versions of this
+# script buffered the entire report into a temp file and dumped it all
+# at once at the very end, which is not how configure scripts are
+# expected to behave and gives no feedback during long-running checks
+# (e.g. compile tests, venv creation).
 log() {
-    printf '%s\n' "$*"
+    printf '%s\n' "$*" | tee -a config.log
 }
 
 # Runs a check; never lets a failing check abort the whole script
@@ -184,21 +192,45 @@ log() {
 report() {
     label="$1"
     value="$2"
-    printf '  %-38s %s\n' "$label" "$value"
+    printf '  %-38s %s\n' "$label" "$value" | tee -a config.log
 }
 
 have() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Runs a compiler/execute step for a compile-test. Under normal
+# operation its output is discarded (only pass/fail matters to the
+# report). Under --verbose, its raw stdout+stderr is shown instead —
+# labeled with the command that was run — so a developer can see
+# exactly why a compile-test failed (missing header, unsupported flag,
+# linker error, etc.) rather than only "no". Always returns the
+# wrapped command's own exit status (captured via a temp file rather
+# than piping through tee, since piping into tee would report tee's
+# own exit status instead of the wrapped command's — POSIX sh has no
+# PIPESTATUS/pipefail equivalent to work around that).
+verbose_run() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        log "  + $*"
+        vr_out="${TMPDIR}/paulikit-configure-verbose-$$.out"
+        "$@" >"$vr_out" 2>&1
+        vr_rc=$?
+        [ -s "$vr_out" ] && cat "$vr_out" | tee -a config.log
+        rm -f "$vr_out"
+        return "$vr_rc"
+    else
+        "$@" >/dev/null 2>&1
+    fi
+}
+
 # ---------------------------------------------------------------------
 # Report header
 # ---------------------------------------------------------------------
 
-REPORT_TMP="${TMPDIR}/paulikit-configure-report-$$.txt"
-trap 'rm -f "$tmpc" "$tmpo" "$tmpexe" "$REPORT_TMP"' EXIT INT TERM HUP
+# Start config.log fresh for this run (log()/report() append to it
+# live from here on).
+: >config.log
 
-{
 log "paulikit configure — capability/environment diagnostic report"
 log "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)"
 
@@ -241,8 +273,9 @@ if [ -z "$PYTHON_BIN" ]; then
     # every remaining check either needs a venv's Python (item 9/17/19)
     # or is independent of Python entirely but reported alongside it
     # for a single coherent report — without Python there is nothing
-    # for the rest of this script to set up.
-    cat "$REPORT_TMP" 2>/dev/null || true
+    # for the rest of this script to set up. Everything printed so far
+    # already went to stdout and config.log live via log()/report(),
+    # so no final dump is needed here.
     exit 1
 fi
 
@@ -266,13 +299,12 @@ case "$py_major_minor" in
         ;;
 esac
 
-venv_created=0
 if [ -x "${VENV_PATH}/bin/python" ]; then
     report "Venv" "reusing existing venv at ${VENV_PATH}"
 else
     report "Venv" "creating at ${VENV_PATH}"
     if "$PYTHON_BIN" -m venv "$VENV_PATH" 2>"${TMPDIR}/paulikit-configure-venv-err-$$"; then
-        venv_created=1
+        :
     else
         report "Venv creation" "FAILED"
         log ""
@@ -330,7 +362,7 @@ else
 #include <utility>
 int main() { auto [a, b] = std::pair<int,int>{1, 2}; return a - a; }
 EOF
-    if "$CXX" -std=c++17 -o "$tmpo" -c "$tmpc" >/dev/null 2>&1; then
+    if verbose_run "$CXX" -std=c++17 -o "$tmpo" -c "$tmpc"; then
         report "C++17 support" "yes (structured bindings compile-test passed)"
         native_toolchain_ok=1
     else
@@ -347,7 +379,6 @@ log ""
 
 log "== Cython =="
 
-cython_ok=0
 if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import Cython' >/dev/null 2>&1; then
     cy_version="$("$VENV_PY" -c 'import Cython; print(Cython.__version__)' 2>/dev/null)"
     cy_check="$("$VENV_PY" -c "
@@ -358,7 +389,6 @@ print('ok' if major >= 3 else 'old')
 " 2>/dev/null)"
     if [ "$cy_check" = "ok" ]; then
         report "Cython (venv)" "$cy_version (>=3.0, OK)"
-        cython_ok=1
     else
         report "Cython (venv)" "$cy_version (< 3.0 required — native extension needs upgrade)"
     fi
@@ -413,7 +443,12 @@ EOF
         tbb_flags="-I${prefix}/include -L${prefix}/lib"
     done
 
-    if "$CXX" -std=c++17 $tbb_flags -o "$tmpexe" "$tmpc" -ltbb >/dev/null 2>&1; then
+    # tbb_flags is deliberately two space-separated tokens (-Ipath
+    # -Lpath); POSIX sh has no arrays, so unquoted word-splitting is
+    # the intended mechanism here, not an oversight. Passed to
+    # verbose_run the same way, for the same reason.
+    # shellcheck disable=SC2086
+    if verbose_run "$CXX" -std=c++17 $tbb_flags -o "$tmpexe" "$tmpc" -ltbb; then
         report "oneTBB" "found, links successfully (native parallel labeling available)"
     else
         report "oneTBB" "NOT found or failed to link (native ext falls back to serial-only or pure Python, per -Dnative policy)"
@@ -480,7 +515,7 @@ if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import numpy' >/dev/null 2>&1; then
 import threadpoolctl
 for info in threadpoolctl.threadpool_info():
     print(f"  {info.get(\"internal_api\", \"?\"):10s} {info.get(\"num_threads\", \"?\")} threads  ({info.get(\"filepath\", \"?\")})")
-' >>"$REPORT_TMP" 2>/dev/null || report "BLAS backend" "threadpoolctl present but query failed"
+' 2>/dev/null | tee -a config.log || report "BLAS backend" "threadpoolctl present but query failed"
     else
         blas_summary="$("$VENV_PY" -c '
 import numpy
@@ -506,7 +541,7 @@ log ""
 log "== CPU (lscpu) =="
 
 if have lscpu; then
-    lscpu 2>/dev/null || true
+    lscpu 2>/dev/null | tee -a config.log || true
 else
     report "lscpu" "not found (Linux-only tool; on macOS use 'sysctl -a machdep.cpu', on BSD 'sysctl hw')"
 fi
@@ -532,7 +567,16 @@ int main() {
 }
 EOF
     avx2_ok=0
-    { "$CXX" -mavx2 -o "$tmpexe" "$tmpc" >/dev/null 2>&1 && "$tmpexe" >/dev/null 2>&1 && avx2_ok=1 || true; } 2>/dev/null
+    if verbose_run "$CXX" -mavx2 -o "$tmpexe" "$tmpc"; then
+        # The execute step can die by SIGILL on a CPU without AVX2 —
+        # bash prints its own job-control notice for a signal-killed
+        # foreground command regardless of the command's own
+        # redirection, so this must stay wrapped in { ...; } 2>/dev/null
+        # even under --verbose (verbose_run's own output already
+        # covers the compile step; the execute step's failure mode
+        # here is "crashed", not "produced diagnosable output").
+        { "$tmpexe" >/dev/null 2>&1 && avx2_ok=1 || true; } 2>/dev/null
+    fi
     if [ "$avx2_ok" = 1 ]; then
         report "AVX2" "yes (compiled and executed a real AVX2 op)"
     else
@@ -551,7 +595,11 @@ int main() {
 }
 EOF
     avx512_ok=0
-    { "$CXX" -mavx512f -o "$tmpexe" "$tmpc" >/dev/null 2>&1 && "$tmpexe" >/dev/null 2>&1 && avx512_ok=1 || true; } 2>/dev/null
+    if verbose_run "$CXX" -mavx512f -o "$tmpexe" "$tmpc"; then
+        # Same SIGILL-suppression rationale as the AVX2 execute step
+        # above — must stay wrapped even under --verbose.
+        { "$tmpexe" >/dev/null 2>&1 && avx512_ok=1 || true; } 2>/dev/null
+    fi
     if [ "$avx512_ok" = 1 ]; then
         report "AVX-512F" "yes (compiled and executed a real AVX-512F op)"
     else
@@ -820,11 +868,6 @@ fi
 
 log ""
 log "-- End of report. Full text also written to config.log. --"
-
-} >"$REPORT_TMP" 2>&1 || true
-
-cat "$REPORT_TMP"
-mv "$REPORT_TMP" config.log
 
 # ---------------------------------------------------------------------
 # config.status — GCS's "Configuration" convention: a re-runnable
