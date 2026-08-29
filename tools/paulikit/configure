@@ -20,16 +20,18 @@
 # discovering each fact the hard way per profiling script as this
 # project's own history repeatedly did (see PLAN.md, profiling/).
 #
-# Scope (v1 — see PLAN.md's Phase 0.5 section for the full v1/v2
-# split and rationale): venv creation, C++ compiler + C++17, Cython
-# >=3.0, meson >=1.1.0, oneTBB, cache hierarchy (L1/L2/L3), NumPy's
-# linked BLAS backend + thread count, Python version, git commit +
-# working-tree state, lscpu (including its own Vulnerabilities:
-# section). A v2 (SIMD compile-tests, GPU/MPI/psutil/container
-# detection, perf_event_paranoid, CPU governor, RAM/swap, load
-# average, perf event-list availability, NumPy's own SIMD dispatch
-# tier, musl awareness, disk I/O type) is scoped but not implemented
-# — see PLAN.md.
+# Scope (v1 + v2 — see PLAN.md's Phase 0.5 section for the full
+# split and rationale, both now implemented): venv creation, C++
+# compiler + C++17, Cython >=3.0, meson >=1.1.0, oneTBB, cache
+# hierarchy (L1/L2/L3), NumPy's linked BLAS backend + thread count,
+# Python version, git commit + working-tree state, lscpu (including
+# its own Vulnerabilities: section), SIMD (AVX2/AVX-512 real
+# compile-and-execute tests, diagnostic only — never auto-applied as
+# -march=native), GPU/CUDA presence, MPI toolchain presence, psutil
+# presence, container/VM detection, perf_event_paranoid, CPU
+# frequency governor state, total RAM/swap, system load average,
+# perf list event availability, NumPy's own runtime SIMD dispatch
+# tier, musl-libc awareness, disk I/O type.
 #
 # Failure-mode philosophy: only two checks are allowed to block
 # anything (partial-abort, never a hard script-kill) — Python/venv
@@ -504,10 +506,304 @@ log ""
 log "== CPU (lscpu) =="
 
 if have lscpu; then
-    lscpu >>"$REPORT_TMP" 2>/dev/null || true
+    lscpu 2>/dev/null || true
 else
     report "lscpu" "not found (Linux-only tool; on macOS use 'sysctl -a machdep.cpu', on BSD 'sysctl hw')"
 fi
+
+# ---------------------------------------------------------------------
+# v2 — SIMD (AVX2/AVX-512) real compile-and-execute micro-tests
+# (diagnostic only — this result must NEVER be used to auto-apply
+# -march=native anywhere; see profiling/compiler_flags_findings.md for
+# the known SIGILL wheel-portability hazard of doing that)
+# ---------------------------------------------------------------------
+
+log "== SIMD (compile-and-execute, diagnostic only — never auto-applied) =="
+
+if [ -n "$CXX" ]; then
+    cat >"$tmpc" <<'EOF'
+#include <immintrin.h>
+int main() {
+    __m256i a = _mm256_set1_epi32(1);
+    __m256i b = _mm256_add_epi32(a, a);
+    int out[8];
+    _mm256_storeu_si256((__m256i *)out, b);
+    return out[0] - 2;
+}
+EOF
+    avx2_ok=0
+    { "$CXX" -mavx2 -o "$tmpexe" "$tmpc" >/dev/null 2>&1 && "$tmpexe" >/dev/null 2>&1 && avx2_ok=1 || true; } 2>/dev/null
+    if [ "$avx2_ok" = 1 ]; then
+        report "AVX2" "yes (compiled and executed a real AVX2 op)"
+    else
+        report "AVX2" "no (compile or execute failed — either unsupported by this CPU or this compiler)"
+    fi
+    rm -f "$tmpexe"
+
+    cat >"$tmpc" <<'EOF'
+#include <immintrin.h>
+int main() {
+    __m512i a = _mm512_set1_epi32(1);
+    __m512i b = _mm512_add_epi32(a, a);
+    int out[16];
+    _mm512_storeu_si512((void *)out, b);
+    return out[0] - 2;
+}
+EOF
+    avx512_ok=0
+    { "$CXX" -mavx512f -o "$tmpexe" "$tmpc" >/dev/null 2>&1 && "$tmpexe" >/dev/null 2>&1 && avx512_ok=1 || true; } 2>/dev/null
+    if [ "$avx512_ok" = 1 ]; then
+        report "AVX-512F" "yes (compiled and executed a real AVX-512F op)"
+    else
+        report "AVX-512F" "no (compile or execute failed — either unsupported by this CPU or this compiler)"
+    fi
+    rm -f "$tmpexe"
+else
+    report "AVX2" "unknown (no C++ compiler found — see C++ toolchain section above)"
+    report "AVX-512F" "unknown (no C++ compiler found — see C++ toolchain section above)"
+fi
+report "Note" "diagnostic only — never used to auto-apply -march=native (known SIGILL wheel-portability hazard, see profiling/compiler_flags_findings.md)"
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — GPU/CUDA presence (informational only — paulikit has no GPU path)
+# ---------------------------------------------------------------------
+
+log "== GPU / CUDA (informational — paulikit has no GPU code path) =="
+
+if have nvidia-smi; then
+    gpu_name="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+    report "nvidia-smi" "found (${gpu_name:-unknown GPU})"
+else
+    report "nvidia-smi" "not found"
+fi
+if have nvcc; then
+    nvcc_version="$(nvcc --version 2>/dev/null | tail -1)"
+    report "nvcc" "found ($nvcc_version)"
+else
+    report "nvcc" "not found"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — MPI toolchain presence (informational only — paulikit has no
+# MPI path)
+# ---------------------------------------------------------------------
+
+log "== MPI (informational — paulikit has no MPI code path) =="
+
+if have mpicc; then
+    report "mpicc" "found ($(mpicc --version 2>/dev/null | head -1))"
+else
+    report "mpicc" "not found"
+fi
+if have mpirun; then
+    report "mpirun" "found"
+else
+    report "mpirun" "not found"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — psutil presence (Phase 12 open question #4: whether chunk_size
+# auto-tuning can rely on psutil for live memory queries)
+# ---------------------------------------------------------------------
+
+log "== psutil (Phase 12 chunk_size auto-tuner candidate dependency) =="
+
+if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import psutil' >/dev/null 2>&1; then
+    psutil_version="$("$VENV_PY" -c 'import psutil; print(psutil.__version__)' 2>/dev/null)"
+    report "psutil (venv)" "$psutil_version"
+else
+    report "psutil (venv)" "not found (not currently a paulikit dependency; relevant only if Phase 12 adopts it for live memory queries)"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — container/VM detection (cgroup limits differ from bare-metal
+# ulimit -v — every N=150 memory-cap finding to date assumed bare
+# metal; this matters if profiling is ever run inside a container)
+# ---------------------------------------------------------------------
+
+log "== Container / VM detection =="
+
+if have systemd-detect-virt; then
+    virt="$(systemd-detect-virt 2>/dev/null || true)"
+    if [ -z "$virt" ] || [ "$virt" = "none" ]; then
+        report "systemd-detect-virt" "none (bare metal)"
+    else
+        report "systemd-detect-virt" "$virt — cgroup memory limits may differ from bare-metal ulimit -v; see cgroup notes below if profiling here"
+    fi
+else
+    report "systemd-detect-virt" "not found (cannot determine bare-metal vs. container/VM automatically)"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — /proc/sys/kernel/perf_event_paranoid (currently copy-pasted
+# identically in 6 separate profiling/*/run_*.sh scripts; centralized
+# here as a single source of truth)
+# ---------------------------------------------------------------------
+
+log "== perf_event_paranoid =="
+
+if [ -r /proc/sys/kernel/perf_event_paranoid ]; then
+    paranoid="$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo unknown)"
+    report "perf_event_paranoid" "$paranoid (0-1 allows unprivileged perf stat; 2+ requires sudo or a sysctl change)"
+else
+    report "perf_event_paranoid" "not readable (Linux-only; on non-Linux, perf stat is unavailable regardless)"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — CPU frequency scaling / governor state (confirmed dynamic and
+# never checked in any measurement to date — a real gap: an
+# unpinned governor can silently invalidate perf-stat timing
+# comparisons across runs)
+# ---------------------------------------------------------------------
+
+log "== CPU frequency governor =="
+
+governor_file="/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+if [ -r "$governor_file" ]; then
+    governor="$(cat "$governor_file" 2>/dev/null || echo unknown)"
+    report "scaling_governor (cpu0)" "$governor (perf comparisons across runs assume this stays constant — 'performance' is the least noisy for benchmarking, 'powersave'/'schedutil' can introduce frequency-scaling noise)"
+else
+    report "scaling_governor" "not readable (no cpufreq sysfs on this system/OS, or non-Linux)"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — total RAM/swap presence (relevant given real OOMs hit during
+# large-N verification work — see verification/FINDINGS.md)
+# ---------------------------------------------------------------------
+
+log "== RAM / swap =="
+
+if have free; then
+    mem_total="$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')"
+    swap_total="$(free -h 2>/dev/null | awk '/^Swap:/ {print $2}')"
+    report "Total RAM" "${mem_total:-unknown}"
+    report "Total swap" "${swap_total:-unknown}"
+else
+    report "RAM / swap" "unknown ('free' not found — Linux-only tool; on macOS use 'vm_stat'/'sysctl hw.memsize')"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — current system load average (context for any perf measurement
+# taken immediately after configure runs)
+# ---------------------------------------------------------------------
+
+log "== System load average =="
+
+if [ -r /proc/loadavg ]; then
+    loadavg="$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null || echo unknown)"
+    report "Load average (1m 5m 15m)" "$loadavg"
+elif have uptime; then
+    report "Load average" "$(uptime 2>/dev/null | sed 's/.*load average[s]*: //')"
+else
+    report "Load average" "unknown"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — actual available perf list event set (cycle_activity.stalls_*
+# confirmed Skylake-family-specific during profiling work, not a
+# universal event name — worth knowing before writing a new perf
+# script that assumes it exists)
+# ---------------------------------------------------------------------
+
+log "== perf list (available hardware events) =="
+
+if have perf; then
+    stalls_events="$(perf list 2>/dev/null | grep -c 'cycle_activity.stalls' || true)"
+    if [ "$stalls_events" -gt 0 ] 2>/dev/null; then
+        report "perf" "found; cycle_activity.stalls_* events available ($stalls_events matched — Skylake-family-specific, do not assume present on other microarchitectures)"
+    else
+        report "perf" "found; cycle_activity.stalls_* events NOT available (expected on non-Skylake-family CPUs — profiling scripts assuming this event exist will fail here)"
+    fi
+else
+    report "perf" "not found (perf stat/perf list unavailable)"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — NumPy's own runtime SIMD dispatch tier (distinct from
+# paulikit's native-extension build flags above — this is what NumPy
+# itself dispatches to at runtime for its own vectorized ops)
+# ---------------------------------------------------------------------
+
+log "== NumPy runtime SIMD dispatch tier =="
+
+if [ -n "$VENV_PY" ] && "$VENV_PY" -c 'import numpy' >/dev/null 2>&1; then
+    simd_info="$("$VENV_PY" -c "
+import numpy as np
+try:
+    feat = np.core._multiarray_umath.__cpu_features__
+    enabled = sorted(k for k, v in feat.items() if v)
+    print(','.join(enabled) if enabled else 'none reported')
+except Exception as e:
+    print('unavailable (%s)' % e)
+" 2>/dev/null)"
+    report "NumPy CPU features enabled" "${simd_info:-unknown}"
+else
+    report "NumPy runtime SIMD" "unknown (NumPy not importable in venv — see NumPy BLAS section above)"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — musl-host awareness (skip = "*-musllinux*" in the wheel
+# cibuildwheel config is a deliberate policy, not an oversight — report
+# "no wheel target exists here by design" rather than implying
+# unverified support on a musl host)
+# ---------------------------------------------------------------------
+
+log "== musl libc awareness =="
+
+if have ldd && ldd --version 2>&1 | grep -qi musl; then
+    report "libc" "musl detected — no prebuilt wheel target exists for this host by design (see .github/workflows/paulikit-wheels.yml's musllinux skip policy); source build required"
+elif [ -r /lib/ld-musl-x86_64.so.1 ] || [ -r /lib/ld-musl-aarch64.so.1 ]; then
+    report "libc" "musl detected (ld-musl found) — no prebuilt wheel target exists for this host by design; source build required"
+else
+    report "libc" "glibc or unknown (not musl) — standard prebuilt wheel targets apply"
+fi
+
+log ""
+
+# ---------------------------------------------------------------------
+# v2 — disk I/O type (relevant only to checkpoint_path's write
+# throughput; lowest priority of the v2 items)
+# ---------------------------------------------------------------------
+
+log "== Disk I/O type (relevant to checkpoint_path write throughput) =="
+
+if have lsblk; then
+    rota_info="$(lsblk -d -o NAME,ROTA 2>/dev/null | tail -n +2)"
+    if [ -n "$rota_info" ]; then
+        report "lsblk -d -o NAME,ROTA" "1=rotational (HDD), 0=non-rotational (SSD/NVMe) — see below"
+        printf '%s\n' "$rota_info" | while IFS= read -r line; do
+            log "    $line"
+        done
+    else
+        report "Disk I/O type" "unknown (lsblk returned no data)"
+    fi
+else
+    report "Disk I/O type" "unknown ('lsblk' not found — Linux-only tool)"
+fi
+
+log ""
 
 log "== GNU directory variables =="
 report "PREFIX" "$PREFIX (used by 'make docs' as the install root)"

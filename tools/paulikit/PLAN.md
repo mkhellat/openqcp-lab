@@ -294,7 +294,7 @@ features of paulikit," warned explicitly when a feature won't be
 available on this machine — not a second, potentially-drifting source
 of build-gating truth.
 
-**Scope, split into v1 (implemented) / v2 (scoped, not implemented)**
+**Scope, split into v1 / v2 (both now implemented)**
 after 4 rounds of critical review (profiling/ read in full across 3
 rounds, PLAN.md/pyproject.toml/src/ cross-checked, a design-readiness
 pass covering implementation ordering and failure-mode philosophy,
@@ -332,10 +332,10 @@ environment paulikit will actually run in):
   dependent report section, never kill the whole script — paulikit's
   pure-Python fallback works with zero compiler present); every other
   check degrades to "not found"/"unknown" and the report continues.
-- **v2 (scoped, not implemented)** — deferred because each item's
-  value is either forward-looking (nothing in paulikit consumes it
-  yet) or only matters during an active profiling session, not
-  routine build/install: CPU SIMD AVX2/AVX-512 via real
+- **v2 (implemented 2026-08-29)** — each item's value is either
+  forward-looking (nothing in paulikit consumes it yet) or only
+  matters during an active profiling session, not routine
+  build/install: CPU SIMD AVX2/AVX-512 via real
   compile-and-execute micro-tests (diagnostic only, must never
   auto-apply `-march=native` — known SIGILL wheel-portability hazard
   per `profiling/`'s `compiler_flags_findings.md`), GPU/CUDA presence
@@ -357,6 +357,32 @@ environment paulikit will actually run in):
   exists here by design" rather than implying unverified support),
   disk I/O type (`lsblk -d -o rota` — relevant only to
   `checkpoint_path`'s write throughput, lower priority than the rest).
+
+**Real bugs found and fixed while integration-testing v2** (run to
+completion, not just written — `./configure` executed end-to-end,
+`make build && make check`, 79/79 tests passing):
+1. The AVX-512 compile-and-execute test correctly detected the
+   feature as unsupported on this machine (an AVX2-only i7-8550U),
+   but bash's own job-control notice for the SIGILL-killed test
+   binary (`Illegal instruction (core dumped)`) leaked into
+   `config.log` regardless of the command's own `2>&1` redirection —
+   a `set -eu` interaction, not fixable via the command's own
+   redirection alone. Fixed by wrapping each SIMD compile-test
+   statement in `{ ...; } 2>/dev/null`, which suppresses bash's own
+   job-completion notice at the enclosing-block level.
+2. **Pre-existing v1 bug, found incidentally while verifying v2's new
+   sections didn't disturb report ordering**: the `lscpu` check wrote
+   its output via its own explicit `>>"$REPORT_TMP"` append-redirect,
+   nested inside the outer report block's own `{ ... } >"$REPORT_TMP"
+   2>&1` redirection — two independent writers to the same file
+   caused `lscpu`'s content to land at the wrong offset relative to
+   the rest of the report (confirmed via `config.log`: the `== CPU
+   (lscpu) ==` header printed with no content directly beneath it,
+   while stray `lscpu` output appeared much later, interleaved with
+   the final Makefile-generation message). Fixed by removing the
+   redundant explicit redirect — `lscpu`'s stdout was already
+   correctly captured by the enclosing block once written as a plain
+   statement.
 
 **Real bugs found and fixed while integration-testing the generated
 Makefile** (not just designed — actually run to completion,
@@ -898,7 +924,7 @@ Cython ecosystem support for free-threading is still maturing as of
 this writing).
 
 
-### Phase 6 — Sparse output for `fwht_pauli_coefficients` (scoped 2026-08-25, not started)
+### Phase 6 — Sparse output for `fwht_pauli_coefficients` (scoped 2026-08-25, implemented and shipped 2026-08-26)
 
 **Motivation.** A fundamental (not TBB-limited) cache-locality
 investigation, per the user's explicit direction, was carried out in
@@ -1272,7 +1298,7 @@ evaluation into Phase 6 rather than treating phases as rigidly
 sequential.
 
 
-### Phase 8 — Sparse-Hamiltonian construction and input (scoped 2026-08-26, not started)
+### Phase 8 — Sparse-Hamiltonian construction and input (scoped 2026-08-26, implemented and shipped 2026-08-26)
 
 **Motivation.** Phase 6's two follow-on memory-footprint fixes
 (overwrite-in-place WHT, `chunk_size` row-tiling - see Phase 6's
