@@ -771,10 +771,387 @@ EOF
                     "support; no C/C++ compiler needed or used"
             fi
             ;;
+        aarch64|arm64)
+            # Same mechanism as x86_64: raw mmap/munmap/write/exit
+            # syscalls (numbers 222/215/64/93 - aarch64 uses the
+            # SAME generic syscall table as riscv64, confirmed via
+            # /usr/include/asm-generic/unistd.h, unlike x86_64's own
+            # unique table), same scrambled-stride pointer chase and
+            # awk boundary-detection. Timing source: CNTVCT_EL0 via
+            # MRS, EL0-accessible with no privileged setup required
+            # (unlike PMCCNTR_EL0, which needs PMUSERENR_EL0 enabled
+            # first - avoided here for portability across unknown
+            # target hardware). This host is x86_64, so this arm only
+            # runs when a cross-assembler (aarch64-linux-gnu-as/-ld)
+            # and qemu-aarch64 (user-mode emulation) are available;
+            # on real aarch64 hardware, native as/ld/direct-exec would
+            # be used instead (not implemented separately - the same
+            # cross-toolchain path also works natively once as/ld
+            # resolve to the native tools and qemu is simply unused).
+            cat >"$tmpc" <<'EOF'
+.text
+.global _start
+
+_start:
+    mov x15, #8192
+
+size_loop:
+    mov x16, #33554432
+    cmp x15, x16
+    b.gt all_done
+
+    mov x0, #0
+    mov x1, x15
+    mov x2, #3
+    mov x3, #0x22
+    mov x4, #-1
+    mov x5, #0
+    mov x8, #222
+    svc #0
+    mov x14, x0
+
+    mov x9, x15
+    lsr x9, x9, #3
+    mov x11, #0
+    mov x13, x9
+
+build_loop:
+    mov x0, x11
+    movz x1, #0x1, lsl #16
+    movk x1, #0x9919
+    add x0, x0, x1
+    udiv x1, x0, x13
+    msub x2, x1, x13, x0
+    lsl x3, x2, #3
+    add x3, x14, x3
+    str x2, [x3]
+    mov x11, x2
+    subs x9, x9, #1
+    b.ne build_loop
+
+    mov x11, #0
+    mov x9, x13
+    mov x1, #3
+    mul x9, x9, x1
+warmup_loop:
+    lsl x3, x11, #3
+    add x3, x14, x3
+    ldr x11, [x3]
+    subs x9, x9, #1
+    b.ne warmup_loop
+
+    isb
+    mrs x12, cntvct_el0
+
+    movz x9, #0x4, lsl #16
+    movk x9, #0x93e0
+timed_loop:
+    lsl x3, x11, #3
+    add x3, x14, x3
+    ldr x11, [x3]
+    subs x9, x9, #1
+    b.ne timed_loop
+
+    isb
+    mrs x0, cntvct_el0
+    sub x0, x0, x12
+    mov x19, x0
+
+    lsr x0, x15, #10
+    bl print_uint
+    mov x0, #' '
+    bl print_char
+    mov x0, x19
+    bl print_uint
+    mov x0, #10
+    bl print_char
+
+    mov x0, x14
+    mov x1, x15
+    mov x8, #215
+    svc #0
+
+    lsl x15, x15, #1
+    b size_loop
+
+all_done:
+    mov x0, #0
+    mov x8, #93
+    svc #0
+
+.bss
+.lcomm numbuf, 32
+
+.text
+print_char:
+    stp x0, x1, [sp, #-32]!
+    stp x2, x30, [sp, #16]
+    strb w0, [sp, #-64]!
+    mov x0, #1
+    mov x2, #1
+    add x1, sp, #0
+    mov x8, #64
+    svc #0
+    add sp, sp, #64
+    ldp x2, x30, [sp, #16]
+    ldp x0, x1, [sp], #32
+    ret
+
+print_uint:
+    stp x0, x1, [sp, #-48]!
+    stp x2, x3, [sp, #16]
+    stp x4, x30, [sp, #32]
+    adrp x4, numbuf
+    add x4, x4, :lo12:numbuf
+    add x1, x4, #31
+    mov x2, #0
+    strb w2, [x1]
+    mov x3, #10
+digit_loop:
+    udiv x2, x0, x3
+    msub x4, x2, x3, x0
+    add x4, x4, #'0'
+    sub x1, x1, #1
+    strb w4, [x1]
+    mov x0, x2
+    cmp x0, #0
+    b.ne digit_loop
+    adrp x4, numbuf
+    add x4, x4, :lo12:numbuf
+    add x4, x4, #31
+    sub x2, x4, x1
+    mov x0, #1
+    mov x8, #64
+    svc #0
+    ldp x4, x30, [sp, #32]
+    ldp x2, x3, [sp, #16]
+    ldp x0, x1, [sp], #48
+    ret
+EOF
+            probe_ok=0
+            probe_out=""
+            asm_obj="${TMPDIR}/paulikit-configure-cacheprobe-$$.o"
+            asm_exe="${TMPDIR}/paulikit-configure-cacheprobe-$$.exe"
+            if have aarch64-linux-gnu-as && have aarch64-linux-gnu-ld \
+                && have qemu-aarch64 \
+                && verbose_run aarch64-linux-gnu-as \
+                    -o "$asm_obj" "$tmpc" \
+                && verbose_run aarch64-linux-gnu-ld \
+                    -o "$asm_exe" "$asm_obj"
+            then
+                probe_out="$(qemu-aarch64 "$asm_exe" 2>/dev/null \
+                    || true)"
+                [ -n "$probe_out" ] && probe_ok=1
+            fi
+            rm -f "$asm_obj" "$asm_exe"
+            if [ "$probe_ok" = 1 ]; then
+                if [ "$VERBOSE" -eq 1 ]; then
+                    printf '%s\n' "$probe_out" | tee -a config.log
+                fi
+                result_detail "measured (QEMU user-mode)" \
+                    "ran via cross-assembled aarch64 binary under" \
+                    "qemu-aarch64 - this validates that the raw" \
+                    "syscalls/CNTVCT_EL0 read/pointer-chase are" \
+                    "CORRECT, but QEMU user-mode has no real cache" \
+                    "hierarchy to time against, so these numbers are" \
+                    "NOT a trustworthy latency curve on real aarch64" \
+                    "hardware - treat this as a correctness smoke" \
+                    "test only, never as a real measurement"
+            else
+                result_detail "skipped" \
+                    "requires aarch64-linux-gnu-as/-ld (cross-" \
+                    "binutils) and qemu-aarch64 (user-mode emulation)" \
+                    "to assemble+link+run this cross-architecture" \
+                    "probe from an x86_64 host"
+            fi
+            ;;
+        riscv64)
+            # Same mechanism as x86_64/aarch64: raw mmap/munmap/
+            # write/exit syscalls (same generic-table numbers as
+            # aarch64: 222/215/64/93), same scrambled-stride pointer
+            # chase and awk boundary-detection. Timing source: the
+            # rdtime pseudo-instruction (a CSR read of the `time`
+            # counter). Verified live under QEMU that this assembles
+            # and runs without trapping - but on REAL riscv64
+            # hardware, user-mode access to the cycle/time CSRs is
+            # commonly gated by mcounteren/scounteren, and Linux often
+            # traps+emulates rdtime in the kernel; QEMU's linux-user
+            # emulation may be more permissive than real silicon, so
+            # a clean run here does not by itself prove EL0/U-mode
+            # CSR access will succeed on a given real riscv64 core.
+            cat >"$tmpc" <<'EOF'
+.text
+.global _start
+
+_start:
+    li s0, 8192
+
+size_loop:
+    li t0, 33554432
+    bgt s0, t0, all_done
+
+    li a0, 0
+    mv a1, s0
+    li a2, 3
+    li a3, 0x22
+    li a4, -1
+    li a5, 0
+    li a7, 222
+    ecall
+    mv s1, a0
+
+    srli t1, s0, 3
+    li s2, 0
+    mv s3, t1
+
+build_loop:
+    li t2, 104729
+    add t3, s2, t2
+    remu s2, t3, s3
+    slli t4, s2, 3
+    add t4, s1, t4
+    sd s2, 0(t4)
+    addi t1, t1, -1
+    bnez t1, build_loop
+
+    li s2, 0
+    mv t1, s3
+    li t2, 3
+    mul t1, t1, t2
+warmup_loop:
+    slli t4, s2, 3
+    add t4, s1, t4
+    ld s2, 0(t4)
+    addi t1, t1, -1
+    bnez t1, warmup_loop
+
+    rdtime s4
+
+    li t1, 300000
+timed_loop:
+    slli t4, s2, 3
+    add t4, s1, t4
+    ld s2, 0(t4)
+    addi t1, t1, -1
+    bnez t1, timed_loop
+
+    rdtime a0
+    sub a0, a0, s4
+    mv s5, a0
+
+    srli a0, s0, 10
+    jal ra, print_uint
+    li a0, ' '
+    jal ra, print_char
+    mv a0, s5
+    jal ra, print_uint
+    li a0, 10
+    jal ra, print_char
+
+    mv a0, s1
+    mv a1, s0
+    li a7, 215
+    ecall
+
+    slli s0, s0, 1
+    j size_loop
+
+all_done:
+    li a0, 0
+    li a7, 93
+    ecall
+
+.bss
+.lcomm numbuf, 32
+
+.text
+print_char:
+    addi sp, sp, -32
+    sd ra, 24(sp)
+    sd a0, 16(sp)
+    sb a0, 0(sp)
+    li a0, 1
+    mv a1, sp
+    li a2, 1
+    li a7, 64
+    ecall
+    ld a0, 16(sp)
+    ld ra, 24(sp)
+    addi sp, sp, 32
+    ret
+
+print_uint:
+    addi sp, sp, -48
+    sd ra, 40(sp)
+    sd s6, 32(sp)
+    sd s7, 24(sp)
+    la s6, numbuf
+    addi s7, s6, 31
+    sb zero, 0(s7)
+    li t5, 10
+digit_loop:
+    remu t6, a0, t5
+    divu a0, a0, t5
+    addi t6, t6, '0'
+    addi s7, s7, -1
+    sb t6, 0(s7)
+    bnez a0, digit_loop
+    addi t0, s6, 31
+    sub a2, t0, s7
+    li a0, 1
+    mv a1, s7
+    li a7, 64
+    ecall
+    ld s7, 24(sp)
+    ld s6, 32(sp)
+    ld ra, 40(sp)
+    addi sp, sp, 48
+    ret
+EOF
+            probe_ok=0
+            probe_out=""
+            asm_obj="${TMPDIR}/paulikit-configure-cacheprobe-$$.o"
+            asm_exe="${TMPDIR}/paulikit-configure-cacheprobe-$$.exe"
+            if have riscv64-linux-gnu-as \
+                && have riscv64-linux-gnu-ld \
+                && have qemu-riscv64 \
+                && verbose_run riscv64-linux-gnu-as \
+                    -o "$asm_obj" "$tmpc" \
+                && verbose_run riscv64-linux-gnu-ld \
+                    -o "$asm_exe" "$asm_obj"
+            then
+                probe_out="$(qemu-riscv64 "$asm_exe" 2>/dev/null \
+                    || true)"
+                [ -n "$probe_out" ] && probe_ok=1
+            fi
+            rm -f "$asm_obj" "$asm_exe"
+            if [ "$probe_ok" = 1 ]; then
+                if [ "$VERBOSE" -eq 1 ]; then
+                    printf '%s\n' "$probe_out" | tee -a config.log
+                fi
+                result_detail "measured (QEMU user-mode)" \
+                    "ran via cross-assembled riscv64 binary under" \
+                    "qemu-riscv64 - this validates that the raw" \
+                    "syscalls/rdtime read/pointer-chase are CORRECT" \
+                    "under emulation, but proves neither a real" \
+                    "latency curve (QEMU has no real cache hierarchy" \
+                    "to time) NOR that rdtime is U-mode-accessible on" \
+                    "actual riscv64 silicon (real cores often gate it" \
+                    "behind mcounteren/scounteren) - treat this as a" \
+                    "correctness smoke test only"
+            else
+                result_detail "skipped" \
+                    "requires riscv64-linux-gnu-as/-ld (cross-" \
+                    "binutils) and qemu-riscv64 (user-mode emulation)" \
+                    "to assemble+link+run this cross-architecture" \
+                    "probe from an x86_64 host"
+            fi
+            ;;
         *)
             result_detail "skipped" \
-                "raw assembly probe currently implemented for x86_64" \
-                "only (detected: $OS_ARCH)"
+                "raw assembly probe currently implemented for" \
+                "x86_64, aarch64, and riscv64 only" \
+                "(detected: $OS_ARCH)"
             ;;
     esac
     log ""

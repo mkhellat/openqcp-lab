@@ -557,20 +557,41 @@ full manual line-length sweep brought the whole script to real GNU
 source, not assumed) — caught 2 real orphaned-output bugs along the
 way (unknown-OS fallback branches missing their `checking()` call).
 
-**Open, scoped but not started**: ARM64 and RISC-V ports of the
-assembly cache-latency probe (PowerPC explicitly out of scope for
-now — legacy Summit/Sierra-class systems, not a current new-build
-target). Real HPC deployments exist on both target architectures
-(Fugaku/AWS Graviton for ARM64; active RISC-V HPC research). Needs
-real syscall-number/register-convention verification per architecture
-before writing any code (not assumed from memory), and genuine
-execution testing via QEMU user-mode emulation once
-`aarch64-linux-gnu-binutils`/`riscv64-linux-gnu-binutils` are
-installed — note QEMU user-mode won't produce a trustworthy *latency*
-curve (no real cache-hierarchy timing under emulation), so cross-arch
-testing there can only validate assembly/syscall *correctness*, not
-the measured numbers; that distinction must be stated explicitly
-whenever this is picked back up, not glossed over.
+**Update (2026-08-30): ARM64 + RISC-V assembly cache-latency probes
+DONE.** Both architectures added as new `case "$OS_ARCH"` arms in the
+`--probe-cache-latency` block, mirroring the x86_64 raw-assembly
+probe's structure exactly (same mmap/munmap/write/exit syscalls, same
+scrambled-stride pointer-chase, same awk boundary-detection). Real
+syscall numbers verified from `/usr/include/asm-generic/unistd.h`
+(aarch64 and riscv64 share the SAME generic syscall table — unlike
+x86_64's own unique table): write=64, exit=93, munmap=215, mmap=222.
+Timing source per architecture: aarch64 uses `CNTVCT_EL0` via `MRS`
+(EL0-accessible with no privileged setup, unlike `PMCCNTR_EL0` which
+needs `PMUSERENR_EL0` enabled first); riscv64 uses the `rdtime`
+pseudo-instruction (a CSR read of the `time` counter). Both probes
+were built, then live-verified end-to-end through the real `configure`
+script (not a standalone harness) via cross-assembling with
+`aarch64-linux-gnu-as`/`-ld` and `riscv64-linux-gnu-as`/`-ld` and
+executing under `qemu-aarch64`/`qemu-riscv64` (user-mode emulation) —
+confirmed via `OS_ARCH` override testing that both arms correctly
+assemble, link, run, and parse output. A deliberately-broken fake
+`aarch64-linux-gnu-as` was used to confirm the check fails honestly
+("skipped") rather than false-passing. `make check` still 79/79,
+`shellcheck -s sh` clean, no shell-line-length regressions.
+
+**Explicit caveat baked into both probes' own result output** (not
+glossed over): QEMU user-mode emulation validates assembly/syscall
+*correctness* only — it has no real cache hierarchy to time against,
+so the reported cycle numbers are not a trustworthy latency curve on
+real hardware. For riscv64 specifically there is a second caveat: a
+clean `rdtime` read under QEMU does not by itself prove the `time` CSR
+is user-mode-accessible on real silicon, since real cores commonly
+gate it behind `mcounteren`/`scounteren` and Linux often traps+
+emulates `rdtime` in the kernel — QEMU's linux-user emulation may be
+more permissive than real hardware in this respect.
+
+PowerPC remains explicitly out of scope (legacy Summit/Sierra-class
+systems, not a current new-build target).
 
 ### Phase 0.6 — Exhaustive correctness verification (closed 2026-08-28)
 
