@@ -593,6 +593,29 @@ more permissive than real hardware in this respect.
 PowerPC remains explicitly out of scope (legacy Summit/Sierra-class
 systems, not a current new-build target).
 
+**Update (2026-08-30, continued): aarch64/riscv64 SIMD battery DONE.**
+Extended the existing x86_64 AVX2/AVX-512 compile-and-execute block
+with cross-arch counterparts — NEON for aarch64 (`<arm_neon.h>`,
+`vaddq_s32`) and RVV for riscv64 (`<riscv_vector.h>`,
+`__riscv_vadd_vv_i32m1`, requires `-march=rv64gcv` — confirmed the
+compile genuinely fails without that flag, so it's a real gate, not a
+no-op). Cross-compiled with `aarch64-linux-gnu-g++`/
+`riscv64-linux-gnu-g++` (`-static`, to avoid a cross-sysroot `-L`
+dependency at run time — confirmed the dynamic-linked build needs
+`-L /usr/aarch64-linux-gnu` while `-static` needs nothing extra) and
+executed under `qemu-aarch64`/`qemu-riscv64`, same pattern as the
+cache-latency probes. NEON is baseline-mandatory on real aarch64
+hardware (so this is mainly a toolchain-support check); RVV is
+genuinely optional/uneven across real RISC-V hardware (so it's a real
+capability probe, closer in spirit to the AVX tests) — both
+distinctions stated explicitly in the checks' own result text, along
+with the standard QEMU-can't-prove-real-hardware-support caveat (RVV
+especially, since QEMU's default vector model/VLEN may not match any
+real target's actual configuration). Verified live through the real
+`configure` script, confirmed to fail honestly via a deliberately-
+broken fake `aarch64-linux-gnu-g++`. `make check` 79/79, shellcheck
+clean, no line-length regressions, memory monitored (no leak).
+
 ### Phase 0.6 — Exhaustive correctness verification (closed 2026-08-28)
 
 **Problem.** `tests/test_benchmark_reference.py`'s existing PennyLane

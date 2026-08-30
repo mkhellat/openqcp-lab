@@ -2543,6 +2543,115 @@ log "  profiling/compiler_flags_findings.md)"
 log ""
 
 # ---------------------------------------------------------------------
+# v2 — SIMD, aarch64 (NEON) and riscv64 (RVV) real compile-and-execute
+# micro-tests, cross-arch counterparts to the AVX2/AVX-512 block above.
+# This host is x86_64, so these always cross-compile with
+# aarch64-linux-gnu-g++/riscv64-linux-gnu-g++ (-static, to avoid a
+# cross-sysroot -L dependency at run time) and execute under
+# qemu-aarch64/qemu-riscv64 user-mode emulation — same approach as the
+# --probe-cache-latency assembly probes. NEON is baseline-mandatory on
+# real aarch64 hardware (unlike AVX2/AVX-512, which are optional x86
+# extensions) so this is really a compiler/toolchain-support check;
+# RVV is genuinely optional and uneven across real RISC-V hardware, so
+# it IS a meaningful capability probe, same spirit as the AVX tests.
+# Same diagnostic-only caveat applies — never auto-applied to build
+# flags. Also same QEMU caveat as the cache-latency probes: a clean
+# run here proves the instructions assemble/execute under emulation,
+# not that a given real target actually implements that extension
+# (RVV in particular — QEMU's default CPU model's vector config may
+# not match any real target's actual VLEN/subset).
+# ---------------------------------------------------------------------
+
+log "== SIMD, aarch64/riscv64 (compile-execute, diagnostic only) =="
+
+
+if have aarch64-linux-gnu-g++ && have qemu-aarch64; then
+    cat >"$tmpc" <<'EOF'
+#include <arm_neon.h>
+int main() {
+    int32x4_t a = vdupq_n_s32(1);
+    int32x4_t b = vaddq_s32(a, a);
+    int out[4];
+    vst1q_s32(out, b);
+    return out[0] - 2;
+}
+EOF
+    checking "NEON (aarch64)" \
+        "aarch64-linux-gnu-g++ -static + qemu-aarch64 (vaddq_s32)"
+    neon_ok=0
+    if verbose_run aarch64-linux-gnu-g++ -static \
+        -o "$tmpexe" "$tmpc"
+    then
+        { qemu-aarch64 "$tmpexe" >/dev/null 2>&1 && neon_ok=1 \
+            || true; } 2>/dev/null
+    fi
+    if [ "$neon_ok" = 1 ]; then
+        result_detail "yes (QEMU user-mode)" \
+            "compiled and executed a real NEON op under emulation —" \
+            "proves compiler/toolchain support, not real-hardware" \
+            "capability (NEON is baseline-mandatory on real aarch64" \
+            "hardware, unlike AVX2/AVX-512's optional x86 status)"
+    else
+        result_detail "no" \
+            "compile, cross-toolchain, or qemu-aarch64 run failed"
+    fi
+    rm -f "$tmpexe"
+else
+    checking "NEON (aarch64)" ""
+    result_detail "skipped" \
+        "requires aarch64-linux-gnu-g++ (cross-compiler) and" \
+        "qemu-aarch64 (user-mode emulation) to compile+run this" \
+        "cross-architecture probe from an x86_64 host"
+fi
+
+if have riscv64-linux-gnu-g++ && have qemu-riscv64; then
+    cat >"$tmpc" <<'EOF'
+#include <riscv_vector.h>
+int main() {
+    size_t vl = __riscv_vsetvl_e32m1(4);
+    vint32m1_t a = __riscv_vmv_v_x_i32m1(1, vl);
+    vint32m1_t b = __riscv_vadd_vv_i32m1(a, a, vl);
+    int out[4];
+    __riscv_vse32_v_i32m1(out, b, vl);
+    return out[0] - 2;
+}
+EOF
+    checking "RVV (riscv64)" \
+        "riscv64-linux-gnu-g++ -march=rv64gcv -static + qemu-riscv64"
+    rvv_ok=0
+    if verbose_run riscv64-linux-gnu-g++ -march=rv64gcv -static \
+        -o "$tmpexe" "$tmpc"
+    then
+        { qemu-riscv64 "$tmpexe" >/dev/null 2>&1 && rvv_ok=1 \
+            || true; } 2>/dev/null
+    fi
+    if [ "$rvv_ok" = 1 ]; then
+        result_detail "yes (QEMU user-mode)" \
+            "compiled and executed a real RVV op under emulation —" \
+            "RVV is genuinely optional/uneven across real RISC-V" \
+            "hardware, so a clean run here does NOT prove a given" \
+            "real target implements it, only that the toolchain and" \
+            "QEMU's default vector model do"
+    else
+        result_detail "no" \
+            "compile (requires -march=rv64gcv), cross-toolchain," \
+            "or qemu-riscv64 run failed"
+    fi
+    rm -f "$tmpexe"
+else
+    checking "RVV (riscv64)" ""
+    result_detail "skipped" \
+        "requires riscv64-linux-gnu-g++ (cross-compiler) and" \
+        "qemu-riscv64 (user-mode emulation) to compile+run this" \
+        "cross-architecture probe from an x86_64 host"
+fi
+log "  Note: diagnostic only — never used to auto-apply target-specific"
+log "  build flags (same SIGILL/portability rationale as the x86_64"
+log "  SIMD block above)"
+
+log ""
+
+# ---------------------------------------------------------------------
 # v2 — GPU/CUDA presence (informational only — paulikit has no GPU path)
 # ---------------------------------------------------------------------
 
