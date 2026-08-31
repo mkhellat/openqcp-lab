@@ -2328,6 +2328,7 @@ fi
 #    profiling/cache_locality/stall_floor_mystery_solved.md
 # ---------------------------------------------------------------------
 
+log ""
 log "== NumPy / BLAS backend =="
 
 checking "NumPy BLAS backend" "\$VENV_PY -c 'import numpy, threadpoolctl'"
