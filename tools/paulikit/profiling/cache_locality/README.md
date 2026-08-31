@@ -199,11 +199,21 @@ one before it. Don't read only the last one; the corrections
     precise claim than "sparse fixes cache locality." Script:
     `run_phase6_comparison.sh`.
 
-13. **[`../phase10/full_pipeline_n150_findings.md`](../phase10/full_pipeline_n150_findings.md)**
+13. **[`n150_sparse_still_ooms_finding.md`](n150_sparse_still_ooms_finding.md)** -
+    closes the gap finding 12 left open: does `sparse=True` alone make
+    N=150 survive? No - `gathered_active` (2.73 GiB at N=150) and its
+    `_walsh_hadamard_transform_rows` working copy are each large enough
+    to OOM on their own, confirmed under 8/10/12 GiB `ulimit -v` caps
+    and on the unconstrained machine (exit 137). Phase 6's fix moves
+    the OOM boundary, it does not remove it - what eventually did was
+    the streaming API in Phases 8-10 (finding 14), not the dense/sparse
+    choice itself.
+
+14. **[`../phase10/full_pipeline_n150_findings.md`](../phase10/full_pipeline_n150_findings.md)**
     (a different directory - `profiling/phase10/`, not
     `cache_locality/`, since it's part of Phase 10's own investigation
-    rather than this one) - after Phases 8-10 fixed the N=150 OOM this
-    investigation identified, re-measures TBB-parallel labeling
+    rather than this one) - after Phases 8-10 fixed the N=150 OOM
+    findings 5 and 13 identified, re-measures TBB-parallel labeling
     embedded in the real streaming pipeline (not isolated, unlike
     finding 11). Finds dict construction, not labeling, dominates at
     ~60% of pipeline time - a cost invisible to every finding above,

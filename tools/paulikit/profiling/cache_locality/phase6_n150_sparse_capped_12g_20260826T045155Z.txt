@@ -1,0 +1,40 @@
+=== N=150, SPARSE (Phase 6 fix) only, ulimit -v 12GB cap ===
+Traceback (most recent call last):
+  File "/home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py", line 96, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/cache_locality/steady_state_decompose.py", line 65, in main
+    warm_terms = fwht_pauli_terms(operator)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/src/paulikit/algorithms/fwht.py", line 324, in fwht_pauli_terms
+    active_x, active_coefficients = fwht_pauli_coefficients(operator, sparse=True)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/src/paulikit/algorithms/fwht.py", line 232, in fwht_pauli_coefficients
+    transformed_active = _walsh_hadamard_transform_rows(gathered_active)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/src/paulikit/algorithms/fwht.py", line 131, in _walsh_hadamard_transform_rows
+    transformed = array.copy()
+                  ^^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 2.73 GiB for an array with shape (11189, 16384) and data type complex128
+
+ Performance counter stats for 'python steady_state_decompose.py --n-oscillators 150 --reps 1':
+
+          3,079.75 msec task-clock                                                            
+     9,429,348,462      cycles                                                                  (39.89%)
+    19,336,886,452      instructions                                                            (49.93%)
+       775,174,067      cache-references                                                        (49.97%)
+       455,493,253      cache-misses                                                            (50.02%)
+     5,439,627,720      L1-dcache-loads                                                         (50.07%)
+       437,967,065      L1-dcache-load-misses                                                   (50.10%)
+        24,972,946      LLC-loads                                                               (40.12%)
+        10,346,478      LLC-load-misses                                                         (40.06%)
+     2,439,882,758      cycle_activity.stalls_total                                             (40.00%)
+     1,238,202,601      cycle_activity.stalls_mem_any                                           (39.94%)
+
+       3.091980449 seconds time elapsed
+
+       2.455467000 seconds user
+       0.600366000 seconds sys
+
+
+exit code: 1

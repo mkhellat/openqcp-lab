@@ -1,0 +1,2 @@
+=== N=150, SPARSE (Phase 6 fix) only, attempt 2 ===
+exit code: 137
