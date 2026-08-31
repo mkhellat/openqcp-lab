@@ -2053,13 +2053,31 @@ rather than dwarfed by it (roughly 1.2:1 instead of 3:1).
 **This changes the GPU-worth-it answer** from "clearly not" (21% of a
 Python-loop-dominated pipeline) to "genuinely marginal" (31.9% of a
 now-smaller total, competitive with the remaining dominant stage).
-Recommendation, not yet acted on: scope a further dict_build sub-cost
-breakdown first (lower-risk, higher-certainty - may still have
-easily-reachable headroom neither this nor the original scoping
-measured in enough granularity) before committing to any GPU work,
-which carries real, not-yet-estimated costs (host<->device transfer
-overhead, new toolchain/dependency, portability - no existing GPU
-dependency in this project).
+
+**Update (2026-08-31, same day, follow-up): checked dict_build for
+further headroom first, per the recommendation above - none found.**
+See `profiling/phase11/phase11b_remaining_dict_build_scoping.md`.
+Breaking `_build_real_terms` down further shows the Phase 11
+vectorized check is now under 2% of its own cost (a complete reversal
+from before Phase 11); `dict(zip(labels, real_list))` is now **~90%**
+of what remains, and ~56% of *that* is irreducible Python
+string-hashing + dict-entry insertion with no NumPy-vectorizable
+equivalent (unlike the arithmetic check Phase 11 fixed). Confirmed
+`dict(zip(...))` is already at or near CPython's practical floor for
+this pattern (a dict comprehension is statistically indistinguishable;
+an explicit insert loop is ~1.9x worse). A further cut would require
+either a breaking API change (returning something other than
+`dict[str, float]`) or a C/Cython dict-construction kernel of unclear
+realistic upside versus CPython's own optimized `dict` builtin -
+neither scoped as a phase here, both meaningfully bigger than a
+Phase-11-shaped fix.
+
+**Net effect: the GPU-worth-it question now rests entirely on a real
+port cost/benefit estimate** (host<->device transfer overhead for the
+coefficient arrays, new toolchain/dependency cost, portability - this
+project has no existing GPU dependency), not yet done. dict_build and
+the WHT butterfly are both, independently, about as optimized as they
+can get without either a GPU port or a breaking API-contract change.
 
 ### Phase 12 — auto-tuned `chunk_size` and streaming-vs-dense decision, with manual override always available (scoped 2026-08-27, not yet designed in detail)
 

@@ -47,7 +47,27 @@ trigger for a live GPU-worth-it question the user asked mid-session:
 the answer moved from "clearly not" to "genuinely marginal" -
 recommended next step is scoping dict_build's own remaining internals
 further (lower-risk, higher-certainty) before committing to any GPU
-work, not yet done.
+work.
+
+## Is there a further cheap win left in dict_build?
+
+[`phase11b_remaining_dict_build_scoping.md`](phase11b_remaining_dict_build_scoping.md) -
+answers the recommendation above: **no.** Breaking `_build_real_terms`
+down further shows the vectorized Hermiticity check Phase 11 added is
+now under 2% of the function's own cost (a complete reversal from
+before Phase 11); **`dict(zip(labels, real_list))` itself is now
+~90%** of what remains, and roughly 56% of *that* is specifically
+Python string-hashing + dict-entry insertion - CPython-object-level
+work with no NumPy-vectorizable equivalent, unlike the check Phase 11
+fixed. Confirmed `dict(zip(...))` is already at or near CPython's own
+practical floor (a dict comprehension is statistically
+indistinguishable; an explicit insert loop is ~1.9x worse). Any
+further cut would require a breaking API change (a different return
+container, e.g.) or a C/Cython dict-construction kernel of unclear
+realistic upside - both meaningfully bigger undertakings than a
+Phase-11-shaped micro-fix, not scoped here. This closes the "check
+dict_build first" step and leaves a real GPU-port cost/benefit
+estimate as the actual next decision on the WHT-butterfly question.
 
 ## Takeaway if you only read one thing
 
@@ -58,5 +78,7 @@ real-world, 34.2% total pipeline speedup). It is a pure performance
 improvement, not a correctness fix — Phase 10's streaming result
 (N=150 completing successfully) never depended on it either way. Its
 side effect — the WHT butterfly's relative share nearly doubling — is
-what makes GPU acceleration worth a further look now, though not yet
-worth committing to.
+what makes GPU acceleration worth a further look now; a follow-up
+check confirmed dict_build itself has no comparably cheap further fix
+available, so that decision now rests entirely on a real GPU-port
+cost/benefit estimate, not yet done.

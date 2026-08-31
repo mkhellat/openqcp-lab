@@ -331,6 +331,16 @@ included. **N=150 is now a solved, repeatable case.**
    even though its absolute time was flat — moving GPU acceleration of
    that stage from "clearly not worth it" to "genuinely marginal,"
    prompted by a direct user question.
+7. [`phase11/phase11b_remaining_dict_build_scoping.md`](phase11/phase11b_remaining_dict_build_scoping.md)
+   — checks finding 6's own recommendation (scope dict_build further
+   before GPU work): no further cheap win exists. Post-Phase-11,
+   `dict(zip(labels, real_list))` is now **~90%** of `_build_real_terms`'s
+   own cost (the vectorized check dropped to under 2%), and ~56% of
+   *that* is irreducible Python string-hashing/dict-insertion work with
+   no NumPy equivalent — confirmed `dict(zip(...))` is already at
+   CPython's practical floor versus alternatives. Closes the "check
+   dict_build first" question; the GPU decision now rests on a real
+   port cost/benefit estimate, not yet done.
 
 ### Phase 11 — `dict_build` optimization (scoped 2026-08-27, implemented 2026-08-31)
 
@@ -357,9 +367,16 @@ resolved (a rare-path `np.nonzero` re-scan on violation only).
 [`phase11/n150_post_implementation_findings.md`](phase11/n150_post_implementation_findings.md)):
 2.34x real-world speedup on dict construction, 34.2% faster total
 pipeline. Side effect: the WHT butterfly's relative share rose from
-21.1% to 31.9% of total time — real enough to be worth scoping GPU
-acceleration next, though a further dict_build sub-cost breakdown is
-recommended first as the lower-risk option.
+21.1% to 31.9% of total time.
+
+**Checked for further headroom before considering GPU** (finding 7,
+[`phase11/phase11b_remaining_dict_build_scoping.md`](phase11/phase11b_remaining_dict_build_scoping.md)):
+none found. `dict(zip(...))`'s dict construction is now ~90% of
+`_build_real_terms`'s own remaining cost and is already at CPython's
+practical floor — a further cut would require a breaking API change
+or a C/Cython kernel of unclear upside, neither scoped. The
+GPU-worth-it question now rests entirely on a real port cost/benefit
+estimate.
 
 ### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning scoping (scoped 2026-08-27, not yet designed in detail)
 
@@ -401,13 +418,21 @@ detail as of this writing.
   vectorized `_build_real_terms` helper. Real-world effect at N=150:
   dict construction 2.34x faster (64.64s → 27.64s), total pipeline
   34.2% faster (107.48s → 70.77s).
+- **Measured, no further cheap fix found:** dict construction's
+  remaining cost post-Phase-11 (`phase11b_remaining_dict_build_scoping.md`).
+  `dict(zip(...))` is now ~90% of `_build_real_terms`'s own cost and is
+  already at CPython's practical floor — ~56% of it is irreducible
+  string-hashing/dict-insertion work with no NumPy equivalent. Further
+  cuts would need a breaking API change or an unscoped C/Cython kernel,
+  not currently planned.
 - **Open, newly surfaced:** GPU acceleration of the WHT butterfly
   stage. Not worth pursuing before Phase 11 (21% of a Python-loop-
   dominated pipeline); after Phase 11, that stage is now 31.9% of a
   smaller total, close to dict_build's own remaining 39.1% — genuinely
-  marginal, not yet scoped in detail. Recommended next step: a further
-  dict_build sub-cost breakdown first (lower-risk, higher-certainty),
-  before committing to any GPU-port cost/benefit estimate.
+  marginal, not yet scoped in detail. With dict_build confirmed to have
+  no comparably cheap fix available, the decision now rests entirely on
+  a real GPU-port cost/benefit estimate (transfer overhead, new
+  toolchain/dependency, portability), not yet done.
 - **Open, scoped, not yet designed in detail:** Phase 12 (`chunk_size`
   auto-tuning and streaming-vs-dense auto-decision). Also open: Phase 5
   (prebuilt wheels, to make the native extension a hard requirement)
