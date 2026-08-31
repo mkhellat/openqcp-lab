@@ -2466,8 +2466,9 @@ log ""
 # ---------------------------------------------------------------------
 # v2 — SIMD (AVX2/AVX-512) real compile-and-execute micro-tests
 # (diagnostic only — this result must NEVER be used to auto-apply
-# -march=native anywhere; see profiling/compiler_flags_findings.md for
-# the known SIGILL wheel-portability hazard of doing that)
+# -march=native anywhere; see
+# profiling/cache_locality/compiler_flags_findings.md for the known
+# SIGILL wheel-portability hazard of doing that)
 # ---------------------------------------------------------------------
 
 log "== SIMD (compile-and-execute, diagnostic only — never auto-applied) =="
@@ -2539,7 +2540,7 @@ else
 fi
 log "  Note: diagnostic only — never used to auto-apply -march=native"
 log "  (known SIGILL wheel-portability hazard, see"
-log "  profiling/compiler_flags_findings.md)"
+log "  profiling/cache_locality/compiler_flags_findings.md)"
 
 log ""
 
