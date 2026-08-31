@@ -16,13 +16,13 @@ own entry point:
 - [`phase3b/`](phase3b/README.md) — sparsity-aware
   `fwht_pauli_coefficients` design exploration (Phase 3b).
 - [`cache_locality/`](cache_locality/README.md) — the cache-locality
-  investigation, Phase 6 through Phase 10's correction (13 findings).
+  investigation, Phase 6 through Phase 10's correction (14 findings).
 - [`phase9/`](phase9/phase9_findings.md) — chunked-accumulator
   space-complexity fix, N=150 measurement (Phase 9).
 - [`phase10/`](phase10/README.md) — streaming output, TBB
   re-measurement, N-scaling table (Phase 10).
-- [`phase11/`](phase11/README.md) — `dict_build` optimization scoping
-  (Phase 11).
+- [`phase11/`](phase11/README.md) — `dict_build` optimization, scoped
+  and implemented (Phase 11).
 - [`phase12/`](phase12/README.md) — `chunk_size` as a cache-locality
   lever, auto-tuning scoping (Phase 12).
 - [`../bindings/README.md`](../bindings/README.md) — the C/Cython/CFFI/
@@ -35,8 +35,8 @@ accumulated inside a single `phase10/` directory as they were
 discovered, since Phase 11 and Phase 12 were both *scoped* by findings
 that happened to surface during Phase 10's own investigation. But
 PLAN.md tracks Phase 10, 11, and 12 as three distinct phases with
-separate status (Phase 10 implemented; Phase 11 scoped, not
-implemented; Phase 12 scoped, not yet designed in detail) — keeping
+separate status (Phase 10 and Phase 11 implemented; Phase 12 scoped,
+not yet designed in detail) — keeping
 their findings docs and scripts under one directory obscured that
 distinction and made the directory the largest, most heterogeneous one
 in this tree. Splitting by actual phase ownership (which each finding's
@@ -323,24 +323,26 @@ included. **N=150 is now a solved, repeatable case.**
    vectorizing it plus `dict(zip(...))` construction gives a
    **2.7-3.2x** speedup on a synthetic 1M/10M-term benchmark.
 
-### Phase 11 — `dict_build` optimization (scoped 2026-08-27, not yet implemented)
+### Phase 11 — `dict_build` optimization (scoped 2026-08-27, implemented 2026-08-31)
 
-Not yet started as of this writing. `dict_build` — the per-chunk
-Python loop converting `(label, coefficient)` pairs into a `dict` —
-was found (Phase 10, finding 3 above) to be ~60% of total pipeline
-time at N=150. Scoping work (see
+`dict_build` — the per-chunk Python loop converting `(label,
+coefficient)` pairs into a `dict` — was found (Phase 10, finding 3
+above) to be ~60% of total pipeline time at N=150. Scoping work (see
 [`phase11/phase11_dict_build_scoping_findings.md`](phase11/phase11_dict_build_scoping_findings.md))
 broke this down further via a standalone microbenchmark: the per-term
 Hermiticity check (`abs(c.imag) > max(atol, 1e-6 * abs(c))`, evaluated
 one Python object at a time) is the single largest sub-cost — a fully
 vectorizable NumPy operation currently paid for one term at a time.
 Removing it (replaced with one vectorized check before the loop)
-produced a 3.76x speedup at 1M terms and 2.58x at 10M terms in
-isolation. A secondary win: `dict(zip(...))`'s C-level constructor
-beats an explicit per-item insert loop by a further ~30-40%. Not yet
-implemented against the real pipeline — see `../PLAN.md` Phase 11 for
-the remaining open design questions (preserving per-term error-message
-specificity, whether to apply to the non-streaming path too).
+produced a ~3.2x speedup at both 1M and 10M terms in isolation. A
+secondary win: `dict(zip(...))`'s C-level constructor beats an
+explicit per-item insert loop by a further ~30-40%.
+
+Implemented as a shared `_build_real_terms` helper used by both
+`fwht_pauli_terms` and `fwht_pauli_terms_iter`'s `assume_hermitian=True`
+branch (both the streaming and non-streaming paths) — see `../PLAN.md`
+Phase 11 for how the error-message-specificity design question was
+resolved (a rare-path `np.nonzero` re-scan on violation only).
 
 ### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning scoping (scoped 2026-08-27, not yet designed in detail)
 
@@ -376,17 +378,19 @@ detail as of this writing.
   the needle once dict construction dominates at N=150 scale). Still
   available as an opt-in `--parallel-labels` flag, since it is not
   harmful, just not currently the highest-leverage target.
-- **Open, scoped, not yet implemented:** Phase 11 (`dict_build`
-  vectorization) — the current highest-leverage remaining optimization
-  target, with a scoped fix and a measured 2.7-3.2x isolated-benchmark
-  upside not yet applied to the real pipeline. Phase 12 (`chunk_size`
-  auto-tuning and streaming-vs-dense auto-decision) — scoped, not yet
-  designed in detail. Also open: Phase 5 (prebuilt wheels, to make the
-  native extension a hard requirement) and Phase 7's remaining items
-  (TBB false-sharing/partitioner tuning — explicitly conditional on TBB
-  re-entering the hot path, which it has not; statistical rigor for
-  `perf`-based measurements; PyPI publishing strategy). See
-  `../PLAN.md` for full status on all of these.
+- **Solved and shipped (2026-08-31):** Phase 11 (`dict_build`
+  vectorization) — the per-term Hermiticity check and dict construction
+  in `fwht_pauli_terms`/`fwht_pauli_terms_iter` now use a shared,
+  vectorized `_build_real_terms` helper, a measured ~3.2x
+  isolated-benchmark win, applied to both the streaming and
+  non-streaming paths.
+- **Open, scoped, not yet designed in detail:** Phase 12 (`chunk_size`
+  auto-tuning and streaming-vs-dense auto-decision). Also open: Phase 5
+  (prebuilt wheels, to make the native extension a hard requirement)
+  and Phase 7's remaining items (TBB false-sharing/partitioner tuning —
+  explicitly conditional on TBB re-entering the hot path, which it has
+  not; statistical rigor for `perf`-based measurements; PyPI publishing
+  strategy). See `../PLAN.md` for full status on all of these.
 - **Known measurement confound to control for in any new work in this
   directory:** OpenBLAS thread-pool noise. Set `OPENBLAS_NUM_THREADS=1`
   for any new `perf`-based measurement unless specifically

@@ -240,6 +240,68 @@ def test_fwht_pauli_terms_assume_hermitian_true_rejects_non_hermitian_input():
         fwht_pauli_terms(operator, assume_hermitian=True)
 
 
+def test_fwht_pauli_terms_hermiticity_error_names_a_real_violating_term():
+    """PLAN.md Phase 11: the vectorized Hermiticity check must preserve
+    the original per-term loop's diagnostic specificity - the error
+    must name an actual violating label and its actual imaginary part,
+    not a generic "something failed" message. Since the check is now
+    vectorized over the whole array and only re-scans on the rare
+    violation path (np.nonzero, first match), this specifically
+    exercises that fallback path with a real, decomposable operator
+    (not a placeholder)."""
+    rng = np.random.default_rng(22)
+    n_qubits = 2
+    dim = 2**n_qubits
+    operator = rng.random((dim, dim)) + 1j * rng.random((dim, dim))
+
+    # Independently recompute which term(s) actually violate, using
+    # the exact same tolerance formula as the implementation, so the
+    # error message can be checked against a value derived the same
+    # way production computes it - not just any string.
+    coefficients = fwht_pauli_coefficients(operator, sparse=False)
+    atol = 1e-10
+    violating = np.argwhere(
+        np.abs(coefficients.imag) > np.maximum(atol, 1e-6 * np.abs(coefficients))
+    )
+    assert len(violating) > 0, "test operator must actually violate Hermiticity"
+    x0, z0 = violating[0]
+    expected_label = pauli_label(int(x0), int(z0), n_qubits)
+    expected_imag = coefficients[x0, z0].imag
+
+    with pytest.raises(ValueError) as excinfo:
+        fwht_pauli_terms(operator)
+
+    message = str(excinfo.value)
+    assert repr(expected_label) in message
+    assert repr(expected_imag) in message
+
+
+def test_build_real_terms_tolerance_floor_uses_full_complex_magnitude():
+    """PLAN.md Phase 11 design question 3: the vectorized check's
+    tolerance floor must be built from abs(c) (the full complex
+    magnitude), not abs(c.real) - an easy, silently-wrong substitution
+    (caught once already while scoping this phase's microbenchmark,
+    see profiling/phase11/phase11_dict_build_scoping_findings.md's
+    2026-08-31 correction). Note this cannot be turned into a
+    pass/fail-verdict regression test: analysis while writing this
+    test showed abs(c) and abs(c.real) agree to leading order for any
+    term near either floor (their difference is O(imag**2 / real),
+    negligible exactly where it would flip a verdict), and for terms
+    far from the floor both formulas agree the term is a clear
+    violation either way - no single term's Hermiticity verdict can
+    distinguish the two formulas. This instead pins down the formula
+    directly against the module's own source, so a future edit that
+    reintroduces the substitution is still caught even though no
+    behavioral test can."""
+    import inspect
+
+    from paulikit.algorithms.fwht import _build_real_terms
+
+    source = inspect.getsource(_build_real_terms)
+    assert "c_abs = np.abs(coefficient_values)" in source
+    assert "np.abs(coefficient_values.real)" not in source
+
+
 def test_fwht_pauli_terms_assume_hermitian_false_decomposes_non_hermitian_input():
     """With assume_hermitian=False, fwht_pauli_terms must return complex
     coefficients and reconstruct the (non-Hermitian) operator exactly."""

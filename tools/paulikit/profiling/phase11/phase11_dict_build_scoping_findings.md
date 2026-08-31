@@ -35,13 +35,28 @@ formulas.
 
 | n_terms | A (today) | B (vectorized + dict(zip)) | speedup |
 |---|---|---|---|
-| 1,000,000 | 0.772s | 0.243s | 3.18x |
-| 10,000,000 | 8.339s | 3.098s | 2.69x |
+| 1,000,000 | 0.879s | 0.276s | 3.19x |
+| 10,000,000 | 9.961s | 3.138s | 3.17x |
 
 (An earlier interactive exploration, not separately committed, found
 similar numbers - 3.76x/2.58x at the same two sizes - the exact
 multiplier varies run to run within a normal range but the effect is
 consistently large and in the same direction.)
+
+**2026-08-31 correction:** the script's first committed version used
+`np.abs(coeffs.real)` for Variant B's tolerance floor, but the real
+per-term formula in `fwht.py` (`max(atol, 1e-6 * abs(c))`) uses the
+*full complex magnitude* `abs(c)`, not `abs(c.real)` - these differ
+whenever the imaginary part is non-negligible, exactly the case this
+check exists to catch. Caught before touching production code (not
+after), fixed to `np.abs(coeffs)`, and the synthetic data was changed
+to include a small non-zero imaginary part (the original was
+real-only, `+0j`, which meant `abs(c.real) == abs(c)` always held and
+the bug could never have been observed by running the old script).
+Re-run with the fix: numbers above are the corrected re-run, all
+`assert real_terms_a == real_terms_b` checks still pass, and the
+speedup conclusion is unchanged (same operation count either way) -
+only the formula's correctness was ever in question, not the timing.
 
 ## Interpretation
 

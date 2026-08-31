@@ -23,8 +23,14 @@ import numpy as np
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 1_000_000
 rng = np.random.default_rng(0)
 labels = [f"XYZ{i}" for i in range(n)]
-coeffs = ((rng.random(n) + 1e-12) + 0j).astype(complex)
 atol = 1e-10
+# Real part dominates (as a true near-Hermitian operator's would); a
+# small, uniformly-below-tolerance imaginary part is included so the
+# tolerance-floor formula (abs(c), not abs(c.real)) is actually
+# exercised - an all-real coeffs array can't distinguish the two.
+real_part = rng.random(n) + 1e-12
+imag_part = (rng.random(n) - 0.5) * 1e-8 * real_part
+coeffs = (real_part + 1j * imag_part).astype(complex)
 
 # Variant A: today's real code path - per-term Hermiticity check
 # (abs/max/compare, evaluated in the Python loop) plus a per-term
@@ -40,10 +46,17 @@ t_current = time.perf_counter() - t0
 
 # Variant B: vectorized Hermiticity check (NumPy, once for the whole
 # chunk) + dict(zip(...)) construction instead of an explicit loop.
+#
+# Tolerance floor must use abs(c) - the full complex magnitude, same
+# as the scalar per-term form (fwht.py) - not abs(c.real). An earlier
+# version of this script used abs(c.real) here, which is NOT
+# equivalent whenever the imaginary part is non-negligible - exactly
+# the case this check exists to catch. Caught before implementation,
+# not after (PLAN.md Phase 11 design question 3).
 t0 = time.perf_counter()
 imag_abs = np.abs(coeffs.imag)
-real_abs = np.abs(coeffs.real)
-violation = imag_abs > np.maximum(atol, 1e-6 * real_abs)
+c_abs = np.abs(coeffs)
+violation = imag_abs > np.maximum(atol, 1e-6 * c_abs)
 if violation.any():
     raise ValueError("unexpected Hermiticity violation in synthetic data")
 real_parts = coeffs.real.tolist()

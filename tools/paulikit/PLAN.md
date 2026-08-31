@@ -1992,17 +1992,51 @@ speed - matches the priority order's "performance first, but not at
 the cost of reliability" framing already established for this
 project.
 
-**Not yet done:** the microbenchmark itself is not yet a committed,
-checked-in script (per this project's own "document exploration
-scripts" convention) - only its numbers are recorded here from an
-interactive session. A committed version, plus bit-for-bit
-correctness tests against the existing per-term loop (both the
-`assume_hermitian=True` and `False` branches, and the error-message
-preservation from design question 1), should be the first concrete
-implementation step, before any performance claim from this
-scoping is trusted as production-verified.
+**Update (2026-08-31): implemented.** `dict_build_microbenchmark.py`
+was committed (per this project's "document exploration scripts"
+convention) alongside the scoping doc. Before implementing in
+production, re-running it surfaced a real formula bug in its own
+Variant B: the tolerance floor used `np.abs(coeffs.real)` instead of
+the production formula's `abs(c)` (full complex magnitude) - fixed in
+the script (see `phase11_dict_build_scoping_findings.md`'s 2026-08-31
+correction) and re-run; the 2.7-3.2x speedup conclusion was unaffected
+(same operation count either way, only the formula's correctness was
+in question).
 
-**Status: scoped 2026-08-27, not yet implemented.**
+Implementation: a new shared helper, `_build_real_terms` (in
+`fwht.py`, used by both `fwht_pauli_terms` and
+`fwht_pauli_terms_iter`'s `assume_hermitian=True` branch), replaces
+the per-term Python loop with one vectorized NumPy check
+(`np.abs`/`np.maximum`/comparison, using `abs(c)` correctly) plus
+`dict(zip(labels, coefficient_values.real.tolist()))`. Design question
+2 is resolved as "both" (the same helper serves both call sites, since
+both had the identical loop pattern). Design question 1 (error-message
+specificity) is preserved: on violation, `np.nonzero` finds the first
+offending index only on that rare path and reconstructs the exact same
+message format as the original per-term loop - verified by a new test
+asserting the raised message names the real violating label and its
+exact imaginary part (`test_fwht_pauli_terms_hermiticity_error_names_a_real_violating_term`).
+
+Design question 3 (bit-for-bit tolerance-floor equivalence) turned out
+to be **not testable behaviorally**: analysis while writing its
+regression test showed `abs(c)` and `abs(c.real)` agree to leading
+order for any term whose imaginary part sits near either floor (their
+difference is `O(imag**2 / real)`, negligible exactly where it would
+flip a pass/fail verdict) - no single term's Hermiticity outcome can
+distinguish the two formulas, which is also why the mistaken
+`abs(c.real)` substitution above was never caught by any prior
+behavioral test. Covered instead by a source-inspection test
+(`test_build_real_terms_tolerance_floor_uses_full_complex_magnitude`)
+pinning the exact formula used, confirmed via deliberate mutation
+testing to fail if the substitution is reintroduced.
+
+All 81 tests pass (`make check`), including two new ones covering
+error-message fidelity and the tolerance-floor formula. Both
+`fwht_pauli_terms` and `fwht_pauli_terms_iter` use the shared helper;
+the non-chunked (`chunk_size=None`) dense path in `fwht_pauli_terms`
+is covered since it also calls `_build_real_terms`.
+
+**Status: implemented 2026-08-31.**
 
 ### Phase 12 — auto-tuned `chunk_size` and streaming-vs-dense decision, with manual override always available (scoped 2026-08-27, not yet designed in detail)
 

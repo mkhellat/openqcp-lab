@@ -614,6 +614,46 @@ def pauli_label(x_mask: int, z_mask: int, n_qubits: int) -> str:
     return "".join(chars)
 
 
+def _build_real_terms(
+    labels: list[str],
+    coefficient_values: NDArray[np.complexfloating],
+    atol: float,
+) -> dict[str, float]:
+    """Shared ``assume_hermitian=True`` term-dict builder for
+    ``fwht_pauli_terms``/``fwht_pauli_terms_iter`` - PLAN.md Phase 11.
+
+    Vectorizes what was previously a per-term Python loop doing an
+    ``abs()``/``max()``/comparison Hermiticity check plus a per-item
+    dict insert - measured (``profiling/phase11/``) as ~60% of total
+    pipeline time at N=150, dominated by the per-term check rather
+    than the dict construction itself. The tolerance floor here must
+    match the original scalar form's ``max(atol, 1e-6 * abs(c))``
+    exactly - ``abs(c)`` is the *full complex magnitude*, not
+    ``abs(c.real)`` (an easy, non-equivalent substitution: they only
+    agree when the imaginary part is already negligible, which is
+    exactly the case this check exists to catch).
+
+    On violation, falls back to the same per-term scan the old code
+    always ran, only for the (rare) purpose of finding the first
+    offending term and reconstructing today's exact error message -
+    this keeps the common, non-violating path fully vectorized while
+    losing none of the original diagnostic specificity.
+    """
+    c_abs = np.abs(coefficient_values)
+    imag_abs = np.abs(coefficient_values.imag)
+    violation = imag_abs > np.maximum(atol, 1e-6 * c_abs)
+    if violation.any():
+        first = int(np.nonzero(violation)[0][0])
+        label = labels[first]
+        c = coefficient_values[first]
+        raise ValueError(
+            f"term {label!r} has non-negligible "
+            f"imaginary part {c.imag!r} - operator may not be Hermitian; "
+            "pass assume_hermitian=False to decompose it anyway"
+        )
+    return dict(zip(labels, coefficient_values.real.tolist()))
+
+
 def fwht_pauli_terms(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     atol: float = 1e-10,
@@ -703,16 +743,7 @@ def fwht_pauli_terms(
     labels = _pauli_label_batch(x_nonzero, z_nonzero, n_qubits)
 
     if assume_hermitian:
-        real_terms: dict[str, float] = {}
-        for label, c in zip(labels, coefficient_values.tolist()):
-            if abs(c.imag) > max(atol, 1e-6 * abs(c)):
-                raise ValueError(
-                    f"term {label!r} has non-negligible "
-                    f"imaginary part {c.imag!r} - operator may not be Hermitian; "
-                    "pass assume_hermitian=False to decompose it anyway"
-                )
-            real_terms[label] = float(c.real)
-        return real_terms
+        return _build_real_terms(labels, coefficient_values, atol)
 
     complex_terms: dict[str, complex] = {
         label: complex(c) for label, c in zip(labels, coefficient_values.tolist())
@@ -829,16 +860,7 @@ def fwht_pauli_terms_iter(
         labels = _pauli_label_batch(chunk_x, chunk_z, n_qubits, parallel=parallel_labels)
 
         if assume_hermitian:
-            real_terms: dict[str, float] = {}
-            for label, c in zip(labels, chunk_coeff.tolist()):
-                if abs(c.imag) > max(atol, 1e-6 * abs(c)):
-                    raise ValueError(
-                        f"term {label!r} has non-negligible "
-                        f"imaginary part {c.imag!r} - operator may not be Hermitian; "
-                        "pass assume_hermitian=False to decompose it anyway"
-                    )
-                real_terms[label] = float(c.real)
-            yield real_terms
+            yield _build_real_terms(labels, chunk_coeff, atol)
         else:
             yield {
                 label: complex(c) for label, c in zip(labels, chunk_coeff.tolist())

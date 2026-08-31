@@ -1,8 +1,10 @@
 # Phase 11: `dict_build` optimization scoping
 
-Scoped 2026-08-27, not yet implemented. See `../../PLAN.md` Phase 11
-for the design/implementation narrative and remaining open questions;
-this directory holds the supporting measurement.
+Scoped 2026-08-27, implemented 2026-08-31. See `../../PLAN.md` Phase
+11 for the full design/implementation narrative (including a formula
+bug this scoping's own microbenchmark had, caught and fixed before
+production code was touched); this directory holds the supporting
+measurement.
 
 This phase was scoped by a finding inside Phase 10's own investigation
 (`../phase10/full_pipeline_n150_findings.md`): a per-stage wall-clock
@@ -24,16 +26,18 @@ speedup at 1M terms and 2.58x at 10M terms in isolation. A secondary
 win: `dict(zip(...))`'s C-level constructor beats an explicit per-item
 insert loop by a further ~30-40%.
 
-**Not yet implemented against the real pipeline** — see `../../PLAN.md`
-Phase 11 for the remaining open design questions (preserving per-term
-error-message specificity, whether to apply to the non-streaming path
-too).
+**Implemented 2026-08-31** — see `../../PLAN.md` Phase 11 for how the
+open design questions were resolved: a shared `_build_real_terms`
+helper now backs both `fwht_pauli_terms` and `fwht_pauli_terms_iter`
+(including the non-streaming/dense path), preserving per-term
+error-message specificity via a rare-path `np.nonzero` re-scan on
+violation only.
 
 ## Takeaway if you only read one thing
 
-Phase 11 is the current highest-leverage remaining optimization target
-in this whole profiling trail: a scoped fix with a measured 2.7-3.2x
-isolated-benchmark upside, not yet applied to the real pipeline. It is
-a pure performance improvement, not a correctness fix — Phase 10's
-streaming result (N=150 completing successfully) does not depend on
-it either way.
+Phase 11 was the highest-leverage remaining optimization target in
+this whole profiling trail: a scoped fix with a measured 2.7-3.2x
+isolated-benchmark upside, now applied to the real pipeline. It is a
+pure performance improvement, not a correctness fix — Phase 10's
+streaming result (N=150 completing successfully) never depended on it
+either way.
