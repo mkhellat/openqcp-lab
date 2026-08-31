@@ -33,11 +33,30 @@ helper now backs both `fwht_pauli_terms` and `fwht_pauli_terms_iter`
 error-message specificity via a rare-path `np.nonzero` re-scan on
 violation only.
 
+## Post-implementation re-measurement
+
+[`n150_post_implementation_findings.md`](n150_post_implementation_findings.md) -
+re-ran the same real-N=150 per-stage breakdown Phase 11 was scoped
+from, against the shipped fix. Dict construction dropped 64.64s ->
+27.64s (2.34x, short of the synthetic 2.7-3.2x estimate), cutting
+total pipeline time 34.2% (107.48s -> 70.77s). Because dict_build
+shrank, every other stage's *relative* share rose - most notably the
+WHT butterfly, from 21.1% to **31.9%** of total time, now close to
+dict_build (39.1%) rather than dwarfed by it. This was the direct
+trigger for a live GPU-worth-it question the user asked mid-session:
+the answer moved from "clearly not" to "genuinely marginal" -
+recommended next step is scoping dict_build's own remaining internals
+further (lower-risk, higher-certainty) before committing to any GPU
+work, not yet done.
+
 ## Takeaway if you only read one thing
 
 Phase 11 was the highest-leverage remaining optimization target in
 this whole profiling trail: a scoped fix with a measured 2.7-3.2x
-isolated-benchmark upside, now applied to the real pipeline. It is a
-pure performance improvement, not a correctness fix — Phase 10's
-streaming result (N=150 completing successfully) never depended on it
-either way.
+isolated-benchmark upside, now applied to the real pipeline (2.34x
+real-world, 34.2% total pipeline speedup). It is a pure performance
+improvement, not a correctness fix — Phase 10's streaming result
+(N=150 completing successfully) never depended on it either way. Its
+side effect — the WHT butterfly's relative share nearly doubling — is
+what makes GPU acceleration worth a further look now, though not yet
+worth committing to.

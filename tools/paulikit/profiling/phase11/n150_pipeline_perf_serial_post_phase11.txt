@@ -1,0 +1,22 @@
+total_terms=91652096
+
+ Performance counter stats for '/home/desadm/.venvs/paulikit/bin/python n150_pipeline_perf_serial.py':
+
+         71,072.55 msec task-clock:u                                                          
+   159,554,178,811      cycles:u                                                                (40.03%)
+   227,544,378,197      instructions:u                                                          (50.02%)
+    17,547,044,349      cache-references:u                                                      (50.00%)
+     8,166,088,107      cache-misses:u                                                          (49.96%)
+    55,811,898,618      L1-dcache-loads:u                                                       (49.92%)
+     8,833,823,595      L1-dcache-load-misses:u                                                 (49.97%)
+     2,304,901,789      LLC-loads:u                                                             (40.00%)
+     1,021,145,274      LLC-load-misses:u                                                       (40.03%)
+    68,338,377,022      cycle_activity.stalls_total:u                                           (40.05%)
+    62,583,827,716      cycle_activity.stalls_mem_any:u                                         (40.06%)
+
+      71.179855305 seconds time elapsed
+
+      65.371099000 seconds user
+       4.643159000 seconds sys
+
+

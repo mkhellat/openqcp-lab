@@ -25,8 +25,13 @@ To reproduce:
      (everything between the WHT call and the `yield`)
 4. In `fwht_pauli_terms_iter`, wrap two more sections the same way:
    - "label": the `_pauli_label_batch(...)` call
-   - "dict_build": the `real_terms`/`complex_terms` dict-construction
-     loop (both the `assume_hermitian` branches)
+   - "dict_build": the `_build_real_terms(...)` call (assume_hermitian
+     branch) / the `complex_terms` dict comprehension (else branch) -
+     both need `yield result` moved after the timer closes, since
+     Phase 11 (2026-08-31) replaced the old inline dict-construction
+     loop with a shared helper call (see
+     ../phase11/n150_post_implementation_findings.md for a worked
+     example of this exact instrumentation, post-Phase-11)
 5. Update this script's `INSTRUMENTED_MODULE_PATH` below to point at
    your scratch copy, then run under a memory cap, e.g.:
 

@@ -2038,6 +2038,29 @@ is covered since it also calls `_build_real_terms`.
 
 **Status: implemented 2026-08-31.**
 
+**Update (2026-08-31, same day): re-measured against the real N=150
+pipeline**, prompted directly by the user asking whether GPU
+acceleration was now worth pursuing for the WHT butterfly stage. See
+`profiling/phase11/n150_post_implementation_findings.md`. Real result:
+dict construction 64.64s → 27.64s (2.34x, short of the synthetic
+2.7-3.2x estimate - real coefficient-array `.tolist()`/layout costs
+differ from the synthetic benchmark), total pipeline 107.48s → 70.77s
+(34.2% faster). Because dict_build shrank, every other stage's
+*relative* share rose - most notably the WHT butterfly, from 21.1% to
+**31.9%** of total time, now close to dict_build's remaining 39.1%
+rather than dwarfed by it (roughly 1.2:1 instead of 3:1).
+
+**This changes the GPU-worth-it answer** from "clearly not" (21% of a
+Python-loop-dominated pipeline) to "genuinely marginal" (31.9% of a
+now-smaller total, competitive with the remaining dominant stage).
+Recommendation, not yet acted on: scope a further dict_build sub-cost
+breakdown first (lower-risk, higher-certainty - may still have
+easily-reachable headroom neither this nor the original scoping
+measured in enough granularity) before committing to any GPU work,
+which carries real, not-yet-estimated costs (host<->device transfer
+overhead, new toolchain/dependency, portability - no existing GPU
+dependency in this project).
+
 ### Phase 12 — auto-tuned `chunk_size` and streaming-vs-dense decision, with manual override always available (scoped 2026-08-27, not yet designed in detail)
 
 **Motivation.** Prompted directly by the user questioning whether

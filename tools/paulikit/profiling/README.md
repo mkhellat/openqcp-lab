@@ -322,6 +322,15 @@ included. **N=150 is now a solved, repeatable case.**
    construction itself, is the dominant sub-cost within dict-building;
    vectorizing it plus `dict(zip(...))` construction gives a
    **2.7-3.2x** speedup on a synthetic 1M/10M-term benchmark.
+6. [`phase11/n150_post_implementation_findings.md`](phase11/n150_post_implementation_findings.md)
+   — re-runs finding 3's exact real-N=150 breakdown against the
+   shipped Phase 11 fix: dict construction 64.64s → 27.64s (2.34x
+   real-world, short of the synthetic estimate), total pipeline time
+   107.48s → 70.77s (**34.2% faster**). Since dict_build shrank, the
+   WHT butterfly's *relative* share nearly doubled (21.1% → **31.9%**)
+   even though its absolute time was flat — moving GPU acceleration of
+   that stage from "clearly not worth it" to "genuinely marginal,"
+   prompted by a direct user question.
 
 ### Phase 11 — `dict_build` optimization (scoped 2026-08-27, implemented 2026-08-31)
 
@@ -343,6 +352,14 @@ Implemented as a shared `_build_real_terms` helper used by both
 branch (both the streaming and non-streaming paths) — see `../PLAN.md`
 Phase 11 for how the error-message-specificity design question was
 resolved (a rare-path `np.nonzero` re-scan on violation only).
+
+**Re-measured against the real N=150 pipeline** (finding 6 above,
+[`phase11/n150_post_implementation_findings.md`](phase11/n150_post_implementation_findings.md)):
+2.34x real-world speedup on dict construction, 34.2% faster total
+pipeline. Side effect: the WHT butterfly's relative share rose from
+21.1% to 31.9% of total time — real enough to be worth scoping GPU
+acceleration next, though a further dict_build sub-cost breakdown is
+recommended first as the lower-risk option.
 
 ### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning scoping (scoped 2026-08-27, not yet designed in detail)
 
@@ -381,9 +398,16 @@ detail as of this writing.
 - **Solved and shipped (2026-08-31):** Phase 11 (`dict_build`
   vectorization) — the per-term Hermiticity check and dict construction
   in `fwht_pauli_terms`/`fwht_pauli_terms_iter` now use a shared,
-  vectorized `_build_real_terms` helper, a measured ~3.2x
-  isolated-benchmark win, applied to both the streaming and
-  non-streaming paths.
+  vectorized `_build_real_terms` helper. Real-world effect at N=150:
+  dict construction 2.34x faster (64.64s → 27.64s), total pipeline
+  34.2% faster (107.48s → 70.77s).
+- **Open, newly surfaced:** GPU acceleration of the WHT butterfly
+  stage. Not worth pursuing before Phase 11 (21% of a Python-loop-
+  dominated pipeline); after Phase 11, that stage is now 31.9% of a
+  smaller total, close to dict_build's own remaining 39.1% — genuinely
+  marginal, not yet scoped in detail. Recommended next step: a further
+  dict_build sub-cost breakdown first (lower-risk, higher-certainty),
+  before committing to any GPU-port cost/benefit estimate.
 - **Open, scoped, not yet designed in detail:** Phase 12 (`chunk_size`
   auto-tuning and streaming-vs-dense auto-decision). Also open: Phase 5
   (prebuilt wheels, to make the native extension a hard requirement)
