@@ -2360,6 +2360,26 @@ confirmed bit-identical to `fwht_pauli_terms` at N=25/50.
    confirming they actually catch it) — 2 new tests
    (`tests/test_autotune.py`), 103 tests total, all pass.
 
+**Post-bugfix re-verification, 2026-09-01 (same day, follow-up)** —
+see `profiling/phase12/post_bugfix_reverification_findings.md`. Both
+headline claims above were originally measured *before* either bug
+fix landed; re-run fresh afterward (Bug 1's fix in particular changes
+`auto_decompose()`'s actual routing decision, so this was not just
+due diligence for its own sake). Confirmed for real, not by hand:
+correctness holds bit-exact (`max_coefficient_error=0.000e+00`) at
+N=25/50/100 with the fixed formula correctly routing N=25/50 to dense
+and **N=100 to streaming** (a real, observed behavior change from
+before the fix); the chunk_size speedup persists at 2.09x at N=100 and
+1.84x at N=150 (both within normal run-to-run variance of the
+original 2.32x/2.04x numbers, not a regression from either fix,
+since neither touched `fwht_pauli_terms_iter` or the chunk_size
+formula itself); `auto_decompose()` correctly picks streaming at both
+N=100 and N=150 with wall-clock closely matching the direct
+`fwht_pauli_terms_iter` call. The N=150 run stayed at 10-11 GiB
+available memory throughout (`free -h` polled every 5s) - a stark
+contrast to the pre-fix bug-hunting runs that dropped to 177-593 MiB
+free, itself confirmation the fix is working as intended.
+
 **Known gaps, explicitly not yet addressed:**
 - Design question 2 (the small-chunk-size floor, currently a
   placeholder constant of 8 based on one old N=25 data point) has not

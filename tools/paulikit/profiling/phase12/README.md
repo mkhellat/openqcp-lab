@@ -95,20 +95,37 @@ doc's own "What this does NOT show."
    *threads* in one process. Fixed with a lock, verified via mutation
    testing that the new regression tests actually catch the race.
 
+## Post-bugfix re-verification: does it still work?
+
+[`post_bugfix_reverification_findings.md`](post_bugfix_reverification_findings.md) -
+every number above was originally measured *before* either bug fix
+landed. Re-run fresh afterward, at direct user request rather than
+trusting old numbers: correctness still holds bit-exact at N=25/50/100
+(with the fixed formula now correctly routing N=100 to streaming, a
+real behavior change from before the fix), and the chunk_size speedup
+persists - **2.09x at N=100, 1.84x at N=150** - within normal
+run-to-run variance of the original 2.32x/2.04x figures, confirming
+neither fix regressed the actual performance win. The N=150 re-run
+stayed at 10-11 GiB available memory throughout, unlike the pre-fix
+bug-hunting runs that dropped to 177-593 MiB free - itself
+confirmation the fix works as intended.
+
 ## Takeaway if you only read one thing
 
 `chunk_size=256` (used throughout this project's own Phase 9/10 docs)
-is not a tuned value — auto-tuning it delivers a real, measured 2x+
+is not a tuned value — auto-tuning it delivers a real, measured ~2x
 speedup at both N=100 and N=150 against that old default, with
-correctness confirmed via identical term counts. The implementation as
-first shipped 2026-09-01 had a real safety gap (the streaming-vs-dense
-memory-budget estimate underestimating the dense path's true peak
-footprint by 3x+), **fixed the same day** - see
+correctness confirmed via identical term counts, **re-confirmed fresh
+after both bugs found by the original re-measurement were fixed**. The
+implementation as first shipped 2026-09-01 had a real safety gap (the
+streaming-vs-dense memory-budget estimate underestimating the dense
+path's true peak footprint by 3x+), **fixed the same day** - see
 `dense_memory_estimate_fix_findings.md`. The cache-probe
 non-idempotency was investigated, found to only be a theoretical issue
 for the shipped code path, and a real (different) thread-safety gap
 was found and fixed instead - see
 `cache_probe_idempotency_investigation_findings.md`. Both bugs from
 the re-measurement are now closed, verified via mutation testing where
-applicable and 103 tests total passing - `auto_decompose()` is safe to
-recommend for memory-constrained/HPC use as shipped.
+applicable, and 103 tests total passing - `auto_decompose()` is safe
+to recommend for memory-constrained/HPC use as shipped, with its
+real-world speedup confirmed post-fix, not just pre-fix.

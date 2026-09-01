@@ -440,6 +440,18 @@ thread-safety gap was found (concurrent threads in one process could
 race to call the probe/memory detection twice) and fixed with a lock,
 verified via mutation testing.
 
+**Post-bugfix re-verification (2026-09-01, same day):**
+[`phase12/post_bugfix_reverification_findings.md`](phase12/post_bugfix_reverification_findings.md) -
+every number above was measured *before* either fix landed; re-run
+fresh afterward at direct user request. Both headline claims hold up:
+correctness still bit-exact at N=25/50/100 (with the fixed formula now
+correctly routing N=100 to streaming, a real observed behavior change
+from before the fix), and the chunk_size speedup persists - 2.09x at
+N=100, 1.84x at N=150 - within normal run-to-run variance of the
+original 2.32x/2.04x figures. The N=150 re-run's memory stayed healthy
+throughout (10-11 GiB available), unlike the pre-fix bug-hunting runs
+that dropped to 177-593 MiB free - itself confirmation the fix works.
+
 ## Current state: what's solved vs. open
 
 - **Solved and shipped:** the N=50/N=100 label-generation and

@@ -16,7 +16,7 @@ with free -h monitoring before/after.
 """
 import time
 
-from paulikit.algorithms import autotune
+from paulikit.algorithms import autotune, fwht
 from paulikit.algorithms.fwht import auto_decompose, fwht_pauli_terms_iter
 from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
 
@@ -32,11 +32,15 @@ dim = padded.shape[0]
 
 auto_chunk_size = autotune.recommended_chunk_size(dim)
 budget = autotune.available_memory_bytes()
-estimated_dense_bytes = dim * dim * 16
+# Post Bug-1-fix accounting (see dense_memory_estimate_fix_findings.md) -
+# matches what auto_decompose() itself actually compares against.
+estimated_dense_bytes = dim * dim * 16 * fwht._DENSE_MEMORY_MULTIPLIER
+dense_threshold = budget * fwht._DENSE_MEMORY_SAFETY_FRACTION
 
 print(f"N={N_OSCILLATORS} dim={dim} auto_chunk_size={auto_chunk_size} "
-      f"available_memory_bytes={budget:,} estimated_dense_bytes={estimated_dense_bytes:,} "
-      f"dense_threshold={budget * 0.5:,.0f}")
+      f"available_memory_bytes={budget:,} "
+      f"estimated_dense_bytes={estimated_dense_bytes:,.0f} "
+      f"dense_threshold={dense_threshold:,.0f}")
 
 
 def time_streaming_once(chunk_size):
