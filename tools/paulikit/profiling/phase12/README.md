@@ -129,3 +129,22 @@ the re-measurement are now closed, verified via mutation testing where
 applicable, and 103 tests total passing - `auto_decompose()` is safe
 to recommend for memory-constrained/HPC use as shipped, with its
 real-world speedup confirmed post-fix, not just pre-fix.
+
+## The chunk_size floor: investigated, found scale-dependent, not yet fixed
+
+[`chunk_size_floor_scale_dependence_findings.md`](chunk_size_floor_scale_dependence_findings.md) -
+prompted by direct user suspicion after noticing streaming's abundant
+unused memory during the re-measurement runs above ("does that
+indicate our chunking is not optimal?"). It did: real N=150/N=200
+chunk_size sweeps (first-ever measurements at these scales for this
+question) found the current floor (8) is measurably suboptimal at
+both - `chunk_size=2` wins at N=150 (11% faster, mechanism confirmed
+via `perf stat`), `chunk_size=1` wins at N=200 (22% faster) - while
+`chunk_size=8` remains clearly best at N=25/50. Best `chunk_size`
+decreases monotonically as `dim` grows; no single static constant fits
+the whole N=25-200 range. Also confirmed directly: real memory usage
+stays flat (process RSS 88-106 MiB) throughout every N=150/200 run
+regardless of `chunk_size` - the headroom the user noticed is real and
+expected (Phase 9's streaming design working as intended), even though
+it correctly prompted checking chunk_size tuning specifically. A real
+dim-dependent floor formula is needed next, not yet designed.

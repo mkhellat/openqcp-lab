@@ -2380,14 +2380,31 @@ available memory throughout (`free -h` polled every 5s) - a stark
 contrast to the pre-fix bug-hunting runs that dropped to 177-593 MiB
 free, itself confirmation the fix is working as intended.
 
-**Known gaps, explicitly not yet addressed:**
-- Design question 2 (the small-chunk-size floor, currently a
-  placeholder constant of 8 based on one old N=25 data point) has not
-  been re-derived with a fresh sweep. The 2026-09-01 re-measurement's
-  own results (chunk_size=8 beating 256 by 2x+ at both N=100/150) are
-  consistent with the floor not being obviously wrong at this scale,
-  but do not test whether an even smaller value would do better or
-  worse.
+**Known gaps:**
+- **Investigated 2026-09-01 (same day, follow-up), NOT YET FIXED** -
+  see `profiling/phase12/chunk_size_floor_scale_dependence_findings.md`.
+  Design question 2 (the small-chunk-size floor) prompted by direct
+  user suspicion after noticing streaming's abundant unused memory
+  during the re-measurement runs. Real N=150/N=200 chunk_size sweeps
+  (single-run then repeated-run then `perf stat`-confirmed) found the
+  current floor (8) is measurably suboptimal at both scales -
+  `chunk_size=2` wins at N=150 (11% faster, mechanism confirmed via
+  cache-miss ratio), `chunk_size=1` wins at N=200 (22% faster) - while
+  a direct re-check found `chunk_size=8` is still clearly best at
+  N=25/50 (2 would be 12-57% slower there). **No single static floor
+  constant is right across N=25-200** - best `chunk_size` decreases
+  monotonically as `dim` grows (8 at dim=512/2048, 2 at dim=16384, 1
+  at dim=32768), and even the "best working-set size" doesn't resolve
+  to one fixed cache-level target (fits L2 at small N, spills into L3
+  at N=150/200). A real dim-dependent formula is needed, not a
+  one-off constant change - not yet designed. Also confirmed directly
+  during this investigation: real system memory usage stayed flat
+  (~2.6-2.9 GiB, process RSS 88-106 MiB) throughout every N=150/200
+  run regardless of `chunk_size`, confirming Phase 9's streaming
+  design bounds memory correctly (`O(chunk_size * dim)`, decoupled
+  from total term count) - the abundant headroom the user noticed is
+  real and expected, not itself a bug, even though it correctly
+  prompted checking whether chunk_size was tuned well.
 - **Fixed 2026-09-01**: `configure`'s RAM/swap diagnostic section
   (Linux path) now additionally reports `/proc/meminfo`'s
   `MemAvailable` and any cgroup v2/v1 memory cap, matching exactly
