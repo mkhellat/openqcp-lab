@@ -2260,8 +2260,50 @@ filesystems (Lustre/GPFS) can behave very differently than local disk
 under many small per-chunk appends - not re-scoped, since checkpointing
 remains off by default.
 
-**Not yet implemented as of this update** - see task list for
-progress; this section records the finalized design, code follows.
+**Implemented 2026-09-01.** Both auto-decisions are live:
+
+- `src/paulikit/algorithms/autotune.py` - `recommended_chunk_size(dim)`
+  (empirical-probe-first, declared-`/sys`-size fallback, fixed-32
+  last-resort, per-process cached) and `available_memory_bytes()`
+  (`/proc/meminfo` `MemAvailable`-first, POSIX `SC_AVPHYS_PAGES`
+  fallback, minimum against any cgroup v2/v1 memory cap, per-process
+  cached).
+- `fwht.auto_decompose(operator, ...)` - the new top-level function per
+  design decision 5 above. Estimates the dense path's worst-case
+  footprint as `dim**2 * 16` bytes (a safe upper bound - see its own
+  docstring for why this doesn't pre-scan the operator for the real
+  `n_active`), compares against half the available memory budget (a
+  deliberate safety margin, `_DENSE_MEMORY_SAFETY_FRACTION = 0.5`, not
+  yet independently tuned), and calls `fwht_pauli_terms` (dense) or
+  `fwht_pauli_terms_iter` with an auto-tuned `chunk_size` (streaming)
+  accordingly. `fwht_pauli_terms`/`fwht_pauli_terms_iter` themselves
+  are completely unchanged - `auto_decompose` is purely additive, per
+  design decision 5.
+- Tests: `tests/test_autotune.py` (14 tests - memory-budget formula,
+  cgroup-vs-physical minimum logic, chunk_size formula and its floor/
+  fallback, per-process caching, and `auto_decompose`'s dense/streaming
+  correctness against `fwht_pauli_terms` as ground truth, both paths
+  forced via monkeypatching rather than depending on this machine's
+  actual memory state).
+
+**Known gaps, explicitly not yet addressed:**
+- Design question 2 (the small-chunk-size floor, currently a
+  placeholder constant of 8 based on one old N=25 data point) has not
+  been re-derived with a fresh sweep.
+- `_DENSE_MEMORY_SAFETY_FRACTION = 0.5` is a reasonable-looking
+  placeholder, not derived from measurement.
+- No real end-to-end re-measurement at N=100/150 with the auto-tuned
+  `chunk_size` in place yet (unlike Phase 11, which was re-verified
+  against the real N=150 pipeline before being called done) - the
+  formula is unit-tested for correctness, not yet benchmarked for
+  actual speedup against the fixed `chunk_size=256` baseline.
+- `configure`'s own RAM/swap diagnostic section still only reports
+  total RAM via `free -h` (informational only) - it does not yet
+  report `MemAvailable` or any cgroup memory cap the way
+  `autotune.available_memory_bytes()` now does at runtime, so
+  `configure`'s own diagnostic output does not reflect what the
+  shipped auto-tuning code actually reads. Flagged for a follow-up fix
+  (in progress as of this update).
 
 
 ## 6. Explicitly out of scope

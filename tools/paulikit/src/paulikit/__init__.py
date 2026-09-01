@@ -20,6 +20,8 @@ Public API
     paulikit.pauli_utils.reconstruct_from_terms
     paulikit.algorithms.fwht.fwht_pauli_coefficients
     paulikit.algorithms.fwht.fwht_pauli_terms
+    paulikit.algorithms.fwht.fwht_pauli_terms_iter
+    paulikit.algorithms.fwht.auto_decompose
     paulikit.testing.fixtures.ALL_FIXTURES
 """
 

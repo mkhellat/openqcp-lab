@@ -867,6 +867,103 @@ def fwht_pauli_terms_iter(
             }
 
 
+# Fraction of the available memory budget (autotune.available_memory_bytes)
+# the dense path's estimated peak footprint must stay under to be
+# chosen - leaves headroom for the operator array itself, Python/NumPy
+# overhead, and other processes on a shared node, rather than using
+# the full budget right up to the edge.
+_DENSE_MEMORY_SAFETY_FRACTION = 0.5
+
+
+def auto_decompose(
+    operator: NDArray[np.complexfloating] | NDArray[np.floating],
+    atol: float = 1e-10,
+    assume_hermitian: bool = True,
+    checkpoint_path: str | Path | None = None,
+) -> dict[str, complex] | dict[str, float] | Iterator[dict[str, complex] | dict[str, float]]:
+    """Auto-picks streaming vs. dense and an auto-tuned ``chunk_size``
+    - PLAN.md Phase 12. Returns either a ``dict`` (dense path, same as
+    calling ``fwht_pauli_terms`` with no ``chunk_size``) or an
+    ``Iterator[dict]`` (streaming path, same as calling
+    ``fwht_pauli_terms_iter``) depending on a runtime decision based on
+    the operator's size and the machine's currently-available memory.
+
+    **This return type is a runtime decision, not a fixed contract** -
+    unlike ``fwht_pauli_terms``/``fwht_pauli_terms_iter``, which always
+    return a ``dict``/``Iterator[dict]`` respectively regardless of
+    machine state. This is deliberate: making an *existing* function's
+    return type depend on runtime memory state would be a hidden-
+    nondeterminism hazard (the same call could silently take a
+    different code path on a re-run) and would silently change
+    ``assume_hermitian``'s validation-contract difference between the
+    two paths (all-or-nothing vs. partial-yield-then-error) out from
+    under a caller who never asked for that - see PLAN.md Phase 12's
+    design section. ``auto_decompose``'s name documents this
+    nondeterminism explicitly; callers that need a fixed contract
+    should call ``fwht_pauli_terms``/``fwht_pauli_terms_iter`` directly
+    instead. A typical caller checks the result with
+    ``isinstance(result, dict)``.
+
+    The streaming-vs-dense decision is based on a memory budget
+    (``paulikit.algorithms.autotune.available_memory_bytes``) that is
+    cgroup-aware, not just physical-RAM-aware - correctness-critical on
+    a shared HPC node, where a scheduler (Slurm/PBS) commonly caps a
+    job below the node's full physical RAM via a cgroup; using
+    physical memory alone there could wrongly choose the dense path
+    inside a job actually capped well below what dense would need. The
+    streaming path's own ``chunk_size`` is likewise auto-tuned
+    (``autotune.recommended_chunk_size``) via an empirical cache-
+    latency probe rather than a fixed example value - see PLAN.md
+    Phase 12.
+
+    Args:
+        operator: Same contract as ``fwht_pauli_terms``.
+        atol: Same as ``fwht_pauli_terms``.
+        assume_hermitian: Same as ``fwht_pauli_terms`` (dense path) /
+            ``fwht_pauli_terms_iter`` (streaming path) - see those
+            functions' own docstrings for the validation-contract
+            difference between them, which still applies here
+            depending on which path is chosen.
+        checkpoint_path: Same as ``fwht_pauli_terms``/
+            ``fwht_pauli_terms_iter`` - only meaningful if the
+            streaming path is chosen.
+
+    Returns:
+        A ``dict`` if the dense path was chosen, or an
+        ``Iterator[dict]`` if the streaming path was chosen - check
+        with ``isinstance(result, dict)``.
+    """
+    from paulikit.algorithms import autotune
+
+    dim = operator.shape[0]
+    # Worst-case (fully dense operator) estimated peak footprint of
+    # the dense path's accumulator: n_active <= dim active rows, each
+    # dim complex128 entries (16 bytes) - matches
+    # fwht_pauli_coefficients's own O(n_active * dim) accounting.
+    # Deliberately does not pre-scan the operator to find the real
+    # n_active first (that would cost an extra full pass) - this is a
+    # cheap, safe upper bound, not a precise estimate.
+    estimated_dense_bytes = dim * dim * 16
+
+    budget = autotune.available_memory_bytes()
+    if estimated_dense_bytes <= budget * _DENSE_MEMORY_SAFETY_FRACTION:
+        return fwht_pauli_terms(
+            operator,
+            atol=atol,
+            assume_hermitian=assume_hermitian,
+            checkpoint_path=checkpoint_path,
+        )
+
+    chunk_size = autotune.recommended_chunk_size(dim)
+    return fwht_pauli_terms_iter(
+        operator,
+        chunk_size=chunk_size,
+        atol=atol,
+        assume_hermitian=assume_hermitian,
+        checkpoint_path=checkpoint_path,
+    )
+
+
 _WARNED_NO_NATIVE = False
 
 

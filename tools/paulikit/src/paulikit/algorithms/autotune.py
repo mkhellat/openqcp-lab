@@ -1,0 +1,302 @@
+"""Runtime auto-tuning heuristics for ``chunk_size`` and the
+streaming-vs-dense decision - PLAN.md Phase 12.
+
+Two independent pieces, both designed explicitly for correctness on
+shared HPC nodes (not just workstations) per direct user instruction:
+
+- ``recommended_chunk_size`` - targets a per-chunk working-set size
+  that fits within a cache boundary, found via an *empirical*
+  pointer-chase probe (``paulikit._native.cache_probe``) rather than
+  any declared cache-topology source (``lscpu``/``/sys`` parsing was
+  found ambiguous - see PLAN.md Phase 12's design section and
+  ``profiling/phase12/cache_probe_extension_findings.md``). Falls
+  back to declared-size detection if the compiled probe extension
+  isn't available.
+- ``available_memory_bytes`` - the memory budget the streaming-vs-dense
+  decision (``fwht.auto_decompose``) is based on: the minimum of
+  physically-available memory (``/proc/meminfo``'s ``MemAvailable``,
+  falling back to the POSIX ``SC_AVPHYS_PAGES`` figure) and any
+  cgroup memory cap (v2 then v1) - the cgroup check is the
+  correctness-critical piece on a shared/multi-tenant HPC node, where
+  a job is frequently capped below the node's physical RAM.
+
+Both results are cached per-process (module-level, lazy) - not
+persisted to disk, since a persistent cache would be stale the moment
+the process runs on different hardware (a real risk in HPC/container
+contexts, not hypothetical - see PLAN.md Phase 12).
+"""
+
+from __future__ import annotations
+
+import os
+import warnings
+
+try:
+    from paulikit._native import cache_probe as _cache_probe
+except ImportError:
+    _cache_probe = None
+
+_WARNED_NO_CACHE_PROBE = False
+
+# Module-level, per-process caches (see module docstring for why not
+# persisted to disk).
+_cached_chunk_size: int | None = None
+_cached_memory_budget_bytes: int | None = None
+
+
+def _warn_no_cache_probe() -> None:
+    global _WARNED_NO_CACHE_PROBE
+    if not _WARNED_NO_CACHE_PROBE:
+        warnings.warn(
+            "paulikit's compiled cache-latency probe is not available "
+            "(built with -Dcache_probe=disabled, or Cython >= 3.0 was "
+            "missing at build time) - falling back to declared cache-size "
+            "detection for chunk_size auto-tuning, which is less reliable "
+            "(declared sizes can be ambiguous, e.g. aggregate-vs-per-core "
+            "- see PLAN.md Phase 12). Rebuild paulikit with Cython >= 3.0 "
+            "available to get the empirical probe.",
+            stacklevel=3,
+        )
+        _WARNED_NO_CACHE_PROBE = True
+
+
+def _declared_l2_size_bytes() -> int | None:
+    """Best-effort per-core L2 size from ``/sys`` (Linux only).
+
+    Returns ``None`` if unavailable (non-Linux, sysfs not mounted,
+    permission denied, etc.) - callers must have their own final
+    fallback. Deliberately does NOT use ``lscpu`` - PLAN.md Phase 12
+    found `lscpu`'s reported cache sizes are aggregated across cores,
+    not the per-core figure a single-threaded chunk computation
+    actually sees.
+    """
+    cache_dir = "/sys/devices/system/cpu/cpu0/cache"
+    try:
+        entries = os.listdir(cache_dir)
+    except OSError:
+        return None
+
+    for entry in entries:
+        index_dir = os.path.join(cache_dir, entry)
+        level_path = os.path.join(index_dir, "level")
+        type_path = os.path.join(index_dir, "type")
+        size_path = os.path.join(index_dir, "size")
+        try:
+            with open(level_path) as f:
+                level = f.read().strip()
+            with open(type_path) as f:
+                cache_type = f.read().strip()
+            if level != "2" or cache_type not in ("Unified", "Data"):
+                continue
+            with open(size_path) as f:
+                size_str = f.read().strip()
+            if size_str.endswith("K"):
+                return int(size_str[:-1]) * 1024
+            if size_str.endswith("M"):
+                return int(size_str[:-1]) * 1024 * 1024
+            return int(size_str)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _detect_l2_boundary_bytes_via_probe() -> int | None:
+    """Runs the empirical cache probe, returns the buffer size at the
+    first ratio jump exceeding 1.3x (matching ``configure
+    --probe-cache-latency``'s own boundary-detection threshold) past
+    the first jump - i.e. the L1/L2 boundary is expected to be the
+    first jump, L2/L3 the second; this returns the *second* jump's
+    lower-side buffer size (the largest size that still behaves like
+    L2, used as the L2 capacity estimate). Returns ``None`` if fewer
+    than two boundary jumps are detected (unusual/flat hierarchy - not
+    trusted enough to build a heuristic on).
+    """
+    samples = _cache_probe.probe_cache_boundaries()
+    if len(samples) < 3:
+        return None
+
+    boundary_indices = []
+    for i in range(1, len(samples)):
+        prev_cycles = samples[i - 1][1]
+        cur_cycles = samples[i][1]
+        if prev_cycles <= 0:
+            continue
+        ratio = cur_cycles / prev_cycles
+        if ratio > 1.3:
+            boundary_indices.append(i)
+
+    if len(boundary_indices) < 2:
+        return None
+
+    # samples[boundary_indices[1] - 1] is the last size that still
+    # behaved like the level below the second detected boundary - our
+    # L2 capacity estimate.
+    return samples[boundary_indices[1] - 1][0]
+
+
+def _min_chunk_size_floor() -> int:
+    """Absolute floor below which chunk_size hurts more than it helps.
+
+    PLAN.md Phase 12's original sweep found chunk_size=1 at N=25 was
+    57% *slower* than dense - too little work per chunk lets fixed
+    per-chunk overhead (generator suspend/resume, per-chunk
+    gather/WHT dispatch) dominate. A fresh sweep to precisely re-derive
+    this floor has not been done (see PLAN.md Phase 12's design
+    section, design question 2) - this constant is a conservative
+    placeholder based on that one data point, not a re-verified
+    formula. Revisit with real measurement before trusting this
+    number in a performance-critical context.
+    """
+    return 8
+
+
+def recommended_chunk_size(dim: int) -> int:
+    """Auto-computed ``chunk_size`` for a given operator dimension.
+
+    Targets a per-chunk working-set size (``chunk_size * dim * 16``
+    bytes - one row of ``dim`` complex128 entries per active row,
+    matching ``fwht_pauli_coefficients``'s own accounting) that fits
+    within the empirically-measured L2 cache boundary, subject to
+    ``_min_chunk_size_floor()``'s lower bound.
+
+    Cached per-process after the first call - see module docstring.
+    """
+    global _cached_chunk_size
+    if _cached_chunk_size is not None:
+        return _cached_chunk_size
+
+    l2_bytes: int | None = None
+    if _cache_probe is not None:
+        try:
+            l2_bytes = _detect_l2_boundary_bytes_via_probe()
+        except RuntimeError:
+            l2_bytes = None  # no cycle-counter instruction - fall back
+    else:
+        _warn_no_cache_probe()
+
+    if l2_bytes is None:
+        l2_bytes = _declared_l2_size_bytes()
+
+    if l2_bytes is None:
+        # Neither the probe nor /sys worked (non-Linux without the
+        # compiled probe, e.g.) - conservative fixed fallback, matches
+        # the smallest value PLAN.md Phase 12's own sweep validated as
+        # safe across N=25/50/100 (chunk_size=32).
+        _cached_chunk_size = 32
+        return _cached_chunk_size
+
+    bytes_per_row = dim * 16  # complex128
+    chunk_size = max(_min_chunk_size_floor(), l2_bytes // max(bytes_per_row, 1))
+    _cached_chunk_size = chunk_size
+    return _cached_chunk_size
+
+
+def _read_meminfo_available_bytes() -> int | None:
+    """Linux ``/proc/meminfo``'s ``MemAvailable`` field, in bytes.
+
+    This is the same figure ``free -h``'s "available" column reports -
+    correctly counts reclaimable page cache/buffers as usable, unlike
+    the POSIX ``SC_AVPHYS_PAGES`` figure (confirmed on the development
+    machine: ``SC_AVPHYS_PAGES`` read ~1.5 GiB "free" while
+    ``MemAvailable`` correctly read ~10 GiB "available" - see PLAN.md
+    Phase 12's design section). Returns ``None`` if ``/proc/meminfo``
+    doesn't exist or lacks this field (non-Linux).
+    """
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    parts = line.split()
+                    # Format: "MemAvailable:   12345678 kB"
+                    return int(parts[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _posix_available_physical_bytes() -> int | None:
+    """POSIX-standard fallback: ``SC_AVPHYS_PAGES * SC_PAGESIZE``.
+
+    Reports *free* physical memory, not *available* (does not count
+    reclaimable cache as usable) - more conservative than
+    ``_read_meminfo_available_bytes`` where that is available. Kept as
+    the fallback for non-Linux/no-``/proc`` systems, using only
+    POSIX-standard APIs (no third-party dependency, no shelling out -
+    per explicit instruction).
+    """
+    try:
+        avphys = os.sysconf("SC_AVPHYS_PAGES")
+        page_size = os.sysconf("SC_PAGESIZE")
+    except (ValueError, OSError, AttributeError):
+        return None
+    if avphys < 0 or page_size < 0:
+        return None
+    return avphys * page_size
+
+
+def _cgroup_memory_limit_bytes() -> int | None:
+    """Cgroup-imposed memory cap, if any - the correctness-critical
+    check for shared HPC nodes, where a scheduler (Slurm/PBS) commonly
+    caps a job below the node's physical RAM via a cgroup. Checks v2
+    first, falls back to v1. Returns ``None`` if no limit is set
+    (unlimited) or cgroups aren't present (not an HPC/container
+    context, or cgroups not delegated to this process).
+    """
+    # cgroup v2: a single unified value, "max" means unlimited.
+    try:
+        with open("/sys/fs/cgroup/memory.max") as f:
+            value = f.read().strip()
+        if value != "max":
+            return int(value)
+        return None
+    except (OSError, ValueError):
+        pass
+
+    # cgroup v1 fallback: often a huge sentinel (e.g.
+    # 9223372036854771712) when effectively unset - only trust it if
+    # it's smaller than total physical memory, otherwise treat as
+    # unlimited.
+    try:
+        with open("/sys/fs/cgroup/memory/memory.limit_in_bytes") as f:
+            value = int(f.read().strip())
+        try:
+            total_phys = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGESIZE")
+        except (ValueError, OSError, AttributeError):
+            total_phys = None
+        if total_phys is not None and value >= total_phys:
+            return None  # sentinel value, not a real limit
+        return value
+    except (OSError, ValueError):
+        return None
+
+
+def available_memory_bytes() -> int:
+    """The memory budget for the streaming-vs-dense auto-decision.
+
+    The minimum of (a) currently-available physical memory
+    (``/proc/meminfo``'s ``MemAvailable``, falling back to POSIX
+    ``SC_AVPHYS_PAGES``) and (b) any cgroup memory cap (v2 then v1) -
+    whichever is smaller and present. Using only the physical figure
+    would be actively unsafe on a shared HPC node where a job is
+    cgroup-capped well below the node's full RAM.
+
+    Cached per-process after the first call - see module docstring.
+    """
+    global _cached_memory_budget_bytes
+    if _cached_memory_budget_bytes is not None:
+        return _cached_memory_budget_bytes
+
+    physical = _read_meminfo_available_bytes()
+    if physical is None:
+        physical = _posix_available_physical_bytes()
+    if physical is None:
+        # Nothing worked (unusual platform) - a conservative fixed
+        # fallback rather than raising, so auto_decompose() degrades
+        # to "always stream" rather than crashing.
+        physical = 512 * 1024 * 1024
+
+    cgroup_limit = _cgroup_memory_limit_bytes()
+    budget = physical if cgroup_limit is None else min(physical, cgroup_limit)
+
+    _cached_memory_budget_bytes = budget
+    return budget
