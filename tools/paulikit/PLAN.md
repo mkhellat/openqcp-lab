@@ -2158,10 +2158,110 @@ be a reliability/usability regression, priority 2).
    `fwht_pauli_terms_iter`)? Not yet designed - this is a bigger API
    surface question than `chunk_size` alone.
 
-**Status: scoped 2026-08-27, not yet designed in detail or
+**Status: scoped 2026-08-27, design finalized 2026-09-01, not yet
 implemented.** The cache-locality mechanism behind auto-decision #1 is
-confirmed by direct measurement; the auto-tuning formula itself, and
-all of auto-decision #2's design, remain open.
+confirmed by direct measurement; all five design questions above are
+now resolved as follows.
+
+**Design decisions (2026-09-01):**
+
+1. **Cache-boundary target**: resolved by first discovering the
+   original scoping's own `lscpu`-derived "L2 1 MiB" figure was wrong
+   - `lscpu` reports the *aggregate* across all 4 cores' L2 instances;
+   `/sys/devices/system/cpu/cpu0/cache/index2/size` (per-core, what a
+   single-threaded chunk computation actually sees) reads 256 KiB on
+   this machine, 4x smaller. Rather than trust either declared-topology
+   source, the auto-tuner uses an **empirical pointer-chase latency
+   probe** (the user's proposal, directly reusing the mechanism already
+   built for `configure --probe-cache-latency`: scrambled-stride
+   pointer chase over doubling buffer sizes, timed, boundary detected
+   where the cycles-per-access ratio between consecutive sizes exceeds
+   a threshold) instead of parsing any declared cache-size source at
+   all. This sidesteps the aggregate-vs-per-core ambiguity entirely by
+   measuring what the hardware actually does, not what it reports.
+2. **Small-chunk floor**: not yet re-derived with a fresh sweep: the
+   original N=25 `chunk_size=1` result (57% slower than dense) still
+   establishes that a floor is needed; the exact formula for it is an
+   implementation-time detail (e.g. a minimum absolute chunk_size,
+   separate from the cache-driven upper bound) rather than a fresh
+   open question.
+3. **Portable cache-size query**: resolved as above - an empirical
+   probe sidesteps portability questions about declared-size sources
+   entirely (no `/sys`, `lscpu`, or `os.sysconf` cache constants
+   needed for the primary path). Implementation: a new **standalone
+   Cython extension** (`src/paulikit/_native/cache_probe.pyx` + a
+   plain-C pointer-chase kernel), gated only on Cython >= 3.0 - not
+   folded into the existing `pauli_label_native` extension, since that
+   extension is additionally gated on oneTBB, which the probe has no
+   relationship to; bundling them would wrongly make chunk_size
+   auto-tuning unavailable whenever oneTBB specifically is missing.
+   Falls back to declared-size detection (`/sys/devices/system/cpu/cpu*/cache/`
+   parsing, POSIX/Linux-only) with a visible warning if the compiled
+   probe extension isn't available, mirroring `pauli_label_native`'s
+   existing optional-extension pattern. Probe result is cached
+   **per-process** (module-level, lazy on first auto-tuned call) - not
+   persisted to disk, since a persistent cache raises staleness
+   questions the moment the process runs on different hardware (a real
+   risk in HPC/container contexts, not a hypothetical - see below).
+4. **Streaming-vs-dense trigger**: available-memory-based, computed
+   with **zero third-party dependencies** per explicit instruction to
+   prefer POSIX-compliant/self-contained probing over `psutil` or
+   shelling out to non-portable commands. Two layers, both required
+   for correctness on shared HPC nodes (explicitly a target
+   environment, not just a workstation):
+   - **Physical availability**: parse `/proc/meminfo`'s `MemAvailable`
+     field when present (Linux; matches what `free -h`'s "available"
+     column reports, correctly counting reclaimable page cache/buffers
+     as usable - confirmed on this machine: `SC_AVPHYS_PAGES` alone
+     read 1.5 GiB "free" while `MemAvailable` correctly read ~10 GiB
+     "available"). Falls back to the POSIX-standard
+     `os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGESIZE')` on
+     non-Linux/no-`/proc` systems, accepting its more conservative
+     "free-not-available" bias there.
+   - **Cgroup limit**: on a shared HPC node, a job is frequently
+     memory-capped below the node's physical RAM by the scheduler
+     (Slurm/PBS) via a cgroup, which the above alone would not see -
+     read `/sys/fs/cgroup/memory.max` (cgroup v2; the literal string
+     `"max"` means unlimited) falling back to
+     `/sys/fs/cgroup/memory/memory.limit_in_bytes` (cgroup v1; often a
+     huge sentinel value like `9223372036854771712` when effectively
+     unset, must be clamped against the physical-RAM figure rather
+     than trusted directly). The auto-decision uses **whichever of the
+     physical-availability and cgroup-limit figures is smaller**.
+     Explicitly checked and confirmed correct to build now (not
+     deferred) per direct instruction: "these should work for
+     supercomputers with nodes."
+5. **API shape**: rejected the "existing functions change return type
+   based on runtime machine state" option on real reliability/modularity
+   grounds - it would make `fwht_pauli_terms` nondeterministic across
+   identical calls (same operator, different code path depending on
+   available memory at call time) and silently change
+   `assume_hermitian`'s already-documented validation-contract
+   difference (all-or-nothing vs. partial-yield-then-error) out from
+   under a caller who never asked for that. Instead: a **new top-level
+   function**, `auto_decompose()`, whose name itself documents that its
+   return type (`dict` or `Iterator[dict]`) is a runtime decision.
+   `fwht_pauli_terms`/`fwht_pauli_terms_iter` keep their exact current,
+   fixed contracts unchanged - `auto_decompose()` is purely additive.
+
+**HPC/supercomputer-node applicability (explicit design target, not
+an afterthought):** the cache probe's per-process-only caching means
+it naturally re-measures on each node a job lands on, rather than
+trusting a value that might be stale on a heterogeneous cluster
+(different node generations/partitions can have genuinely different
+cache hierarchies). The cgroup-aware memory budget (above) is the
+correctness-critical piece for shared/multi-tenant HPC nodes
+specifically - a physical-memory-only check would be actively unsafe
+there, not just suboptimal, since it could greenlight the dense path
+inside a job that is actually capped well below full-node RAM.
+Checkpoint I/O (`checkpoint_path`, already opt-in, Phase 9) is noted
+here only as a caveat, not addressed by this phase: shared HPC
+filesystems (Lustre/GPFS) can behave very differently than local disk
+under many small per-chunk appends - not re-scoped, since checkpointing
+remains off by default.
+
+**Not yet implemented as of this update** - see task list for
+progress; this section records the finalized design, code follows.
 
 
 ## 6. Explicitly out of scope
