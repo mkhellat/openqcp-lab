@@ -2297,31 +2297,48 @@ cache-boundary-targeting branch of the formula at meaningful scale.
 `auto_decompose()`'s dense-path correctness was independently
 confirmed bit-identical to `fwht_pauli_terms` at N=25/50.
 
-**Two real bugs found by this re-measurement, NEITHER FIXED YET:**
-1. **`auto_decompose()`'s dense-path memory estimate
-   (`dim**2 * 16` bytes) underestimates real peak usage by roughly
-   3x, in the unsafe direction.** At N=150 the estimate is 4.00 GiB;
-   the real dense path failed to complete under both a ~7.6 GiB and
-   an ~11.4 GiB memory cap (clean Python exceptions each time, not a
-   crash, but real system memory was observed dropping to 177 MiB
-   free during one run before recovering). This is a genuine
-   correctness/safety gap in the feature as shipped, not a
-   performance nitpick — `auto_decompose()` exists specifically to
-   protect callers from an accidental dense-path OOM, especially on
-   memory-constrained/shared HPC nodes, and a ~3x-underestimating
-   formula undermines that guarantee. **Flagged as the top-priority
-   follow-up before recommending `auto_decompose()` for
-   memory-constrained/HPC use** — until fixed, memory-sensitive
-   callers should keep using `fwht_pauli_terms_iter` with an explicit
-   `chunk_size` instead.
-2. **The cache probe is not idempotent when called repeatedly in the
-   same process** — a second `probe_cache_boundaries()` call can
-   (probabilistically, ~1 in 5 trials observed) return a wrong L2
-   boundary due to elevated small-buffer noise not fully explained.
-   Currently masked in practice: `recommended_chunk_size()` calls the
-   probe at most once per process (its own cache), confirmed reliable
-   across 10/10 fresh-process trials — but the underlying instability
-   in the low-level extension is real and unresolved.
+**Two real bugs found by this re-measurement:**
+1. **FIXED 2026-09-01 (same day, follow-up).**
+   `auto_decompose()`'s dense-path memory estimate (`dim**2 * 16`
+   bytes) underestimated real peak usage by roughly 3x, in the unsafe
+   direction. At N=150 the estimate was 4.00 GiB; the real dense path
+   failed to complete under a ~7.6 GiB cap, an ~11.4 GiB cap, **and,
+   during the fix's own re-verification, an ~18 GiB cap** (clean
+   Python exceptions each time, not a crash, but real system memory
+   was observed dropping as low as 177 MiB / 593 MiB free during two
+   separate runs before recovering). Root-caused by hand-tracing every
+   array concurrently live in the dense code path
+   (`gathered_active`/`transformed_active`, `xz_and`,
+   `_popcount_array`'s temporaries, `phase`, `active_coefficients`,
+   the `np.abs()` boolean-mask rescan, label/dict construction) - none
+   individually huge, but their sum is 4-6x the naive single-array
+   estimate. Confirmed with a real `resource.getrusage` peak-RSS sweep
+   at N=50/75/100 (chunk_size=None, dense path): measured ratios of
+   5.63x, 6.47x, 5.27x respectively (N=25's 18.20x excluded as a
+   small-N process-baseline artifact) - consistently clustering around
+   6x. **Fix**: `estimated_dense_bytes` now multiplies the naive
+   `dim**2*16` figure by a new `_DENSE_MEMORY_MULTIPLIER = 6.0`
+   constant, AND `_DENSE_MEMORY_SAFETY_FRACTION` was independently
+   tightened from `0.5` to `0.2` (both changes together, not either
+   alone, since the true N=150 ratio was not fully bounded above even
+   at 18 GiB / 4.5x - see `fwht.py`'s own comments on both constants
+   for the full derivation). Deliberately erred conservative: this
+   means `auto_decompose` will now sometimes choose streaming at sizes
+   where dense would in fact have fit and been faster (confirmed via
+   the same N=100 measurement: real peak 5.27 GiB fits easily under an
+   11 GiB budget, but the new 6x-inflated estimate exceeds the
+   tightened 0.2-fraction threshold there) - an intentional tradeoff,
+   not an oversight, for a safety-critical decision. Regression tests
+   added (`tests/test_autotune.py`, 2 new) pinning both constants and
+   the N=150 real-numbers outcome.
+2. **Not yet fixed.** The cache probe is not idempotent when called
+   repeatedly in the same process — a second `probe_cache_boundaries()`
+   call can (probabilistically, ~1 in 5 trials observed) return a
+   wrong L2 boundary due to elevated small-buffer noise not fully
+   explained. Currently masked in practice: `recommended_chunk_size()`
+   calls the probe at most once per process (its own cache), confirmed
+   reliable across 10/10 fresh-process trials — but the underlying
+   instability in the low-level extension is real and unresolved.
 
 **Known gaps, explicitly not yet addressed:**
 - Design question 2 (the small-chunk-size floor, currently a
@@ -2331,9 +2348,6 @@ confirmed bit-identical to `fwht_pauli_terms` at N=25/50.
   consistent with the floor not being obviously wrong at this scale,
   but do not test whether an even smaller value would do better or
   worse.
-- `_DENSE_MEMORY_SAFETY_FRACTION = 0.5` is not just an unverified
-  placeholder but, per the bug above, confirmed too permissive by
-  roughly 3x — needs correcting, not just measuring.
 - **Fixed 2026-09-01**: `configure`'s RAM/swap diagnostic section
   (Linux path) now additionally reports `/proc/meminfo`'s
   `MemAvailable` and any cgroup v2/v1 memory cap, matching exactly

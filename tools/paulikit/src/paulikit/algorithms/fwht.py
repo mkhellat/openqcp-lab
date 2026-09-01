@@ -867,12 +867,44 @@ def fwht_pauli_terms_iter(
             }
 
 
+# Multiplier applied to the naive dim**2*16 (one (dim, dim) complex128
+# array) estimate to approximate the dense path's REAL peak footprint.
+# The naive estimate only accounts for gathered_active/
+# transformed_active - it misses several other same-order-of-magnitude
+# arrays concurrently live during fwht_pauli_coefficients/
+# fwht_pauli_terms's dense (sparse=True, chunk_size=None) path: xz_and
+# (int64, dim**2*8), _popcount_array's uint32 cast and int64 count
+# accumulator (dim**2*4 + dim**2*8), phase (complex128, dim**2*16),
+# active_coefficients (complex128, dim**2*16), the
+# np.abs(active_coefficients) boolean-mask intermediate
+# (float64, dim**2*8) in fwht_pauli_terms's own nonzero-rescan, plus
+# label-string and dict-construction overhead after that. A real
+# resource.getrusage(RUSAGE_SELF).ru_maxrss sweep at N=50/75/100
+# (profiling/phase12/n100_n150_autotuning_remeasurement_findings.md's
+# follow-up fix, 2026-09-01) measured this ratio directly: 5.63x,
+# 6.47x, 5.27x respectively (N=25's 18.20x is a small-N artifact -
+# fixed Python/NumPy process baseline RSS dominates at that scale, not
+# representative) - consistently in the 5-6.5x range, clustering
+# around 6x. At N=150 the true ratio is higher still: even an 18 GiB
+# cap (4.5x the naive 4.00 GiB estimate) was insufficient (see that
+# same findings doc's "Bug 1" section, re-verified during this fix) -
+# 6x alone would NOT have been safe at N=150 without also tightening
+# _DENSE_MEMORY_SAFETY_FRACTION below.
+_DENSE_MEMORY_MULTIPLIER = 6.0
+
 # Fraction of the available memory budget (autotune.available_memory_bytes)
-# the dense path's estimated peak footprint must stay under to be
-# chosen - leaves headroom for the operator array itself, Python/NumPy
-# overhead, and other processes on a shared node, rather than using
-# the full budget right up to the edge.
-_DENSE_MEMORY_SAFETY_FRACTION = 0.5
+# the dense path's estimated peak footprint (already inflated by
+# _DENSE_MEMORY_MULTIPLIER above) must stay under to be chosen - leaves
+# further headroom for the operator array itself, Python/NumPy
+# overhead, other processes on a shared node, and the real ratio being
+# somewhat higher than the 5-6.5x measured range (N=150's own
+# real-world ratio was not fully bounded above - measurement stopped
+# once even an 18 GiB cap failed, see _DENSE_MEMORY_MULTIPLIER's own
+# comment). Deliberately small (0.2, not 0.5) after the previous
+# 0.5/naive-estimate combination was measured to underestimate real
+# peak usage by 3x+ in the unsafe direction at N=150 - see PLAN.md
+# Phase 12's "known gaps"/bug-fix history.
+_DENSE_MEMORY_SAFETY_FRACTION = 0.2
 
 
 def auto_decompose(
@@ -916,6 +948,22 @@ def auto_decompose(
     latency probe rather than a fixed example value - see PLAN.md
     Phase 12.
 
+    The dense-path memory estimate deliberately errs conservative: a
+    real ``resource.getrusage`` sweep found the dense path's actual
+    peak footprint fits well under the available budget at some sizes
+    where this function's own (already 6x-inflated, see
+    ``_DENSE_MEMORY_MULTIPLIER``) estimate says to stream instead - see
+    ``profiling/phase12/n100_n150_autotuning_remeasurement_findings.md``.
+    This means ``auto_decompose`` will sometimes choose streaming where
+    dense would in fact have fit and been somewhat faster; this
+    imprecision is intentional, not a bug - for a safety-critical
+    memory decision, occasionally streaming when dense would have
+    worked is a far better failure mode than occasionally choosing
+    dense and running the process out of memory. A caller that knows
+    its own memory headroom precisely and wants the dense path's
+    typically-faster performance can call ``fwht_pauli_terms`` directly
+    instead of going through this estimate.
+
     Args:
         operator: Same contract as ``fwht_pauli_terms``.
         atol: Same as ``fwht_pauli_terms``.
@@ -939,11 +987,20 @@ def auto_decompose(
     # Worst-case (fully dense operator) estimated peak footprint of
     # the dense path's accumulator: n_active <= dim active rows, each
     # dim complex128 entries (16 bytes) - matches
-    # fwht_pauli_coefficients's own O(n_active * dim) accounting.
+    # fwht_pauli_coefficients's own O(n_active * dim) accounting for
+    # just its own gathered_active/transformed_active array.
     # Deliberately does not pre-scan the operator to find the real
     # n_active first (that would cost an extra full pass) - this is a
-    # cheap, safe upper bound, not a precise estimate.
-    estimated_dense_bytes = dim * dim * 16
+    # cheap, safe upper bound on n_active, not a precise estimate.
+    #
+    # Multiplied by _DENSE_MEMORY_MULTIPLIER (see its own comment for
+    # the real-measurement basis) since the naive dim**2*16 figure
+    # alone was measured to underestimate the dense path's REAL peak
+    # memory usage by 3x+ at N=150 (several other same-order-of-
+    # magnitude intermediate arrays are concurrently live - xz_and,
+    # _popcount_array's temporaries, phase, active_coefficients, the
+    # nonzero-rescan's boolean mask, label/dict construction).
+    estimated_dense_bytes = dim * dim * 16 * _DENSE_MEMORY_MULTIPLIER
 
     budget = autotune.available_memory_bytes()
     if estimated_dense_bytes <= budget * _DENSE_MEMORY_SAFETY_FRACTION:

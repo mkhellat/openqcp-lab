@@ -11,7 +11,7 @@ particular machine's numbers.
 import numpy as np
 import pytest
 
-from paulikit.algorithms import autotune
+from paulikit.algorithms import autotune, fwht
 from paulikit.algorithms.fwht import auto_decompose, fwht_pauli_terms
 from paulikit.testing.fixtures import ALL_FIXTURES
 
@@ -150,3 +150,38 @@ def test_auto_decompose_return_type_is_distinguishable_via_isinstance(monkeypatc
     monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 4)
     streaming_result = auto_decompose(padded)
     assert not isinstance(streaming_result, dict)
+
+
+def test_dense_memory_estimate_regression_at_measured_n150_scale(monkeypatch):
+    # Regression test for a real bug found by direct measurement
+    # (profiling/phase12/n100_n150_autotuning_remeasurement_findings.md):
+    # the original dim**2*16 estimate with
+    # _DENSE_MEMORY_SAFETY_FRACTION=0.5 underestimated the dense path's
+    # real N=150 peak memory usage by 3x+, in the unsafe direction -
+    # the real dense path failed to complete under memory caps as high
+    # as ~11.4 GiB while the old formula said it would fit in 4 GiB.
+    # This pins the fixed formula's behavior at N=150's real dim/budget
+    # numbers from that same measurement, so an accidental revert to
+    # the old (multiplier=1x, fraction=0.5) combination is caught here
+    # rather than only being caught by another expensive real N=150 run.
+    dim_n150 = 16384
+    real_measured_budget_bytes = 11_447_480_320  # from that findings doc
+
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: real_measured_budget_bytes)
+
+    estimated_dense_bytes = dim_n150 * dim_n150 * 16 * fwht._DENSE_MEMORY_MULTIPLIER
+    threshold = real_measured_budget_bytes * fwht._DENSE_MEMORY_SAFETY_FRACTION
+    assert estimated_dense_bytes > threshold, (
+        "the fixed formula must NOT choose the dense path at N=150's real "
+        "dim/budget numbers - the real dense path was measured to fail "
+        "even under an ~11.4 GiB cap, well above what this budget offers"
+    )
+
+
+def test_dense_memory_multiplier_and_safety_fraction_are_conservative():
+    # Pins the specific constants chosen after the real-measurement fix
+    # (see their own comments in fwht.py for the full derivation) -
+    # guards against an accidental relaxation back toward the disproven
+    # 1x/0.5 combination without a deliberate, documented decision.
+    assert fwht._DENSE_MEMORY_MULTIPLIER >= 6.0
+    assert fwht._DENSE_MEMORY_SAFETY_FRACTION <= 0.2

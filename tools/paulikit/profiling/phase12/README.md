@@ -66,35 +66,43 @@ floor value (8) at both N, not yet exercising the cache-boundary-
 targeting branch of the formula at meaningful scale - see the findings
 doc's own "What this does NOT show."
 
-**Two real bugs found, not yet fixed:**
-1. **`auto_decompose()`'s dense-path memory estimate underestimates
-   real peak usage by ~3x, in the unsafe direction.** At N=150
-   (dim=16384), the estimate is 4.00 GiB; the real dense path failed
-   under both a ~7.6 GiB and an ~11.4 GiB memory cap (clean Python
-   exceptions, not a crash, but real system memory dropped to as low
-   as 177 MiB free during one run before recovering). This undermines
-   the exact guarantee `auto_decompose()` exists to provide,
-   especially on memory-constrained/shared HPC nodes - flagged as the
-   highest-priority follow-up.
-2. **The cache probe is not idempotent when called repeatedly in the
-   same process** - a second `probe_cache_boundaries()` call can
-   (probabilistically, ~1 in 5 trials observed) return a wildly
-   different, wrong L2 boundary due to elevated small-buffer noise.
-   Real-world impact is currently limited by `recommended_chunk_size`'s
-   own per-process caching (calls the probe at most once), confirmed
-   reliable across 10/10 fresh-process trials - but the underlying
-   instability is real and not yet understood precisely.
+**Two real bugs found:**
+1. **FIXED same day** - see
+   [`dense_memory_estimate_fix_findings.md`](dense_memory_estimate_fix_findings.md).
+   `auto_decompose()`'s dense-path memory estimate underestimated real
+   peak usage by 3x+ (confirmed even worse on re-check: still failing
+   under an 18 GiB cap, 4.5x the naive estimate), in the unsafe
+   direction. Root-caused by hand-tracing every concurrently-live array
+   in the dense path, confirmed via a real `resource.getrusage`
+   peak-RSS sweep at N=50/75/100 (5.3-6.5x measured ratio). Fixed via
+   a `_DENSE_MEMORY_MULTIPLIER = 6.0` constant plus independently
+   tightening `_DENSE_MEMORY_SAFETY_FRACTION` from `0.5` to `0.2` -
+   deliberately conservative (now sometimes streams where dense would
+   have fit, an intentional tradeoff for a safety-critical decision,
+   not an oversight). 2 new regression tests pin both constants and
+   the N=150 real-numbers outcome.
+2. **Not yet fixed.** The cache probe is not idempotent when called
+   repeatedly in the same process - a second `probe_cache_boundaries()`
+   call can (probabilistically, ~1 in 5 trials observed) return a
+   wildly different, wrong L2 boundary due to elevated small-buffer
+   noise. Real-world impact is currently limited by
+   `recommended_chunk_size`'s own per-process caching (calls the probe
+   at most once), confirmed reliable across 10/10 fresh-process trials
+   - but the underlying instability is real and not yet understood
+   precisely.
 
 ## Takeaway if you only read one thing
 
 `chunk_size=256` (used throughout this project's own Phase 9/10 docs)
 is not a tuned value — auto-tuning it delivers a real, measured 2x+
 speedup at both N=100 and N=150 against that old default, with
-correctness confirmed via identical term counts. But the
-implementation as shipped 2026-09-01 has a real, unfixed safety gap:
-the streaming-vs-dense memory-budget estimate underestimates the dense
-path's true peak footprint by roughly 3x, which could plausibly cause
-a real OOM on a less memory-generous host than this one - this should
-be treated as a blocker before recommending `auto_decompose()` (as
+correctness confirmed via identical term counts. The implementation as
+first shipped 2026-09-01 had a real safety gap (the streaming-vs-dense
+memory-budget estimate underestimating the dense path's true peak
+footprint by 3x+), **fixed the same day** - see
+`dense_memory_estimate_fix_findings.md`. One bug remains open (the
+cache-probe non-idempotency, low real-world impact so far) - this
+should be treated as a note, not a blocker, before recommending
+`auto_decompose()` (as
 opposed to `fwht_pauli_terms_iter` with an explicit `chunk_size`) for
 memory-constrained or HPC use.
