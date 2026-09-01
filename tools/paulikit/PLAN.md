@@ -2286,17 +2286,54 @@ remains off by default.
   forced via monkeypatching rather than depending on this machine's
   actual memory state).
 
+**Real N=100/N=150 re-measurement, 2026-09-01 (same day):** see
+`profiling/phase12/n100_n150_autotuning_remeasurement_findings.md`.
+The auto-tuned `chunk_size` is confirmed as a genuine win: **2.32x
+faster at N=100** (16.17s -> 6.96s), **2.04x faster at N=150** (69.32s
+-> 33.90s), against the old fixed `chunk_size=256`, with identical
+term counts confirming correctness. `recommended_chunk_size` returned
+the floor value (8) at both N on this machine, not yet exercising the
+cache-boundary-targeting branch of the formula at meaningful scale.
+`auto_decompose()`'s dense-path correctness was independently
+confirmed bit-identical to `fwht_pauli_terms` at N=25/50.
+
+**Two real bugs found by this re-measurement, NEITHER FIXED YET:**
+1. **`auto_decompose()`'s dense-path memory estimate
+   (`dim**2 * 16` bytes) underestimates real peak usage by roughly
+   3x, in the unsafe direction.** At N=150 the estimate is 4.00 GiB;
+   the real dense path failed to complete under both a ~7.6 GiB and
+   an ~11.4 GiB memory cap (clean Python exceptions each time, not a
+   crash, but real system memory was observed dropping to 177 MiB
+   free during one run before recovering). This is a genuine
+   correctness/safety gap in the feature as shipped, not a
+   performance nitpick — `auto_decompose()` exists specifically to
+   protect callers from an accidental dense-path OOM, especially on
+   memory-constrained/shared HPC nodes, and a ~3x-underestimating
+   formula undermines that guarantee. **Flagged as the top-priority
+   follow-up before recommending `auto_decompose()` for
+   memory-constrained/HPC use** — until fixed, memory-sensitive
+   callers should keep using `fwht_pauli_terms_iter` with an explicit
+   `chunk_size` instead.
+2. **The cache probe is not idempotent when called repeatedly in the
+   same process** — a second `probe_cache_boundaries()` call can
+   (probabilistically, ~1 in 5 trials observed) return a wrong L2
+   boundary due to elevated small-buffer noise not fully explained.
+   Currently masked in practice: `recommended_chunk_size()` calls the
+   probe at most once per process (its own cache), confirmed reliable
+   across 10/10 fresh-process trials — but the underlying instability
+   in the low-level extension is real and unresolved.
+
 **Known gaps, explicitly not yet addressed:**
 - Design question 2 (the small-chunk-size floor, currently a
   placeholder constant of 8 based on one old N=25 data point) has not
-  been re-derived with a fresh sweep.
-- `_DENSE_MEMORY_SAFETY_FRACTION = 0.5` is a reasonable-looking
-  placeholder, not derived from measurement.
-- No real end-to-end re-measurement at N=100/150 with the auto-tuned
-  `chunk_size` in place yet (unlike Phase 11, which was re-verified
-  against the real N=150 pipeline before being called done) - the
-  formula is unit-tested for correctness, not yet benchmarked for
-  actual speedup against the fixed `chunk_size=256` baseline.
+  been re-derived with a fresh sweep. The 2026-09-01 re-measurement's
+  own results (chunk_size=8 beating 256 by 2x+ at both N=100/150) are
+  consistent with the floor not being obviously wrong at this scale,
+  but do not test whether an even smaller value would do better or
+  worse.
+- `_DENSE_MEMORY_SAFETY_FRACTION = 0.5` is not just an unverified
+  placeholder but, per the bug above, confirmed too permissive by
+  roughly 3x — needs correcting, not just measuring.
 - **Fixed 2026-09-01**: `configure`'s RAM/swap diagnostic section
   (Linux path) now additionally reports `/proc/meminfo`'s
   `MemAvailable` and any cgroup v2/v1 memory cap, matching exactly

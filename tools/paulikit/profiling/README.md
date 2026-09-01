@@ -379,7 +379,7 @@ or a C/Cython kernel of unclear upside, neither scoped. The
 GPU-worth-it question now rests entirely on a real port cost/benefit
 estimate.
 
-### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning (scoped 2026-08-27, design finalized 2026-09-01, implementation in progress)
+### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning (scoped 2026-08-27, implemented and re-measured 2026-09-01 — real 2x+ win, 2 real bugs found, not yet fixed)
 
 Full detail:
 [`phase12/chunk_size_cache_locality_findings.md`](phase12/chunk_size_cache_locality_findings.md).
@@ -405,9 +405,27 @@ extension. Building it surfaced and fixed two real timing bugs -
 [`phase12/cache_probe_extension_findings.md`](phase12/cache_probe_extension_findings.md) -
 DVFS-driven `clock_gettime` noise (fixed via hardware cycle counters)
 and scheduler-preemption outliers (fixed via CPU pinning +
-repeat-and-take-minimum). The probe extension is built and verified;
-the `chunk_size`/streaming-vs-dense auto-tuning formulas that consume
-its output are still being implemented.
+repeat-and-take-minimum).
+
+**Real N=100/N=150 re-measurement (2026-09-01, same day):**
+[`phase12/n100_n150_autotuning_remeasurement_findings.md`](phase12/n100_n150_autotuning_remeasurement_findings.md) -
+the auto-tuned `chunk_size` is a genuine win: **2.32x faster at N=100**
+(16.17s -> 6.96s), **2.04x faster at N=150** (69.32s -> 33.90s),
+against the old fixed `chunk_size=256`, correctness confirmed via
+identical term counts. But this measurement also found **two real
+bugs, neither fixed yet**: (1) `auto_decompose()`'s dense-path memory
+estimate underestimates real peak usage by roughly 3x, in the unsafe
+direction — the real dense path at N=150 failed under both a ~7.6 GiB
+and an ~11.4 GiB cap where the 4.00 GiB estimate said it should fit,
+with real system memory observed dropping as low as 177 MiB free
+during one run; (2) the cache probe is not idempotent when called
+repeatedly in the same process (probabilistically returns a wrong L2
+boundary on a second call), currently masked in practice by
+`recommended_chunk_size`'s own per-process caching but not understood
+precisely. Bug 1 in particular is flagged as a real safety gap, not
+a nitpick — it should be treated as a blocker before recommending
+`auto_decompose()` (as opposed to `fwht_pauli_terms_iter` with an
+explicit `chunk_size`) for memory-constrained/HPC use.
 
 ## Current state: what's solved vs. open
 
@@ -444,8 +462,17 @@ its output are still being implemented.
   no comparably cheap fix available, the decision now rests entirely on
   a real GPU-port cost/benefit estimate (transfer overhead, new
   toolchain/dependency, portability), not yet done.
-- **Open, scoped, not yet designed in detail:** Phase 12 (`chunk_size`
-  auto-tuning and streaming-vs-dense auto-decision). Also open: Phase 5
+- **Implemented and re-measured, but with a real unfixed bug:** Phase
+  12 (`chunk_size` auto-tuning and streaming-vs-dense auto-decision).
+  Real-world win confirmed: 2.32x faster at N=100, 2.04x faster at
+  N=150, against the old fixed `chunk_size=256`. But
+  `auto_decompose()`'s memory-budget estimate for the dense path
+  underestimates real peak usage by ~3x (the unsafe direction) — a
+  real safety gap, not yet fixed, that should block recommending
+  `auto_decompose()` for memory-constrained/HPC use until corrected.
+  A second, lower-impact bug (cache-probe non-idempotency across
+  repeated same-process calls) is also unfixed but currently masked in
+  practice by per-process result caching. Also open: Phase 5
   (prebuilt wheels, to make the native extension a hard requirement)
   and Phase 7's remaining items (TBB false-sharing/partitioner tuning —
   explicitly conditional on TBB re-entering the hot path, which it has
