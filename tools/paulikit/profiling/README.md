@@ -24,7 +24,8 @@ own entry point:
 - [`phase11/`](phase11/README.md) — `dict_build` optimization, scoped
   and implemented (Phase 11).
 - [`phase12/`](phase12/README.md) — `chunk_size` as a cache-locality
-  lever, auto-tuning scoping (Phase 12).
+  lever, auto-tuning design finalized + cache-probe extension built
+  (Phase 12).
 - [`../bindings/README.md`](../bindings/README.md) — the C/Cython/CFFI/
   ctypes/SWIG binding comparison (Phase 3a; lives under `bindings/`,
   not `profiling/`, but is part of this same chronological trail).
@@ -35,8 +36,8 @@ accumulated inside a single `phase10/` directory as they were
 discovered, since Phase 11 and Phase 12 were both *scoped* by findings
 that happened to surface during Phase 10's own investigation. But
 PLAN.md tracks Phase 10, 11, and 12 as three distinct phases with
-separate status (Phase 10 and Phase 11 implemented; Phase 12 scoped,
-not yet designed in detail) — keeping
+separate status (Phase 10 and Phase 11 implemented; Phase 12 design
+finalized, implementation in progress) — keeping
 their findings docs and scripts under one directory obscured that
 distinction and made the directory the largest, most heterogeneous one
 in this tree. Splitting by actual phase ownership (which each finding's
@@ -378,7 +379,7 @@ or a C/Cython kernel of unclear upside, neither scoped. The
 GPU-worth-it question now rests entirely on a real port cost/benefit
 estimate.
 
-### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning scoping (scoped 2026-08-27, not yet designed in detail)
+### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning (scoped 2026-08-27, design finalized 2026-09-01, implementation in progress)
 
 Full detail:
 [`phase12/chunk_size_cache_locality_findings.md`](phase12/chunk_size_cache_locality_findings.md).
@@ -395,8 +396,18 @@ memory-footprint bound; this reveals it is independently, and often
 more impactfully at N≤100 scale, a **cache-locality lever**.
 
 Scopes PLAN.md Phase 12 (auto-tuned `chunk_size` and streaming-vs-dense
-decision, with manual override always available) — not yet designed in
-detail as of this writing.
+decision, with manual override always available). Design finalized
+2026-09-01: rather than parse declared cache-topology sources (found
+ambiguous — `lscpu`'s "L2 1 MiB" is a cores-aggregate figure, not the
+256 KiB per-core size a chunk computation actually sees), the tuner
+uses an **empirical pointer-chase probe**, a new standalone Cython/C
+extension. Building it surfaced and fixed two real timing bugs -
+[`phase12/cache_probe_extension_findings.md`](phase12/cache_probe_extension_findings.md) -
+DVFS-driven `clock_gettime` noise (fixed via hardware cycle counters)
+and scheduler-preemption outliers (fixed via CPU pinning +
+repeat-and-take-minimum). The probe extension is built and verified;
+the `chunk_size`/streaming-vs-dense auto-tuning formulas that consume
+its output are still being implemented.
 
 ## Current state: what's solved vs. open
 

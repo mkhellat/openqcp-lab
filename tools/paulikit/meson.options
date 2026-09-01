@@ -8,3 +8,15 @@ option(
                'compiled extension is unavailable). Pass -Dnative=disabled to force pure-' +
                'Python-only, or -Dnative=enabled to fail the build if it cannot be built.',
 )
+
+option(
+  'cache_probe',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the optional compiled cache-latency probe (Cython + C, PLAN.md ' +
+               'Phase 12). Independent of the "native" option above - has no oneTBB ' +
+               'dependency, only needs Cython >= 3.0. "auto" builds it if Cython is found, ' +
+               'otherwise falls back to declared-size cache detection at runtime with a ' +
+               'visible warning. Pass -Dcache_probe=disabled to force the fallback, or ' +
+               '-Dcache_probe=enabled to fail the build if it cannot be built.',
+)

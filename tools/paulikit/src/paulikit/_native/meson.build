@@ -45,6 +45,38 @@ else
   message('paulikit: native extension disabled via -Dnative=disabled')
 endif
 
+# The empirical cache-latency probe (PLAN.md Phase 12) - standalone,
+# Cython-only, deliberately independent of the native/oneTBB option
+# above (the probe has no relationship to oneTBB; see cache_probe.pyx's
+# own docstring for why bundling them would be wrong).
+cache_probe_opt = get_option('cache_probe')
+
+if not cache_probe_opt.disabled()
+  cy2 = meson.get_compiler('cython')
+  cython_ok2 = cy2.version().version_compare('>=3.0')
+
+  if cython_ok2
+    py.extension_module(
+      'cache_probe',
+      [
+        'cache_probe.pyx',
+        'cache_probe.c',
+      ],
+      include_directories: include_directories('.'),
+      install: true,
+      subdir: 'paulikit/_native',
+    )
+  elif cache_probe_opt.enabled()
+    error('cache_probe extension explicitly requested (-Dcache_probe=enabled) but ' +
+          'Cython >= 3.0 was not found')
+  else
+    message('paulikit: cache_probe extension not built (Cython >= 3.0 not found) - ' +
+            'falling back to declared-size cache detection at runtime')
+  endif
+else
+  message('paulikit: cache_probe extension disabled via -Dcache_probe=disabled')
+endif
+
 # The __init__.py for the _native package itself (plain Python,
 # always installed regardless of whether the extension built).
 py.install_sources(
