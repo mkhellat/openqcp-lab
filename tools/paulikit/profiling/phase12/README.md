@@ -1,8 +1,8 @@
 # Phase 12: `chunk_size` as a cache-locality lever; auto-tuning scoping
 
 Scoped 2026-08-27, design finalized and implemented 2026-09-01,
-real-world re-measured the same day (2 real bugs found, not yet
-fixed - see below). See `../../PLAN.md` Phase 12 for the
+real-world re-measured the same day (2 real bugs found, both fixed
+the same day - see below). See `../../PLAN.md` Phase 12 for the
 design/implementation narrative and the two distinct auto-decisions in
 scope (auto-picking `chunk_size`, and auto-picking streaming vs.
 dense); this directory holds the supporting measurement.
@@ -81,15 +81,19 @@ doc's own "What this does NOT show."
    have fit, an intentional tradeoff for a safety-critical decision,
    not an oversight). 2 new regression tests pin both constants and
    the N=150 real-numbers outcome.
-2. **Not yet fixed.** The cache probe is not idempotent when called
-   repeatedly in the same process - a second `probe_cache_boundaries()`
-   call can (probabilistically, ~1 in 5 trials observed) return a
-   wildly different, wrong L2 boundary due to elevated small-buffer
-   noise. Real-world impact is currently limited by
-   `recommended_chunk_size`'s own per-process caching (calls the probe
-   at most once), confirmed reliable across 10/10 fresh-process trials
-   - but the underlying instability is real and not yet understood
-   precisely.
+2. **Investigated and resolved same day** - see
+   [`cache_probe_idempotency_investigation_findings.md`](cache_probe_idempotency_investigation_findings.md).
+   Root-caused precisely: a large-buffer pass leaves cache/TLB state a
+   later small-buffer warm-up doesn't fully clear. A bigger warm-up
+   floor helped but never fully eliminated it - reverted once
+   confirmed this exact scenario cannot occur in shipped code, since
+   `recommended_chunk_size` calls the probe at most once per process.
+   Re-checked (per direct instruction) whether that per-process cache
+   really holds under real parallelism: safe for multi-process HPC
+   jobs and `os.fork()` by construction, but a genuine gap was found
+   and fixed - the cache wasn't thread-safe against concurrent
+   *threads* in one process. Fixed with a lock, verified via mutation
+   testing that the new regression tests actually catch the race.
 
 ## Takeaway if you only read one thing
 
@@ -100,9 +104,11 @@ correctness confirmed via identical term counts. The implementation as
 first shipped 2026-09-01 had a real safety gap (the streaming-vs-dense
 memory-budget estimate underestimating the dense path's true peak
 footprint by 3x+), **fixed the same day** - see
-`dense_memory_estimate_fix_findings.md`. One bug remains open (the
-cache-probe non-idempotency, low real-world impact so far) - this
-should be treated as a note, not a blocker, before recommending
-`auto_decompose()` (as
-opposed to `fwht_pauli_terms_iter` with an explicit `chunk_size`) for
-memory-constrained or HPC use.
+`dense_memory_estimate_fix_findings.md`. The cache-probe
+non-idempotency was investigated, found to only be a theoretical issue
+for the shipped code path, and a real (different) thread-safety gap
+was found and fixed instead - see
+`cache_probe_idempotency_investigation_findings.md`. Both bugs from
+the re-measurement are now closed, verified via mutation testing where
+applicable and 103 tests total passing - `auto_decompose()` is safe to
+recommend for memory-constrained/HPC use as shipped.

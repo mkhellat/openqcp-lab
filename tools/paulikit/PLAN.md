@@ -2331,14 +2331,34 @@ confirmed bit-identical to `fwht_pauli_terms` at N=25/50.
    not an oversight, for a safety-critical decision. Regression tests
    added (`tests/test_autotune.py`, 2 new) pinning both constants and
    the N=150 real-numbers outcome.
-2. **Not yet fixed.** The cache probe is not idempotent when called
-   repeatedly in the same process — a second `probe_cache_boundaries()`
-   call can (probabilistically, ~1 in 5 trials observed) return a
-   wrong L2 boundary due to elevated small-buffer noise not fully
-   explained. Currently masked in practice: `recommended_chunk_size()`
-   calls the probe at most once per process (its own cache), confirmed
-   reliable across 10/10 fresh-process trials — but the underlying
-   instability in the low-level extension is real and unresolved.
+2. **Investigated and resolved 2026-09-01 (same day, follow-up)** —
+   see `profiling/phase12/cache_probe_idempotency_investigation_findings.md`.
+   Root-caused precisely (not just probabilistically): a second
+   `probe_cache_boundaries()` call's small-buffer readings are
+   inflated specifically when a prior call already walked large
+   (multi-MiB) buffer sizes — stale cache/TLB state that each size's
+   own `3x`-element warm-up doesn't fully clear. A larger warm-up
+   floor was tried and found to genuinely help (from ~1-in-5 wrong to
+   ~1-in-8 at a 16M-access floor) but never fully eliminate the
+   effect, at rising runtime cost — then **reverted**, once it was
+   confirmed this scenario cannot occur in shipped code at all:
+   `recommended_chunk_size()` calls the probe at most once per
+   process (its own cache), so every real invocation is a first,
+   isolated call — already independently confirmed reliable (10/10
+   fresh-process trials). Explicitly re-checked whether the
+   per-process cache holds under real parallelism (multi-process HPC
+   jobs, `os.fork()`) per direct instruction not to assume this
+   without verifying — both confirmed safe by construction (each
+   process/fork has its own independent cache). **One real gap found
+   and fixed**: the cache was not thread-safe — concurrent callers
+   from multiple *threads* in one process (a real heavy-parallelism
+   pattern) could race to both invoke the underlying probe/memory
+   detection at once. Fixed with a `threading.Lock` guarding both
+   caches' population (double-checked locking, common cached path
+   stays lock-free). Verified via mutation testing (temporarily
+   removing the lock reproduces the race in the new regression tests,
+   confirming they actually catch it) — 2 new tests
+   (`tests/test_autotune.py`), 103 tests total, all pass.
 
 **Known gaps, explicitly not yet addressed:**
 - Design question 2 (the small-chunk-size floor, currently a

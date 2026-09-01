@@ -24,11 +24,29 @@ Both results are cached per-process (module-level, lazy) - not
 persisted to disk, since a persistent cache would be stale the moment
 the process runs on different hardware (a real risk in HPC/container
 contexts, not hypothetical - see PLAN.md Phase 12).
+
+**Thread safety**: both caches are populated under a lock
+(``_cache_lock``), so concurrent callers from multiple threads in one
+process (e.g. ``auto_decompose`` invoked from several worker threads
+at once - a real pattern under heavy/aggressive parallelism, not just
+multi-process HPC use) cannot race to call the underlying probe/memory
+detection more than once. Without this, two threads could both
+observe an empty cache and both invoke the cache-latency probe
+concurrently - a different, untested failure mode (simultaneous
+CPU/cache contention between two probes) than the sequential-pollution
+bug the probe's own warm-up logic is designed against (see
+``cache_probe_idempotency_investigation_findings.md``) - closed here
+by construction rather than left as a residual risk. Does not protect
+against separate *processes* racing (each process has its own
+independent cache; that pattern was checked and found safe on its own
+- see the same findings doc - since each process's own first, single
+probe call was independently confirmed reliable).
 """
 
 from __future__ import annotations
 
 import os
+import threading
 import warnings
 
 try:
@@ -39,7 +57,9 @@ except ImportError:
 _WARNED_NO_CACHE_PROBE = False
 
 # Module-level, per-process caches (see module docstring for why not
-# persisted to disk).
+# persisted to disk) and the lock guarding their population (see
+# module docstring's "Thread safety" section).
+_cache_lock = threading.Lock()
 _cached_chunk_size: int | None = None
 _cached_memory_budget_bytes: int | None = None
 
@@ -159,36 +179,45 @@ def recommended_chunk_size(dim: int) -> int:
     within the empirically-measured L2 cache boundary, subject to
     ``_min_chunk_size_floor()``'s lower bound.
 
-    Cached per-process after the first call - see module docstring.
+    Cached per-process after the first call - see module docstring
+    (including its "Thread safety" section: population is
+    lock-guarded, so concurrent callers cannot race to invoke the
+    underlying probe more than once).
     """
     global _cached_chunk_size
     if _cached_chunk_size is not None:
         return _cached_chunk_size
 
-    l2_bytes: int | None = None
-    if _cache_probe is not None:
-        try:
-            l2_bytes = _detect_l2_boundary_bytes_via_probe()
-        except RuntimeError:
-            l2_bytes = None  # no cycle-counter instruction - fall back
-    else:
-        _warn_no_cache_probe()
+    with _cache_lock:
+        # Re-check inside the lock: another thread may have populated
+        # the cache while this one was waiting to acquire it.
+        if _cached_chunk_size is not None:
+            return _cached_chunk_size
 
-    if l2_bytes is None:
-        l2_bytes = _declared_l2_size_bytes()
+        l2_bytes: int | None = None
+        if _cache_probe is not None:
+            try:
+                l2_bytes = _detect_l2_boundary_bytes_via_probe()
+            except RuntimeError:
+                l2_bytes = None  # no cycle-counter instruction - fall back
+        else:
+            _warn_no_cache_probe()
 
-    if l2_bytes is None:
-        # Neither the probe nor /sys worked (non-Linux without the
-        # compiled probe, e.g.) - conservative fixed fallback, matches
-        # the smallest value PLAN.md Phase 12's own sweep validated as
-        # safe across N=25/50/100 (chunk_size=32).
-        _cached_chunk_size = 32
+        if l2_bytes is None:
+            l2_bytes = _declared_l2_size_bytes()
+
+        if l2_bytes is None:
+            # Neither the probe nor /sys worked (non-Linux without the
+            # compiled probe, e.g.) - conservative fixed fallback,
+            # matches the smallest value PLAN.md Phase 12's own sweep
+            # validated as safe across N=25/50/100 (chunk_size=32).
+            _cached_chunk_size = 32
+            return _cached_chunk_size
+
+        bytes_per_row = dim * 16  # complex128
+        chunk_size = max(_min_chunk_size_floor(), l2_bytes // max(bytes_per_row, 1))
+        _cached_chunk_size = chunk_size
         return _cached_chunk_size
-
-    bytes_per_row = dim * 16  # complex128
-    chunk_size = max(_min_chunk_size_floor(), l2_bytes // max(bytes_per_row, 1))
-    _cached_chunk_size = chunk_size
-    return _cached_chunk_size
 
 
 def _read_meminfo_available_bytes() -> int | None:
@@ -280,23 +309,29 @@ def available_memory_bytes() -> int:
     would be actively unsafe on a shared HPC node where a job is
     cgroup-capped well below the node's full RAM.
 
-    Cached per-process after the first call - see module docstring.
+    Cached per-process after the first call - see module docstring
+    (including its "Thread safety" section: population is
+    lock-guarded).
     """
     global _cached_memory_budget_bytes
     if _cached_memory_budget_bytes is not None:
         return _cached_memory_budget_bytes
 
-    physical = _read_meminfo_available_bytes()
-    if physical is None:
-        physical = _posix_available_physical_bytes()
-    if physical is None:
-        # Nothing worked (unusual platform) - a conservative fixed
-        # fallback rather than raising, so auto_decompose() degrades
-        # to "always stream" rather than crashing.
-        physical = 512 * 1024 * 1024
+    with _cache_lock:
+        if _cached_memory_budget_bytes is not None:
+            return _cached_memory_budget_bytes
 
-    cgroup_limit = _cgroup_memory_limit_bytes()
-    budget = physical if cgroup_limit is None else min(physical, cgroup_limit)
+        physical = _read_meminfo_available_bytes()
+        if physical is None:
+            physical = _posix_available_physical_bytes()
+        if physical is None:
+            # Nothing worked (unusual platform) - a conservative fixed
+            # fallback rather than raising, so auto_decompose()
+            # degrades to "always stream" rather than crashing.
+            physical = 512 * 1024 * 1024
 
-    _cached_memory_budget_bytes = budget
-    return budget
+        cgroup_limit = _cgroup_memory_limit_bytes()
+        budget = physical if cgroup_limit is None else min(physical, cgroup_limit)
+
+        _cached_memory_budget_bytes = budget
+        return budget

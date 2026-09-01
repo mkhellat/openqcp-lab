@@ -379,7 +379,7 @@ or a C/Cython kernel of unclear upside, neither scoped. The
 GPU-worth-it question now rests entirely on a real port cost/benefit
 estimate.
 
-### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning (scoped 2026-08-27, implemented and re-measured 2026-09-01 — real 2x+ win, 2 real bugs found, 1 fixed same day)
+### Phase 12 — `chunk_size` as a cache-locality lever; auto-tuning (scoped 2026-08-27, implemented and re-measured 2026-09-01 — real 2x+ win, 2 real bugs found and both fixed same day)
 
 Full detail:
 [`phase12/chunk_size_cache_locality_findings.md`](phase12/chunk_size_cache_locality_findings.md).
@@ -426,11 +426,19 @@ true ratio clusters around 5.3-6.5x, informing a new
 tightened `_DENSE_MEMORY_SAFETY_FRACTION` (0.5 → 0.2) — deliberately
 conservative, so `auto_decompose()` now sometimes streams where dense
 would in fact have fit, a documented intentional tradeoff for a
-safety-critical decision. (2) The cache probe is not idempotent when
-called repeatedly in the same process (probabilistically returns a
-wrong L2 boundary on a second call), currently masked in practice by
-`recommended_chunk_size`'s own per-process caching but not understood
-precisely — **not yet fixed**, low real-world impact so far.
+safety-critical decision. (2) The cache probe appeared not idempotent
+when called repeatedly in the same process — investigated and
+**resolved the same day** -
+[`phase12/cache_probe_idempotency_investigation_findings.md`](phase12/cache_probe_idempotency_investigation_findings.md):
+root-caused to large-buffer cache/TLB pollution a later small-buffer
+warm-up doesn't fully clear, then confirmed this exact scenario cannot
+occur in shipped code (`recommended_chunk_size` calls the probe at
+most once per process). Re-checked whether that per-process cache
+holds under real parallelism per direct instruction — safe for
+multi-process HPC jobs and `os.fork()` by construction, but a genuine
+thread-safety gap was found (concurrent threads in one process could
+race to call the probe/memory detection twice) and fixed with a lock,
+verified via mutation testing.
 
 ## Current state: what's solved vs. open
 
@@ -467,17 +475,19 @@ precisely — **not yet fixed**, low real-world impact so far.
   no comparably cheap fix available, the decision now rests entirely on
   a real GPU-port cost/benefit estimate (transfer overhead, new
   toolchain/dependency, portability), not yet done.
-- **Implemented and re-measured, but with a real unfixed bug:** Phase
+- **Implemented, re-measured, and both real bugs fixed:** Phase
   12 (`chunk_size` auto-tuning and streaming-vs-dense auto-decision).
   Real-world win confirmed: 2.32x faster at N=100, 2.04x faster at
-  N=150, against the old fixed `chunk_size=256`. But
+  N=150, against the old fixed `chunk_size=256`. Two real bugs
+  surfaced by the real re-measurement, both fixed the same day: (1)
   `auto_decompose()`'s memory-budget estimate for the dense path
-  underestimates real peak usage by ~3x (the unsafe direction) — a
-  real safety gap, not yet fixed, that should block recommending
-  `auto_decompose()` for memory-constrained/HPC use until corrected.
-  A second, lower-impact bug (cache-probe non-idempotency across
-  repeated same-process calls) is also unfixed but currently masked in
-  practice by per-process result caching. Also open: Phase 5
+  underestimated real peak usage by 3x+ (the unsafe direction) —
+  corrected via a measurement-informed `_DENSE_MEMORY_MULTIPLIER = 6.0`
+  plus a tightened safety fraction; (2) the cache probe's apparent
+  non-idempotency across repeated same-process calls was root-caused,
+  confirmed harmless for the shipped call pattern, and a genuine
+  thread-safety gap found in its place (fixed with a lock). See
+  `phase12/README.md` for both fix writeups. Also open: Phase 5
   (prebuilt wheels, to make the native extension a hard requirement)
   and Phase 7's remaining items (TBB false-sharing/partitioner tuning —
   explicitly conditional on TBB re-entering the hot path, which it has

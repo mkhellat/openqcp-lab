@@ -185,3 +185,83 @@ def test_dense_memory_multiplier_and_safety_fraction_are_conservative():
     # 1x/0.5 combination without a deliberate, documented decision.
     assert fwht._DENSE_MEMORY_MULTIPLIER >= 6.0
     assert fwht._DENSE_MEMORY_SAFETY_FRACTION <= 0.2
+
+
+def test_recommended_chunk_size_thread_safe_single_underlying_call(monkeypatch):
+    # Regression test for the concurrent-cache-population race found
+    # during Bug 2's investigation (profiling/phase12/
+    # cache_probe_idempotency_investigation_findings.md): without a
+    # lock, multiple threads could all observe an empty
+    # _cached_chunk_size and all invoke the underlying probe/detection
+    # concurrently. An artificial delay inside the (mocked) detection
+    # widens the race window so this test reliably exercises it rather
+    # than depending on timing luck.
+    import threading
+    import time
+
+    call_count = 0
+    call_count_lock = threading.Lock()
+
+    def slow_declared_l2():
+        nonlocal call_count
+        with call_count_lock:
+            call_count += 1
+        time.sleep(0.05)  # widen the race window
+        return 256 * 1024
+
+    monkeypatch.setattr(autotune, "_cache_probe", None)
+    monkeypatch.setattr(autotune, "_declared_l2_size_bytes", slow_declared_l2)
+
+    results = []
+
+    def worker():
+        results.append(autotune.recommended_chunk_size(dim=1024))
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert call_count == 1, (
+        f"expected the underlying detection to run exactly once across "
+        f"8 concurrent threads, ran {call_count} times - the cache "
+        f"population lock is not preventing the race"
+    )
+    assert len(set(results)) == 1, "all threads must observe the same result"
+
+
+def test_available_memory_bytes_thread_safe_single_underlying_call(monkeypatch):
+    import threading
+    import time
+
+    call_count = 0
+    call_count_lock = threading.Lock()
+
+    def slow_meminfo():
+        nonlocal call_count
+        with call_count_lock:
+            call_count += 1
+        time.sleep(0.05)
+        return 8 * 1024**3
+
+    monkeypatch.setattr(autotune, "_read_meminfo_available_bytes", slow_meminfo)
+    monkeypatch.setattr(autotune, "_cgroup_memory_limit_bytes", lambda: None)
+
+    results = []
+
+    def worker():
+        results.append(autotune.available_memory_bytes())
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert call_count == 1, (
+        f"expected the underlying detection to run exactly once across "
+        f"8 concurrent threads, ran {call_count} times - the cache "
+        f"population lock is not preventing the race"
+    )
+    assert len(set(results)) == 1, "all threads must observe the same result"

@@ -155,7 +155,25 @@ size_t cache_probe_run(
 
         /* Warm-up walk: 3x the buffer's own element count, matching
          * configure's own probe (enough to bring the whole working
-         * set through the cache hierarchy before timing starts). */
+         * set through the cache hierarchy before timing starts).
+         *
+         * A second, separate call to probe_cache_boundaries() in the
+         * same process, made shortly after a first call already
+         * walked a much larger buffer, can see this warm-up as
+         * insufficient - stale TLB/cache state from the earlier large
+         * buffer inflates the very next call's small-buffer readings
+         * (investigated and characterized, not fixed here - see
+         * profiling/phase12/cache_probe_idempotency_investigation_findings.md).
+         * Deliberately NOT changed to compensate: the only shipped
+         * caller, autotune.recommended_chunk_size, calls this at most
+         * ONCE per process (module-level cache, see autotune.py) -
+         * every real invocation is a first, isolated call, which was
+         * independently confirmed reliable (10/10 fresh-process
+         * trials in that same investigation). A larger warm-up floor
+         * was tried and found to only partially help (diminishing
+         * returns, rising runtime cost, never fully eliminated) for a
+         * scenario production code cannot reach - reverted rather
+         * than shipped as an unnecessary cost. */
         volatile uint64_t warm_cursor = 0;
         for (uint64_t i = 0; i < n_elems * 3; i++) {
             warm_cursor = buf[warm_cursor];
