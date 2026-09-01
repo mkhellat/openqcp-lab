@@ -2297,13 +2297,22 @@ remains off by default.
   against the real N=150 pipeline before being called done) - the
   formula is unit-tested for correctness, not yet benchmarked for
   actual speedup against the fixed `chunk_size=256` baseline.
-- `configure`'s own RAM/swap diagnostic section still only reports
-  total RAM via `free -h` (informational only) - it does not yet
-  report `MemAvailable` or any cgroup memory cap the way
-  `autotune.available_memory_bytes()` now does at runtime, so
-  `configure`'s own diagnostic output does not reflect what the
-  shipped auto-tuning code actually reads. Flagged for a follow-up fix
-  (in progress as of this update).
+- **Fixed 2026-09-01**: `configure`'s RAM/swap diagnostic section
+  (Linux path) now additionally reports `/proc/meminfo`'s
+  `MemAvailable` and any cgroup v2/v1 memory cap, matching exactly
+  what `autotune.available_memory_bytes()` reads at runtime (same
+  `MemAvailable`-first, sentinel-rejecting-v1-fallback logic, ported
+  to POSIX shell) - the diagnostic no longer silently drifts from the
+  shipped auto-tuning code's actual inputs. Verified on this machine
+  (10336 MiB reported, matching `autotune.available_memory_bytes()`'s
+  own reading within run-to-run cache-reclaim noise) and the cgroup
+  v2/v1 detection logic verified in isolation against synthetic
+  `memory.max`/`memory.limit_in_bytes` values (a real `systemd-run
+  --user --scope -p MemoryMax=` did not delegate the memory
+  controller down to the scope's own leaf cgroup on this host, so a
+  live end-to-end cgroup-capped `configure` run was not achieved -
+  the shell logic itself was verified directly instead). macOS/BSD
+  branches unchanged (no cgroup concept there).
 
 
 ## 6. Explicitly out of scope

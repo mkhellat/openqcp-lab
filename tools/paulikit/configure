@@ -2807,6 +2807,69 @@ case "$OS_FAMILY" in
         else
             result "unknown ('free' not found — unexpected on Linux)"
         fi
+
+        # v3 — MemAvailable and any cgroup memory cap, matching what
+        # paulikit.algorithms.autotune.available_memory_bytes() (the
+        # runtime chunk_size/streaming-vs-dense auto-tuner — PLAN.md
+        # Phase 12) actually reads. The RAM/swap check above only
+        # reports *total* RAM (an unchanging hardware fact); it does
+        # not reflect what a job can actually use right now, which is
+        # what the auto-tuner's decision depends on — reporting it
+        # here too keeps this diagnostic honestly matching the shipped
+        # code's own inputs rather than silently drifting from them.
+        checking "available memory (MemAvailable)" "/proc/meminfo"
+        if [ -r /proc/meminfo ]; then
+            mem_avail_kb="$(awk '/^MemAvailable:/ {print $2}' \
+                /proc/meminfo 2>/dev/null)"
+            if [ -n "$mem_avail_kb" ]; then
+                result_detail "$((mem_avail_kb / 1024)) MiB" \
+                    "matches 'free -h''s 'available' column — reclaimable" \
+                    "page cache/buffers count as usable, unlike the raw" \
+                    "'free' figure"
+            else
+                result_detail "unknown" \
+                    "MemAvailable field not present in /proc/meminfo —" \
+                    "very old kernel, pre-3.14"
+            fi
+        else
+            result "unknown (/proc/meminfo not readable)"
+        fi
+
+        checking "cgroup memory cap (v2 then v1)" \
+            "/sys/fs/cgroup/memory.max, memory.limit_in_bytes"
+        cgroup_limit=""
+        if [ -r /sys/fs/cgroup/memory.max ]; then
+            v2_val="$(cat /sys/fs/cgroup/memory.max 2>/dev/null)"
+            if [ "$v2_val" != "max" ] && [ -n "$v2_val" ]; then
+                cgroup_limit="$((v2_val / 1024 / 1024)) MiB (cgroup v2)"
+            fi
+        fi
+        if [ -z "$cgroup_limit" ] \
+            && [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+            v1_val="$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes \
+                2>/dev/null)"
+            # v1's sentinel for "unset" is a huge value near
+            # 2^63 — one page — compare against total physical RAM
+            # (already known from the check above, in KiB) rather
+            # than hardcoding the sentinel, matching
+            # autotune._cgroup_memory_limit_bytes()'s own logic.
+            total_kb="$(awk '/^MemTotal:/ {print $2}' \
+                /proc/meminfo 2>/dev/null)"
+            if [ -n "$v1_val" ] && [ -n "$total_kb" ]; then
+                if [ "$v1_val" -lt "$((total_kb * 1024))" ] 2>/dev/null; then
+                    cgroup_limit="$((v1_val / 1024 / 1024)) MiB (cgroup v1)"
+                fi
+            fi
+        fi
+        if [ -n "$cgroup_limit" ]; then
+            result_detail "$cgroup_limit" \
+                "job is memory-capped below physical RAM — the" \
+                "auto-tuner's streaming-vs-dense decision uses" \
+                "whichever of this and MemAvailable above is smaller"
+        else
+            result_detail "none detected" \
+                "not cgroup-limited, or not a Linux cgroup v1/v2 host"
+        fi
         ;;
     macos)
         # hw.memsize (bytes) and sysctl vm.swapusage are the standard
