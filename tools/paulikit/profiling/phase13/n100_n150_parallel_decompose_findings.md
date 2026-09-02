@@ -78,6 +78,24 @@ too small (3 points, single run each, no repeats) to be conclusive on
 its own; flagged as a lead for the next session, not a closed
 question.
 
+**Correction**: L1/L2 are per-core private caches, and
+`recommended_chunk_size` already targets the L1/L2 boundary
+specifically (see `cache_probe_extension_findings.md`) - so if that
+formula is working, 8 concurrent workers should NOT contend with each
+other at L1/L2 at all; each core serves its own worker from its own
+private cache. If cache/bandwidth contention (cause #2) is real, it is
+therefore an **L3/memory-bandwidth** story, not an L1/L2 one - the
+flat speedup across the chunk_size sweep is consistent with L3/
+bandwidth/process-pool-IPC overhead, not with the specific
+cache level `chunk_size` was tuned to target. This sharpens the
+follow-up `perf stat` pass to watch LLC-load/LLC-miss counters
+specifically. A cheap, more direct discriminator not yet run: compare
+speedup at `n_workers` in {2, 4, 8} - roughly linear scaling at low
+worker counts that degrades toward 8 would support L3/bandwidth
+saturation; flat speedup even at 2 workers would point instead toward
+per-task dispatch/IPC overhead as the dominant cost, independent of
+cache contention entirely.
+
 ## What this does NOT show
 
 - Does not disentangle cause #1 (per-task dispatch overhead at tiny
