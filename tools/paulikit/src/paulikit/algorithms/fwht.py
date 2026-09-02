@@ -1343,7 +1343,7 @@ def parallel_decompose(
             the time it raises, since chunks do not complete in
             submission order.
     """
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
     from paulikit.algorithms import autotune
 
@@ -1386,6 +1386,24 @@ def parallel_decompose(
     if not pending:
         return
 
+    # Bounded submission - a REAL bug found by direct measurement
+    # (profiling/phase13/n150_worker_count_sweep.py, 2026-09-02):
+    # submitting every chunk as a task up front (pool.submit for all
+    # of `pending`, often thousands of tasks at real N) lets completed
+    # workers' results pile up in the pool's IPC/result queue faster
+    # than this single-threaded as_completed loop drains them - the
+    # backlog of already-computed-but-not-yet-consumed (x, z, coeff)
+    # arrays is NOT bounded by chunk_size or per_worker_memory_budget_
+    # bytes at all, and grows with n_workers (more workers finish
+    # chunks faster, the drain rate here does not increase to match) -
+    # measured real RSS scaling from ~5 GiB (n_workers=1) to ~25 GiB
+    # (n_workers=8) at N=150, confirming this, not the chunk_size
+    # working set, was the dominant memory cost. Keeping at most
+    # roughly one in-flight task per worker (plus a small pipelining
+    # margin) bounds the backlog to O(n_workers), matching the
+    # O(chunk_size * dim) per-task footprint the memory-budget
+    # division above was already designed to control.
+    max_in_flight = max(1, 2 * n_workers)
     with ProcessPoolExecutor(
         max_workers=n_workers,
         initializer=_parallel_worker_init,
@@ -1394,26 +1412,40 @@ def parallel_decompose(
             active_x, dim, n_qubits, z_indices, atol,
         ),
     ) as pool:
-        futures = [
-            pool.submit(_parallel_worker_chunk, chunk_index, chunk_start, chunk_end)
-            for chunk_index, chunk_start, chunk_end in pending
-        ]
-        for future in as_completed(futures):
-            chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
+        pending_iter = iter(pending)
+        in_flight: set = set()
 
-            if checkpoint_path is not None:
-                _append_parallel_checkpoint_chunk(
-                    checkpoint_path, completed_indices, chunk_index,
-                    chunk_x_out, z_idx, chunk_coeff_out,
-                )
+        def _submit_next() -> bool:
+            item = next(pending_iter, None)
+            if item is None:
+                return False
+            chunk_index, chunk_start, chunk_end = item
+            in_flight.add(pool.submit(_parallel_worker_chunk, chunk_index, chunk_start, chunk_end))
+            return True
 
-            labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)
-            if assume_hermitian:
-                yield _build_real_terms(labels, chunk_coeff_out, atol)
-            else:
-                yield {
-                    label: complex(c) for label, c in zip(labels, chunk_coeff_out.tolist())
-                }
+        for _ in range(max_in_flight):
+            if not _submit_next():
+                break
+
+        while in_flight:
+            done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
+                _submit_next()  # keep in_flight near max_in_flight as work drains
+
+                if checkpoint_path is not None:
+                    _append_parallel_checkpoint_chunk(
+                        checkpoint_path, completed_indices, chunk_index,
+                        chunk_x_out, z_idx, chunk_coeff_out,
+                    )
+
+                labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)
+                if assume_hermitian:
+                    yield _build_real_terms(labels, chunk_coeff_out, atol)
+                else:
+                    yield {
+                        label: complex(c) for label, c in zip(labels, chunk_coeff_out.tolist())
+                    }
 
 
 _WARNED_NO_NATIVE = False
