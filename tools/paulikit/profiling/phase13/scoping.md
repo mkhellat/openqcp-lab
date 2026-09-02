@@ -231,6 +231,44 @@ via mocks alone:
    scales usefully here at all, given the cache-contention question
    above).
 
+## Future direction, agenda only (raised 2026-09-02, not scoped): butterfly-network parallelism within the WHT itself
+
+A genuinely distinct, textbook-real second axis of parallelism exists
+*inside* `_walsh_hadamard_transform_rows`'s own butterfly loop -
+well-studied for FFTs, which share the same butterfly-network
+structure. For one row, the `log2(dim)` stages are strictly
+sequential (stage `k+1` needs stage `k`'s output - a real dependency,
+not an artificial one), but *within* a stage, the `dim/(2*span)` pairs
+being combined are mutually independent and could in principle be
+split across workers.
+
+This is architecturally different from chunk-level parallelism
+(Phase 13a): chunk-level splits along the *active-rows* axis into
+fully independent sub-problems with zero synchronization between
+workers; butterfly-level splitting would work along the *within-one-
+row* axis and require a synchronization barrier after every one of
+the `log2(dim)` stages (workers must agree a stage is done before the
+next stage can start, since each stage's pairs draw from the
+*previous* stage's output across the whole row). That is a much more
+invasive change - not an incremental addition to the current
+chunk-worker task, but a different parallel algorithm.
+
+**Not pursued now, deliberately**: chunk-level parallelism (13a)
+already gives synchronization-free worker tasks, which is exactly why
+its scaling story is simple to reason about. Adding per-stage barriers
+inside a chunk's own transform would introduce real coordination
+overhead into a currently coordination-free task, and doing that
+before understanding why chunk-level parallelism itself is only
+getting ~1.1-1.2x speedup (see
+`n100_n150_parallel_decompose_findings.md`) would mean layering a
+harder problem on top of an unexplained one. Revisit only after 13a's
+own contention/dispatch-overhead question is resolved, and only if
+that resolution suggests per-chunk compute (not IPC/contention) is the
+actual bottleneck - butterfly-level parallelism would not help at all
+if the real limiter turns out to be shared-cache/bandwidth contention
+or process-pool dispatch overhead, since it only speeds up the
+per-worker compute step, not those other costs.
+
 ## What this scoping does NOT do
 
 - Does not implement anything - `fwht.py`/`autotune.py` are unchanged.
