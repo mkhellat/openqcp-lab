@@ -16,6 +16,7 @@ import pytest
 from paulikit.algorithms import autotune
 from paulikit.algorithms.fwht import (
     _detect_available_worker_count,
+    _recommended_parallel_chunk_size,
     fwht_pauli_terms,
     parallel_decompose,
 )
@@ -135,6 +136,75 @@ def test_parallel_decompose_already_complete_checkpoint_yields_nothing_new(tmp_p
         parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt))
     )
     assert len(results) == 1
+
+
+def test_recommended_parallel_chunk_size_respects_per_worker_memory_budget(monkeypatch):
+    # Regression test for a real bug (found by the user noticing
+    # memory spikes vs. the non-parallel chunked path, same day this
+    # was first implemented): auto chunk_size must not just inherit
+    # Phase 12's single-process cache-locality formula unchanged - up
+    # to n_workers chunks are live simultaneously here, so it must
+    # also respect each worker's *share* of the memory budget, not
+    # the whole budget.
+    monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 999999)
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 512 * 1024 * 1024)
+
+    dim = 16384  # N=150's real dim
+    n_workers = 4
+    chunk_size = _recommended_parallel_chunk_size(dim, n_workers)
+
+    expected_worker_budget = (512 * 1024 * 1024) // n_workers
+    expected_max_chunk_size = expected_worker_budget // (dim * 16)
+    assert chunk_size == expected_max_chunk_size
+    assert chunk_size < 999999, (
+        "the memory bound must actually clamp the cache-driven value down, "
+        "not just be computed and ignored"
+    )
+
+
+def test_recommended_parallel_chunk_size_more_workers_means_smaller_chunks(monkeypatch):
+    # More concurrent workers -> smaller per-worker memory share ->
+    # smaller chunk_size, when the memory bound (not the cache bound)
+    # is the binding constraint.
+    monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 999999)
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 512 * 1024 * 1024)
+
+    dim = 16384
+    cs_4_workers = _recommended_parallel_chunk_size(dim, n_workers=4)
+    cs_8_workers = _recommended_parallel_chunk_size(dim, n_workers=8)
+    assert cs_8_workers < cs_4_workers
+
+
+def test_recommended_parallel_chunk_size_uses_cache_bound_when_smaller(monkeypatch):
+    # When the cache-driven value is already smaller than the memory
+    # bound, it should win unchanged - the memory bound is a ceiling,
+    # not a floor or a replacement.
+    monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 2)
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 2**40)  # huge
+
+    assert _recommended_parallel_chunk_size(dim=16384, n_workers=4) == 2
+
+
+def test_parallel_decompose_auto_chunk_size_stays_correct_under_a_tight_memory_budget(
+    monkeypatch,
+):
+    # End-to-end: force a tiny per-worker memory budget (so chunk_size
+    # is clamped far below the cache-driven value) and confirm the
+    # result is still exactly correct, not just non-crashing.
+    monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 999999)
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 512 * 1024 * 1024)
+    monkeypatch.setattr(
+        "paulikit.algorithms.fwht._detect_available_worker_count", lambda: 4
+    )
+
+    fixture = ALL_FIXTURES[0]
+    padded = fixture.padded_hamiltonian()
+    reference = fwht_pauli_terms(padded)
+
+    combined = _combine(parallel_decompose(padded))
+    assert set(combined) == set(reference)
+    for label in reference:
+        assert combined[label] == pytest.approx(reference[label], abs=1e-9)
 
 
 def test_per_worker_memory_budget_bytes_divides_evenly(monkeypatch):

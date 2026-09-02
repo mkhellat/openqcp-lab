@@ -1224,6 +1224,36 @@ def _detect_available_worker_count() -> int:
         return os.cpu_count() or 1
 
 
+def _recommended_parallel_chunk_size(dim: int, n_workers: int) -> int:
+    """Auto chunk_size for ``parallel_decompose``, accounting for
+    memory in a way ``autotune.recommended_chunk_size`` alone does not
+    - PLAN.md Phase 13's own bug fix, found by the user noticing real
+    memory spikes versus the non-parallel chunked path the same day
+    this was first shipped.
+
+    ``autotune.recommended_chunk_size(dim)`` only targets cache
+    locality for a SINGLE process (Phase 12) - it was never
+    memory-bounded even in the single-process path (memory there is
+    bounded by ``auto_decompose``'s separate streaming-vs-dense
+    decision, not by ``chunk_size`` itself). Under parallelism, up to
+    ``n_workers`` chunks' ``O(chunk_size * dim)`` working sets are live
+    SIMULTANEOUSLY rather than one at a time - reusing the
+    single-process cache-driven value unchanged here would multiply
+    real peak memory by roughly ``n_workers`` with no corresponding
+    check. Returns the smaller of the cache-driven value and the
+    largest chunk_size whose working set fits within one worker's
+    share of the memory budget
+    (``autotune.per_worker_memory_budget_bytes(n_workers)``).
+    """
+    from paulikit.algorithms import autotune
+
+    cache_chunk_size = autotune.recommended_chunk_size(dim)
+    worker_budget = autotune.per_worker_memory_budget_bytes(n_workers)
+    bytes_per_row = dim * 16  # complex128, matches recommended_chunk_size's own accounting
+    memory_bound_chunk_size = max(1, worker_budget // max(bytes_per_row, 1))
+    return min(cache_chunk_size, memory_bound_chunk_size)
+
+
 def parallel_decompose(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     chunk_size: int | None = None,
@@ -1257,14 +1287,21 @@ def parallel_decompose(
 
     Args:
         operator: Same contract as ``fwht_pauli_terms``.
-        chunk_size: If ``None`` (default), uses
-            ``autotune.recommended_chunk_size(dim)`` - the same
-            formula ``auto_decompose`` uses, chosen for a single lone
-            process's cache. Concurrent workers competing for one
+        chunk_size: If ``None`` (default), the smaller of (a)
+            ``autotune.recommended_chunk_size(dim)`` (the Phase 12
+            cache-locality formula, derived for a single lone
+            process's cache - concurrent workers competing for one
             shared LLC/memory bandwidth may have a different real
-            optimum - not yet re-measured under concurrent load (see
-            PLAN.md Phase 13's scoping doc); pass an explicit value to
-            override.
+            optimum, not yet re-measured under concurrent load, see
+            PLAN.md Phase 13's scoping doc) and (b) the largest
+            chunk_size whose ``O(chunk_size * dim)`` working set fits
+            within one worker's share of the memory budget
+            (``autotune.per_worker_memory_budget_bytes(n_workers)``) -
+            this second bound is necessary because up to ``n_workers``
+            chunks are live simultaneously here, unlike the
+            single-process path, where only one chunk's working set is
+            ever live at a time. Pass an explicit value to override
+            either bound.
         n_workers: If ``None`` (default), uses
             ``_detect_available_worker_count()`` -
             ``len(os.sched_getaffinity(0))`` where available (Linux),
@@ -1317,10 +1354,12 @@ def parallel_decompose(
     n_active = len(active_x)
     z_indices = np.arange(dim)[np.newaxis, :]
 
-    if chunk_size is None:
-        chunk_size = autotune.recommended_chunk_size(dim)
     if n_workers is None:
         n_workers = _detect_available_worker_count()
+
+    if chunk_size is None:
+        chunk_size = _recommended_parallel_chunk_size(dim, n_workers)
+
     n_workers = max(1, min(n_workers, max(1, (n_active + chunk_size - 1) // chunk_size)))
 
     order = np.argsort(inverse, kind="stable")
