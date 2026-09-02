@@ -102,38 +102,66 @@ moves the cache-behavior needle further, and CPU pinning specifically
 does not reliably improve it and in the `pinned_4` case measurably
 does not.
 
-## Revised conclusion, superseding `cpu_pinning_findings.md`'s framing
+## CORRECTION (added after direct user pushback, statistically verified): the pinned_2/unpinned_2 gap is NOISE - only the n_workers=4 effect is real
 
-The earlier document's framing ("pinning didn't help, therefore L1/L2
-hyperthread sharing isn't dominant, therefore it must be L3") is
-still directionally right that hyperthread-sibling sharing is not the
-dominant mechanism, but this fuller matrix shows pinning's effect is
-not simply "neutral" - in the `pinned_4` vs. `unpinned_4` comparison
-specifically, pinning is measurably WORSE on every axis measured
-(wall-clock, cache-miss%, LLC-miss%, and RSS is statistically
-identical so that is not the explanation). A plausible mechanism, not
-yet confirmed: forcing a fixed core assignment removes the Linux
-scheduler's own freedom to react to real-time load imbalance (e.g.
-migrating a temporarily-stalled worker's thread to a less-busy core) -
-rigid pinning can cost more than it isolates when the real bottleneck
-(shared L3/bandwidth) is not something core placement can fix in the
-first place, exactly as this investigation's L3-capacity-vs-bandwidth
-findings already established.
+The original draft of this section claimed a "2-vs-4-worker asymmetry"
+(pinning helps at `n_workers=2`, hurts at `n_workers=4`) and speculated
+a mechanism for it. The user directly and correctly challenged this:
+"you cannot draw conclusion so quickly!! Are you sure those are not
+noise?!!" - right to ask, since the whole matrix above was SINGLE-RUN
+per condition, exactly the kind of claim `clean_chunk_size_sweep_findings.md`'s
+own earlier discipline (statistical repeats before trusting a
+comparison) was established to prevent.
+
+`pinned_vs_unpinned_noise_check.py` - 3 reps each, wall-clock only, on
+the 4 conditions in question:
+
+| condition | mean | stdev | cv |
+|---|---|---|---|
+| pinned_2 | 27.96s | 1.32 | 4.73% |
+| unpinned_2 | 28.36s | 1.23 | 4.34% |
+| pinned_4 | 29.75s | 0.61 | 2.05% |
+| unpinned_4 | 28.38s | 0.76 | 2.67% |
+
+**pinned_2 vs. unpinned_2**: diff = +0.40s, combined stdev ~1.81s - the
+difference is smaller than the noise band. The original single-run
+"pinning helps at n_workers=2" finding (25.16s vs. 26.86s) DOES NOT
+REPLICATE - it was noise, not a real effect. The individual reps
+overlap heavily (pinned_2: 26.44-28.78s; unpinned_2: 27.61-29.78s).
+
+**pinned_4 vs. unpinned_4**: diff = -1.37s (unpinned faster), combined
+stdev ~0.97s - the difference EXCEEDS the noise band and is consistent
+in direction with the original single-run finding. This comparison
+also has a tighter coefficient of variation (2.05%/2.67% vs.
+4.73%/4.34% for the 2-worker pair), making it independently more
+trustworthy.
+
+**Revised conclusion**: there is no real 2-vs-4-worker asymmetry to
+explain, because the `n_workers=2` half of it was never a real effect.
+The only statistically-supported finding from this whole matrix is:
+**pinning measurably regresses wall-clock at `n_workers=4`**
+specifically (not at `n_workers=2`, where pinned/unpinned are
+indistinguishable within noise). No mechanism for the `n_workers=4`
+regression is confirmed - the earlier "rigid pinning removes scheduler
+load-balancing freedom" idea remains a plausible but UNTESTED
+hypothesis, not a finding, and should not be stated with more
+confidence than that until it is actually investigated (e.g. by
+directly sampling scheduler migration events, or comparing against a
+`n_workers=3` or `n_workers=5` condition to see if 4 is a genuine
+inflection point or part of a smoother trend).
 
 ## What this does NOT show
 
 - Does not re-derive the exact raw counter values in-table (kept to
   ratios for readability) - full transcripts exist in this session's
   own record for anyone needing to re-verify.
-- Does not explain WHY pinned_4 specifically (not pinned_2) shows the
-  worst numbers - pinned_2 does not show the same regression relative
-  to its unpinned counterpart (25.16s pinned vs. 26.86s unpinned -
-  pinned is actually FASTER here, the opposite pattern from the
-  4-worker case) - this 2-vs-4-worker asymmetry in how pinning affects
-  outcomes is itself unexplained and not yet investigated further.
-- Does not include a repeated-run statistical pass (single run per
-  condition/event-group here, unlike `clean_chunk_size_sweep_findings.md`'s
-  earlier repeated methodology) - given the clear, large effect sizes
-  observed (pinned_4 vs. unpinned_4's ~10% wall-clock gap, ~2 point
-  percentage gaps in miss ratios), this is unlikely to be pure noise,
-  but has not been confirmed via repeats specifically for this matrix.
+- Does not include statistical repeats for the FULL matrix's cache-
+  counter data (L1/L2/L3 miss ratios) - only wall-clock was repeated
+  in the noise check above. The single-run cache-miss%/LLC-miss%
+  figures in the main table could themselves carry similar noise not
+  yet checked - this is a real, acknowledged gap, not just a
+  formality.
+- Does not identify the mechanism behind the confirmed `n_workers=4`
+  pinning regression - flagged as an open, unexplained, and
+  NOT-YET-INVESTIGATED item, not something this document has an answer
+  for.
