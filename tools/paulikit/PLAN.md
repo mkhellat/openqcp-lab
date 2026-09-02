@@ -2520,6 +2520,29 @@ binding (no change), but the fix protects the real-risk case (tight
 memory budget or high worker count). 4 new regression tests, 130
 passing repo-wide.
 
+**A second, more impactful real bug found and FIXED the same day**,
+via the user's own directly-requested combined memory-footprint +
+n_workers analysis (`profiling/phase13/n150_worker_count_sweep.py` /
+`n150_worker_count_sweep_findings.md`): `parallel_decompose` submitted
+every chunk as a task up front (5,595 tasks at N=150) rather than
+throttling in-flight work - completed results piled up in the pool's
+IPC queue faster than the single-threaded consumer could drain them,
+an unbounded backlog (not covered by the memory-budget fix above,
+which only bounds one task's own working set) that grew with
+`n_workers`. Measured RSS: ~5 GiB (1 worker) to ~25 GiB (8 workers).
+Fixed via bounded submission (`concurrent.futures.wait(...,
+FIRST_COMPLETED)`, at most `2*n_workers` tasks in flight). Post-fix:
+RSS drops to 208-627 MiB (expected scale) - **but real speedup
+collapses from the earlier 1.06-1.43x to ~1.06x flat**, revealing most
+of the earlier apparent speedup was the unbounded-submission bug
+itself, not genuine parallel throughput. The honest current
+conclusion: chunk-level parallelism at N=150 on this 8-core machine,
+as implemented, delivers essentially no real speedup - the flat
+(not rising-then-saturating) shape points toward per-task IPC/dispatch
+overhead as the dominant limiter, not L3/memory-bandwidth contention.
+A `perf stat` pass and a larger-chunk_size test under the now-fixed
+code remain the next steps to confirm.
+
 
 ## 6. Explicitly out of scope
 
