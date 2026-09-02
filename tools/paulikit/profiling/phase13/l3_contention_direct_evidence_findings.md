@@ -50,6 +50,42 @@ single-socket machine) meaningfully degrades cache behavior and
 wall-clock, even with zero hyperthread-sibling (L1/L2) sharing
 involved at all.
 
+## CRITICAL CORRECTION (added after direct user pushback): this does NOT mean most reads come from L3
+
+A natural, WRONG reading of the table above is "most of this
+workload's data reads are being served from the shared L3 cache." The
+user asked this directly and it is worth being precise: **no** -
+checked directly against the sequential (no contention at all)
+baseline's raw counters (`n150_perf_cache_locality_findings.md`,
+chunk_size=2):
+
+- `L1-dcache-loads` = 56.57B, `L1-dcache-load-misses` = 8.73B ->
+  **84.6% of ALL L1 load accesses are served by L1 itself** (never
+  miss at all) - chunk_size's L1/L2-targeting is working exactly as
+  designed.
+- Of the ~15.4% that do miss L1, only **8.3%** of THAT smaller subset
+  (`cache-references` - which already excludes clean L1 hits) reaches
+  L3 (`LLC-loads`) at all.
+- Of ALL original L1 accesses, only **~0.09%** ever reach DRAM
+  (`LLC-load-misses`).
+
+So the "cache-miss ratio" and "LLC-miss ratio" percentages reported
+throughout this investigation (e.g. "1.4% -> 4.6%" above) are ratios
+computed WITHIN an already-small residual slice of total memory
+traffic - the fraction that was never going to be served by L1/L2 in
+the first place (the per-chunk shared setup arrays re-read on every
+chunk - operator/sorted-index arrays, ~2 MB total, independently
+exceeding L1/L2 regardless of chunk_size - plus the sparse,
+non-sequential gather-indexing access pattern) - NOT a ratio over all
+memory traffic. Tripling a small residual slice's miss ratio is real
+and measured, but it does not mean "most reads come from L3" - the
+overwhelming majority of reads never leave L1/L2 to begin with, both
+with and without cross-core contention. The magnitude of the tripled
+ratio's real-world impact (on total wall-clock, not just on that
+residual slice) is exactly what the 3.2x wall-clock slowdown measures
+directly - that number, not the miss-ratio percentages, is the more
+representative summary of total impact.
+
 ## What this does and does NOT establish
 
 **Does establish**: cross-core contention is real, substantial, and

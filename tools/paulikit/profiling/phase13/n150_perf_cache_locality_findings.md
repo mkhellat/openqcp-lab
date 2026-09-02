@@ -30,6 +30,18 @@ aggregate across the worker pool, not just the main process) - no
 LLC-load-misses / LLC-loads; both `:u`-scoped, userspace-only, per
 `perf_event_paranoid=2` on this machine.)
 
+**Important scope note on these two ratios, added after direct user
+pushback and confirmed via the raw L1 counters
+(`l3_contention_direct_evidence_findings.md`'s own correction
+section)**: `cache-references`/`cache-misses` and `LLC-loads`/
+`LLC-load-misses` are ratios WITHIN an already-small residual slice of
+total memory traffic - the part that already missed L1 (only ~15% of
+all L1 accesses at chunk_size=2, sequential baseline; 84.6% of all L1
+accesses are served by L1 itself, confirming chunk_size's L1/L2
+targeting is working as designed). These percentages are NOT a
+statement that "most reads come from L3" - they never were, and
+should not be read that way anywhere in this document.
+
 ## Finding: cache locality genuinely degrades under parallel execution - confirmed, not assumed
 
 At both chunk_sizes, going from sequential to parallel (8 workers)
