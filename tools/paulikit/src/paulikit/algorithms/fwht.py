@@ -70,6 +70,7 @@ total.
 from __future__ import annotations
 
 import json
+import os
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -202,6 +203,100 @@ class _GrowableArray:
 
 def _checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
     return Path(str(checkpoint_path) + ".progress.json")
+
+
+def _parallel_checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
+    """Progress-file path for the *parallel* checkpoint format (PLAN.md
+    Phase 13) - deliberately a different filename from
+    ``_checkpoint_progress_path``'s sequential format, so the two never
+    collide or silently misinterpret each other's progress file if a
+    caller reuses the same ``checkpoint_path`` between
+    ``fwht_pauli_terms_iter`` and ``parallel_decompose``.
+    """
+    return Path(str(checkpoint_path) + ".parallel_progress.json")
+
+
+def _load_parallel_checkpoint(
+    checkpoint_path: str | Path | None,
+) -> tuple[set[int], tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
+    """Read an existing *parallel* checkpoint, if any.
+
+    Unlike the sequential format's single monotonic ``next_chunk``
+    index (correct only when chunks complete strictly in order),
+    parallel workers complete chunks in whatever order the pool
+    schedules them - the progress file here records the *set* of
+    chunk indices already completed, so resume can skip exactly those
+    chunks regardless of completion order, and re-submit every other
+    chunk (including ones "in the middle" that never got started).
+
+    Returns ``(completed_chunk_indices, (x, z, coeff) | None)``: the
+    set of chunk indices to skip re-submitting, and the previously
+    recorded triples to fold into the result, or ``None`` if there is
+    nothing to replay.
+    """
+    if checkpoint_path is None:
+        return set(), None
+    checkpoint_path = Path(checkpoint_path)
+    progress_path = _parallel_checkpoint_progress_path(checkpoint_path)
+    if not checkpoint_path.exists() or not progress_path.exists():
+        return set(), None
+
+    with open(progress_path) as f:
+        progress = json.load(f)
+    completed = set(progress["completed_chunk_indices"])
+
+    x_vals: list[int] = []
+    z_vals: list[int] = []
+    coeff_vals: list[complex] = []
+    with open(checkpoint_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            x_vals.append(record["x"])
+            z_vals.append(record["z"])
+            coeff_vals.append(complex(record["re"], record["im"]))
+
+    if not x_vals:
+        return completed, None
+    return completed, (
+        np.array(x_vals, dtype=np.intp),
+        np.array(z_vals, dtype=np.intp),
+        np.array(coeff_vals, dtype=complex),
+    )
+
+
+def _append_parallel_checkpoint_chunk(
+    checkpoint_path: str | Path,
+    completed_chunk_indices: set[int],
+    chunk_index: int,
+    x_out: NDArray[np.intp],
+    z_out: NDArray[np.intp],
+    coeff_out: NDArray[np.complexfloating],
+) -> None:
+    """Append one completed chunk's surviving triples to the parallel
+    checkpoint file, then record its index in the completed set.
+
+    Called from the main process only (after collecting a worker's
+    result via ``as_completed``), so this file/set update itself is
+    never concurrently written by multiple processes - workers return
+    their chunk's triples to the main process; they do not write the
+    checkpoint file directly. As with the sequential format, the
+    triples are appended before the progress marker is updated, so a
+    crash mid-write leaves the progress file not yet listing this
+    chunk as completed - it is simply resubmitted on resume rather
+    than silently corrupted.
+    """
+    checkpoint_path = Path(checkpoint_path)
+    with open(checkpoint_path, "a") as f:
+        for x, z, coeff in zip(x_out.tolist(), z_out.tolist(), coeff_out.tolist()):
+            f.write(json.dumps({"x": x, "z": z, "re": coeff.real, "im": coeff.imag}) + "\n")
+
+    completed_chunk_indices.add(chunk_index)
+    progress_path = _parallel_checkpoint_progress_path(checkpoint_path)
+    with open(progress_path, "w") as f:
+        json.dump({"completed_chunk_indices": sorted(completed_chunk_indices)}, f)
 
 
 def _load_checkpoint(
@@ -1019,6 +1114,267 @@ def auto_decompose(
         assume_hermitian=assume_hermitian,
         checkpoint_path=checkpoint_path,
     )
+
+
+# PLAN.md Phase 13 (multi-core chunk parallelism, 13a): per-worker
+# process state, set once via ProcessPoolExecutor's initializer rather
+# than pickled into every task - the operator (and the shared
+# sorted/active-x arrays every chunk gathers a slice of) can be
+# multiple GiB at real N, so shipping it once per *worker process*
+# rather than once per *chunk* is not an optimization here, it is the
+# difference between this being usable at all and every task paying an
+# O(operator size) pickling cost that dwarfs the chunk's own O(chunk_
+# size * dim) work.
+_parallel_worker_state: dict | None = None
+
+
+def _parallel_worker_init(
+    operator,
+    is_sparse_input: bool,
+    sorted_inverse: NDArray[np.intp],
+    sorted_p_nz: NDArray[np.intp],
+    sorted_q_nz: NDArray[np.intp],
+    active_x: NDArray[np.intp],
+    dim: int,
+    n_qubits: int,
+    z_indices: NDArray[np.intp],
+    atol: float,
+) -> None:
+    """``ProcessPoolExecutor`` initializer - runs once per worker
+    process, stashing everything ``_parallel_worker_chunk`` needs in
+    that process's own global state so per-task calls only need to
+    pass the (tiny) chunk boundaries.
+    """
+    global _parallel_worker_state
+    _parallel_worker_state = {
+        "operator": operator,
+        "is_sparse_input": is_sparse_input,
+        "sorted_inverse": sorted_inverse,
+        "sorted_p_nz": sorted_p_nz,
+        "sorted_q_nz": sorted_q_nz,
+        "active_x": active_x,
+        "dim": dim,
+        "n_qubits": n_qubits,
+        "z_indices": z_indices,
+        "atol": atol,
+    }
+
+
+def _parallel_worker_chunk(
+    chunk_index: int, chunk_start: int, chunk_end: int
+) -> tuple[int, NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]]:
+    """Runs in a worker process (via the pool started by
+    ``parallel_decompose``): computes exactly one chunk's ``(x, z,
+    coefficient)`` triples - the same per-chunk body as
+    ``_iter_chunked_coefficients``, factored out so it can run as an
+    independent task with no generator/closure state to pickle.
+
+    Returns ``(chunk_index, chunk_x_out, z_idx, chunk_coeff_out)`` -
+    the index is threaded through so the main process can checkpoint
+    and reassemble results regardless of which order the pool's
+    ``as_completed`` delivers them in (workers do not complete chunks
+    in submission order - see PLAN.md Phase 13's scoping doc).
+    """
+    state = _parallel_worker_state
+    assert state is not None, "_parallel_worker_init must run before _parallel_worker_chunk"
+
+    sorted_inverse = state["sorted_inverse"]
+    lo = int(np.searchsorted(sorted_inverse, chunk_start))
+    hi = int(np.searchsorted(sorted_inverse, chunk_end))
+
+    dim = state["dim"]
+    gathered_chunk = np.zeros((chunk_end - chunk_start, dim), dtype=complex)
+    gathered_values = state["operator"][
+        state["sorted_p_nz"][lo:hi], state["sorted_q_nz"][lo:hi]
+    ]
+    if state["is_sparse_input"]:
+        gathered_values = np.asarray(gathered_values).ravel()
+    gathered_chunk[
+        sorted_inverse[lo:hi] - chunk_start, state["sorted_q_nz"][lo:hi]
+    ] = gathered_values
+
+    transformed_chunk = _walsh_hadamard_transform_rows(gathered_chunk, overwrite_input=True)
+
+    active_x = state["active_x"]
+    chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
+    phase = 1j ** _popcount_array(chunk_x & state["z_indices"], state["n_qubits"])
+    chunk_coefficients = transformed_chunk * np.conj(phase) / dim
+
+    row_idx, z_idx = np.nonzero(np.abs(chunk_coefficients) > state["atol"])
+    chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
+    chunk_coeff_out = chunk_coefficients[row_idx, z_idx]
+
+    return chunk_index, chunk_x_out, z_idx, chunk_coeff_out
+
+
+def _detect_available_worker_count() -> int:
+    """Number of CPUs actually usable by *this process* right now -
+    PLAN.md Phase 13's own correctness fix versus the naive
+    ``os.cpu_count()``/``multiprocessing.cpu_count()``, both of which
+    report a node's *total* core count even inside a cgroup/cpuset-
+    restricted HPC job (the identical bug class Phase 12 already fixed
+    for memory - see ``autotune.available_memory_bytes`` versus raw
+    ``/proc/meminfo`` ``MemTotal``). ``os.sched_getaffinity`` is
+    Linux-only; falls back to ``os.cpu_count()`` elsewhere (macOS/BSD),
+    a real, documented portability gap - see PLAN.md Phase 13.
+    """
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count() or 1
+
+
+def parallel_decompose(
+    operator: NDArray[np.complexfloating] | NDArray[np.floating],
+    chunk_size: int | None = None,
+    n_workers: int | None = None,
+    atol: float = 1e-10,
+    assume_hermitian: bool = True,
+    checkpoint_path: str | Path | None = None,
+) -> Iterator[dict[str, complex] | dict[str, float]]:
+    """Multi-core counterpart to ``fwht_pauli_terms_iter`` - PLAN.md
+    Phase 13a. Distributes chunks across a ``ProcessPoolExecutor``
+    instead of processing them one at a time in this process; each
+    chunk is a fully independent sub-problem (no cross-chunk
+    combination step in the underlying math - see
+    ``_iter_chunked_coefficients``'s own docstring), which is exactly
+    what makes this a real, not just nominal, parallelization.
+
+    A new top-level function rather than a parameter added to
+    ``fwht_pauli_terms_iter`` - deliberately, matching
+    ``auto_decompose``'s own precedent (PLAN.md Phase 12): changing an
+    *existing* function's iteration-order/resource-lifetime contract
+    based on a new parameter is a bigger compatibility hazard than
+    adding a new function with its own, clearly different contract
+    (results here are NOT guaranteed to arrive in chunk order - see
+    Yields below).
+
+    **The two auto-tuning quantities this depends on
+    (``recommended_chunk_size``, ``available_memory_bytes``) were
+    measured/derived on a single lone process (PLAN.md Phase 12) - see
+    Args below for how this function adapts each for real multi-worker
+    use rather than reusing them unchanged.**
+
+    Args:
+        operator: Same contract as ``fwht_pauli_terms``.
+        chunk_size: If ``None`` (default), uses
+            ``autotune.recommended_chunk_size(dim)`` - the same
+            formula ``auto_decompose`` uses, chosen for a single lone
+            process's cache. Concurrent workers competing for one
+            shared LLC/memory bandwidth may have a different real
+            optimum - not yet re-measured under concurrent load (see
+            PLAN.md Phase 13's scoping doc); pass an explicit value to
+            override.
+        n_workers: If ``None`` (default), uses
+            ``_detect_available_worker_count()`` -
+            ``len(os.sched_getaffinity(0))`` where available (Linux),
+            not ``os.cpu_count()``, so a cgroup/cpuset-restricted HPC
+            job is not over-subscribed. Pass an explicit value to
+            override (e.g. to leave headroom for other work on a
+            shared node).
+        atol: Same as ``fwht_pauli_terms``.
+        assume_hermitian: Same as ``fwht_pauli_terms_iter`` - checked
+            per-chunk, same all-or-nothing-per-chunk (not
+            all-or-nothing-per-operator) contract; see that function's
+            own docstring for the difference from ``fwht_pauli_terms``.
+        checkpoint_path: If given, uses a *different* checkpoint format
+            from ``fwht_pauli_terms``/``fwht_pauli_terms_iter``'s
+            sequential one (a distinct file suffix, so the two never
+            collide) - records the *set* of completed chunk indices
+            rather than one monotonic marker, since parallel workers
+            complete chunks out of order; resume re-submits every
+            chunk not already in that set, regardless of position.
+
+    Yields:
+        One ``dict`` per completed chunk, same value-type contract as
+        ``fwht_pauli_terms_iter``. **Order is not guaranteed to match
+        chunk order** - chunks are yielded as workers complete them,
+        which depends on runtime scheduling, not input position. A
+        caller that needs chunk-order output should sort/buffer
+        itself; most callers (writing to disk, accumulating into an
+        unordered structure, filtering) do not care about order.
+
+    Raises:
+        ValueError: Same conditions as ``fwht_pauli_terms_iter``,
+            raised immediately for the shape/power-of-two check (before
+            any worker starts); the ``assume_hermitian`` violation
+            case is instead raised (as a chunk-processing exception,
+            re-raised in the main process) once the offending chunk's
+            worker task completes - unlike the sequential generator,
+            this does not guarantee every chunk submitted *before* the
+            offending one has already been yielded to the caller by
+            the time it raises, since chunks do not complete in
+            submission order.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    from paulikit.algorithms import autotune
+
+    operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz = _prepare_operator_for_fwht(
+        operator
+    )
+    active_x, inverse = np.unique(x_nz, return_inverse=True)
+    n_active = len(active_x)
+    z_indices = np.arange(dim)[np.newaxis, :]
+
+    if chunk_size is None:
+        chunk_size = autotune.recommended_chunk_size(dim)
+    if n_workers is None:
+        n_workers = _detect_available_worker_count()
+    n_workers = max(1, min(n_workers, max(1, (n_active + chunk_size - 1) // chunk_size)))
+
+    order = np.argsort(inverse, kind="stable")
+    sorted_inverse = inverse[order]
+    sorted_p_nz = p_nz[order]
+    sorted_q_nz = q_nz[order]
+
+    chunk_starts = list(range(0, n_active, chunk_size))
+    completed_indices, checkpoint = _load_parallel_checkpoint(checkpoint_path)
+    if checkpoint is not None:
+        labels = _pauli_label_batch(checkpoint[0], checkpoint[1], n_qubits)
+        if assume_hermitian:
+            yield _build_real_terms(labels, checkpoint[2], atol)
+        else:
+            yield {
+                label: complex(c) for label, c in zip(labels, checkpoint[2].tolist())
+            }
+
+    pending = [
+        (i, start, min(start + chunk_size, n_active))
+        for i, start in enumerate(chunk_starts)
+        if i not in completed_indices
+    ]
+    if not pending:
+        return
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_parallel_worker_init,
+        initargs=(
+            operator, is_sparse_input, sorted_inverse, sorted_p_nz, sorted_q_nz,
+            active_x, dim, n_qubits, z_indices, atol,
+        ),
+    ) as pool:
+        futures = [
+            pool.submit(_parallel_worker_chunk, chunk_index, chunk_start, chunk_end)
+            for chunk_index, chunk_start, chunk_end in pending
+        ]
+        for future in as_completed(futures):
+            chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
+
+            if checkpoint_path is not None:
+                _append_parallel_checkpoint_chunk(
+                    checkpoint_path, completed_indices, chunk_index,
+                    chunk_x_out, z_idx, chunk_coeff_out,
+                )
+
+            labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)
+            if assume_hermitian:
+                yield _build_real_terms(labels, chunk_coeff_out, atol)
+            else:
+                yield {
+                    label: complex(c) for label, c in zip(labels, chunk_coeff_out.tolist())
+                }
 
 
 _WARNED_NO_NATIVE = False

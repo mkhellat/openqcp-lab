@@ -375,3 +375,35 @@ def available_memory_bytes() -> int:
 
         _cached_memory_budget_bytes = budget
         return budget
+
+
+def per_worker_memory_budget_bytes(n_workers: int) -> int:
+    """PLAN.md Phase 13's correctness fix for using
+    ``available_memory_bytes()`` under multi-process parallelism.
+
+    ``available_memory_bytes()`` answers "how much memory can *this
+    process* safely use" - correct for a single lone process (Phase
+    12's original design), but if reused unchanged as each of
+    ``n_workers`` *concurrent* worker processes' own individual
+    budget, the *sum* of what they might use is ``n_workers`` times
+    the actual node/cgroup limit - a real, silent OOM risk under
+    parallelism that Phase 12's own memory-budget work was never
+    exposed to (a single process there never shared its budget with
+    concurrent siblings). This divides the one shared budget evenly
+    across workers instead - conservative (assumes every worker peaks
+    simultaneously, which is the safe assumption, not the average
+    case) but correctness-critical on a shared/multi-tenant node, the
+    same priority Phase 12's own cgroup-awareness work was built for.
+
+    Args:
+        n_workers: Number of concurrent worker processes that will
+            share the budget returned by ``available_memory_bytes()``.
+            Must be >= 1.
+
+    Returns:
+        ``available_memory_bytes() // n_workers`` - each worker's own
+        safe ceiling, not the whole-node figure.
+    """
+    if n_workers < 1:
+        raise ValueError(f"n_workers must be >= 1, got {n_workers}")
+    return available_memory_bytes() // n_workers

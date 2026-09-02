@@ -2480,6 +2480,29 @@ reduction.
   toward disabling checkpointing in the parallel path initially rather
   than redesigning the checkpoint format ahead of a real need.
 
+**13a IMPLEMENTED 2026-09-02** - `fwht.parallel_decompose` (new
+top-level function, per the API-shape decision above), a
+`ProcessPoolExecutor`-based worker pool over
+`_iter_chunked_coefficients`'s per-chunk body, with
+`autotune.per_worker_memory_budget_bytes(n_workers)` (divides the
+shared budget across workers) and `_detect_available_worker_count()`
+(`sched_getaffinity`-based, not `cpu_count()`) both built per the
+"full HPC-safe v1" decision - not deferred. Checkpoint/resume
+redesigned to a set-based completed-chunk-indices format (distinct
+file suffix from the sequential format, so the two never collide),
+per the "redesign now" decision. Correctness verified against every
+fixture at multiple chunk_size/worker-count combinations, including
+checkpoint interruption/resume - 16 new tests, 126 passing repo-wide.
+**Real N=100/N=150 measurement, same day**: speedup is real but far
+below linear (1.12x/1.23x on this 8-core machine) - see
+`profiling/phase13/n100_n150_parallel_decompose_findings.md`. A quick
+chunk_size sweep found the speedup stays roughly flat across a >40x
+chunk_size range, weak evidence the limiter is shared-cache/memory-
+bandwidth contention rather than per-task dispatch overhead alone -
+not yet conclusive, flagged for follow-up (a `perf stat` pass under
+concurrent load, per the scoping doc's own verification plan, is
+still open).
+
 
 ## 6. Explicitly out of scope
 
