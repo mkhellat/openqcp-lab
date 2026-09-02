@@ -2438,6 +2438,49 @@ free, itself confirmation the fix is working as intended.
   branches unchanged (no cgroup concept there).
 
 
+### Phase 13 — multi-core / multi-node chunk parallelism (scoped 2026-09-02, not yet implemented)
+
+**Motivation.** Raised directly by the user during Phase 12's
+chunk_size-floor investigation: if this pipeline cannot use more than
+one core, what is the point of running it on a supercomputer node or a
+machine with a lot of memory? Confirmed via direct code search: zero
+multiprocessing/MPI exists anywhere in `paulikit` today - every
+speedup so far (Phases 3, 9, 10, 11, 12) came from making one core's
+work cheaper, never from a second core. `_iter_chunked_coefficients`
+already documents the key enabling property in its own docstring: each
+chunk is a fully independent sub-problem, with no cross-chunk
+combination step in the underlying math - concatenation, not
+reduction.
+
+**Full scoping**: `profiling/phase13/scoping.md`. Summary:
+- Split into two sub-phases: **13a** (multi-core, single-node,
+  `ProcessPoolExecutor` over chunks - self-contained, no cluster
+  dependency) first; **13b** (multi-node, needs a job-launcher/MPI
+  mechanism) deliberately deferred until 13a's real measurements are
+  in hand.
+- **A real, unresolved tension flagged, not assumed either way**:
+  Phase 12's `chunk_size` floor and memory-budget formulas were
+  measured on a single lone process. Multi-core execution means N
+  worker processes competing for the *same shared* LLC and dividing
+  the *same* memory budget - `available_memory_bytes()` must become
+  `available_memory_bytes() / n_workers` per worker, and Phase 12's
+  own cache-locality tuning needs re-measurement under real concurrent
+  load (a single process today never contends with itself for cache).
+- Worker-count auto-detection must use
+  `len(os.sched_getaffinity(0))`, not `os.cpu_count()` - the same
+  cpuset-awareness bug class Phase 12 already fixed for memory
+  (`available_memory_bytes` vs. raw `MemTotal`), now for core count.
+- API shape leans toward a new top-level function (parallel to
+  `auto_decompose`'s own precedent - keep `fwht_pauli_terms`/
+  `fwht_pauli_terms_iter`'s existing contracts untouched), not yet
+  finalized - a design-question round with the user is expected before
+  implementation starts, same as Phase 12's own process.
+- Checkpoint/resume (Phase 9) assumes strictly sequential chunk
+  completion order; parallel workers complete out of order - leaning
+  toward disabling checkpointing in the parallel path initially rather
+  than redesigning the checkpoint format ahead of a real need.
+
+
 ## 6. Explicitly out of scope
 
 - Direct reuse of any private prior project's code. Only general

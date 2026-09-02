@@ -505,7 +505,18 @@ that dropped to 177-593 MiB free - itself confirmation the fix works.
   2026-09-02**: `_min_chunk_size_floor(dim)` now interpolates between 4
   real measured anchor points instead of returning one constant — see
   `phase12/chunk_size_floor_scale_dependence_findings.md`'s own "Fix"
-  section. Also open: Phase 5
+  section. **Scoped 2026-09-02, not yet implemented: Phase 13**
+  (multi-core/multi-node chunk parallelism) - raised directly by the
+  user during this same investigation ("what would be the use of
+  supercomputers with nodes... if these two core calculations could
+  not be run in parallel"), confirmed via code search that zero
+  multiprocessing/MPI exists in the codebase today even though each
+  chunk is already an independent sub-problem by design. Full
+  architectural scoping (13a multi-core-single-node first, 13b
+  multi-node deferred; process pool over threads; the real unresolved
+  tension with Phase 12's memory-budget/chunk_size-floor formulas,
+  both measured on a single lone process) in `phase13/scoping.md`. Also
+  open: Phase 5
   (prebuilt wheels, to make the native extension a hard requirement)
   and Phase 7's remaining items (TBB false-sharing/partitioner tuning —
   explicitly conditional on TBB re-entering the hot path, which it has
