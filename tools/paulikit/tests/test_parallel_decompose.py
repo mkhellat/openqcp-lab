@@ -8,6 +8,8 @@ sequential dense path) on every fixture, same discipline as Phase
 verify the divide-and-conquer decomposition is right.
 """
 
+import builtins
+import io
 import json
 import os
 
@@ -16,6 +18,7 @@ import pytest
 from paulikit.algorithms import autotune
 from paulikit.algorithms.fwht import (
     _detect_available_worker_count,
+    _physical_core_representative_cpus,
     _recommended_parallel_chunk_size,
     fwht_pauli_terms,
     parallel_decompose,
@@ -233,3 +236,55 @@ def test_detect_available_worker_count_falls_back_to_cpu_count(monkeypatch):
     monkeypatch.setattr(os, "sched_getaffinity", raise_attr_error, raising=False)
     monkeypatch.setattr(os, "cpu_count", lambda: 4)
     assert _detect_available_worker_count() == 4
+
+
+def test_physical_core_representative_cpus_groups_hyperthread_siblings(monkeypatch, tmp_path):
+    # Simulate a 2-physical-core, 4-logical-CPU hyperthreaded machine:
+    # (0,2) share one physical core, (1,3) share another.
+    monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0, 1, 2, 3}, raising=False)
+
+    siblings = {0: "0,2", 1: "1,3", 2: "0,2", 3: "1,3"}
+    real_open = open
+
+    def fake_open(path, *args, **kwargs):
+        for cpu, sib in siblings.items():
+            marker = f"/cpu{cpu}/topology/thread_siblings_list"
+            if marker in str(path):
+                return io.StringIO(sib)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+
+    result = _physical_core_representative_cpus()
+    assert result == [0, 1], "expected one representative CPU per physical-core sibling group"
+
+
+def test_physical_core_representative_cpus_returns_none_when_sysfs_unavailable(monkeypatch):
+    monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0}, raising=False)
+
+    def raise_oserror(*args, **kwargs):
+        raise OSError
+
+    monkeypatch.setattr(builtins, "open", raise_oserror)
+    assert _physical_core_representative_cpus() is None
+
+
+def test_physical_core_representative_cpus_returns_none_without_sched_getaffinity(monkeypatch):
+    def raise_attr_error(pid):
+        raise AttributeError
+
+    monkeypatch.setattr(os, "sched_getaffinity", raise_attr_error, raising=False)
+    assert _physical_core_representative_cpus() is None
+
+
+def test_parallel_decompose_with_pinning_still_correct(monkeypatch):
+    # End-to-end: pinning must never break correctness, even when the
+    # physical-core probe succeeds on this real machine.
+    fixture = ALL_FIXTURES[1]
+    padded = fixture.padded_hamiltonian()
+    reference = fwht_pauli_terms(padded)
+
+    combined = _combine(parallel_decompose(padded, chunk_size=2, n_workers=2))
+    assert set(combined) == set(reference)
+    for label in reference:
+        assert combined[label] == pytest.approx(reference[label], abs=1e-9)

@@ -1139,11 +1139,31 @@ def _parallel_worker_init(
     n_qubits: int,
     z_indices: NDArray[np.intp],
     atol: float,
+    pin_cpus: list[int] | None,
+    next_pin_index,
 ) -> None:
     """``ProcessPoolExecutor`` initializer - runs once per worker
     process, stashing everything ``_parallel_worker_chunk`` needs in
     that process's own global state so per-task calls only need to
     pass the (tiny) chunk boundaries.
+
+    ``pin_cpus``/``next_pin_index`` implement PLAN.md Phase 13's CPU-
+    pinning fix: each worker process atomically claims the next unused
+    index into ``pin_cpus`` (one representative logical CPU per
+    PHYSICAL core - see ``_physical_core_representative_cpus``) via
+    ``next_pin_index`` (a ``multiprocessing.Value`` shared counter,
+    the only way to hand each of several otherwise-identical
+    ``initializer`` calls a distinct index - ``ProcessPoolExecutor``
+    does not pass a per-worker ordinal itself), then pins itself to
+    that one CPU. If ``pin_cpus`` is ``None`` (non-Linux, or fewer
+    distinct physical cores than requested workers - see
+    ``parallel_decompose``) or more workers claim an index than
+    ``pin_cpus`` has entries (can happen if the pool starts more
+    worker processes than ``max_workers`` transiently, e.g. during
+    ``max_tasks_per_child`` recycling - not used here, but defensive
+    regardless), pinning is skipped for the excess worker(s) - a
+    worker that isn't pinned is still correct, just not guaranteed
+    isolated from a hyperthread sibling.
     """
     global _parallel_worker_state
     _parallel_worker_state = {
@@ -1158,6 +1178,13 @@ def _parallel_worker_init(
         "z_indices": z_indices,
         "atol": atol,
     }
+
+    if pin_cpus:
+        with next_pin_index.get_lock():
+            my_index = next_pin_index.value
+            next_pin_index.value += 1
+        if my_index < len(pin_cpus):
+            _pin_current_process_to_cpu(pin_cpus[my_index])
 
 
 def _parallel_worker_chunk(
@@ -1222,6 +1249,77 @@ def _detect_available_worker_count() -> int:
         return len(os.sched_getaffinity(0))
     except AttributeError:
         return os.cpu_count() or 1
+
+
+def _physical_core_representative_cpus() -> list[int] | None:
+    """One logical CPU id per PHYSICAL core, among the CPUs this
+    process is actually allowed to use - PLAN.md Phase 13's fix for a
+    real gap found by direct measurement
+    (``n_workers_placement_and_cache_findings.md``): without explicit
+    pinning, ``ProcessPoolExecutor`` workers are freely migrated by
+    the Linux scheduler across ALL logical CPUs regardless of
+    ``n_workers``, including both hyperthread siblings of the same
+    physical core running workers simultaneously - confirmed via
+    direct ``ps -o psr`` sampling, not assumed. ``len(os.sched_
+    getaffinity(0))`` (``_detect_available_worker_count``) counts
+    logical CPUs, which over-counts on a hyperthreaded machine (this
+    dev machine: 8 logical CPUs, 4 physical cores) - a distinct
+    correctness question from that function's own cgroup/cpuset
+    concern.
+
+    Reads ``/sys/devices/system/cpu/cpu<N>/topology/
+    thread_siblings_list`` (Linux only) for each CPU this process is
+    allowed to use, groups CPUs into physical-core sibling sets, and
+    returns one representative CPU id per SET (the lowest id in each
+    group) - deterministic and stable across calls. Returns ``None``
+    if unavailable (non-Linux, sysfs not mounted, or any read fails) -
+    callers must fall back to their own default when this returns
+    ``None``.
+    """
+    try:
+        allowed = os.sched_getaffinity(0)
+    except AttributeError:
+        return None
+
+    core_of: dict[int, int] = {}
+    for cpu in sorted(allowed):
+        siblings_path = f"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list"
+        try:
+            with open(siblings_path) as f:
+                siblings_str = f.read().strip()
+        except OSError:
+            return None
+        # Format: comma-separated list, or ranges like "0-1" - this
+        # machine's format ("0,4") is comma-separated; handle a range
+        # entry defensively since the sysfs format is not guaranteed
+        # identical across kernels.
+        siblings: set[int] = set()
+        for part in siblings_str.split(","):
+            part = part.strip()
+            if "-" in part:
+                lo, hi = part.split("-")
+                siblings.update(range(int(lo), int(hi) + 1))
+            elif part:
+                siblings.add(int(part))
+        physical_core_id = min(siblings) if siblings else cpu
+        core_of.setdefault(physical_core_id, cpu)
+
+    return sorted(core_of.values())
+
+
+def _pin_current_process_to_cpu(cpu: int) -> bool:
+    """Pins the CALLING process to a single logical CPU - Linux only
+    (``sched_setaffinity`` has no portable POSIX equivalent, same
+    caveat as ``cache_probe.c``'s own ``pin_to_one_cpu``). Returns
+    ``True`` on success, ``False`` if unavailable/failed (caller
+    should treat this as best-effort, not fatal - an unpinned worker
+    is still correct, just potentially slower/more contended).
+    """
+    try:
+        os.sched_setaffinity(0, {cpu})
+        return True
+    except (AttributeError, OSError):
+        return False
 
 
 def _recommended_parallel_chunk_size(dim: int, n_workers: int) -> int:
@@ -1343,6 +1441,7 @@ def parallel_decompose(
             the time it raises, since chunks do not complete in
             submission order.
     """
+    import multiprocessing
     from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
     from paulikit.algorithms import autotune
@@ -1355,7 +1454,23 @@ def parallel_decompose(
     z_indices = np.arange(dim)[np.newaxis, :]
 
     if n_workers is None:
-        n_workers = _detect_available_worker_count()
+        # _detect_available_worker_count() counts logical CPUs -
+        # correct for cgroup/cpuset restrictions, but on a
+        # hyperthreaded machine that over-counts real parallel
+        # capacity for this CPU-bound workload. Real measurement
+        # (profiling/phase13/n_workers_placement_and_cache_findings.md)
+        # found n_workers=2 beats both 4 (physical core count on the
+        # 4-core/8-thread dev machine) and 8 (logical CPU count) on
+        # wall-clock, and that neither n_workers=4 nor n_workers=8
+        # achieves meaningful isolation without explicit pinning
+        # (added below) - capping the auto-detected default to the
+        # number of distinct PHYSICAL cores (not logical CPUs) is the
+        # evidence-based choice here, not a guess. Falls back to the
+        # logical-CPU count if the physical-core probe itself is
+        # unavailable (non-Linux).
+        logical_default = _detect_available_worker_count()
+        physical_cpus = _physical_core_representative_cpus()
+        n_workers = len(physical_cpus) if physical_cpus else logical_default
 
     if chunk_size is None:
         chunk_size = _recommended_parallel_chunk_size(dim, n_workers)
@@ -1404,12 +1519,30 @@ def parallel_decompose(
     # O(chunk_size * dim) per-task footprint the memory-budget
     # division above was already designed to control.
     max_in_flight = max(1, 2 * n_workers)
+
+    # CPU-pinning fix (PLAN.md Phase 13a, found necessary by direct
+    # measurement - profiling/phase13/n_workers_placement_and_cache_
+    # findings.md): without this, ProcessPoolExecutor workers are
+    # freely migrated by the Linux scheduler across ALL logical CPUs,
+    # confirmed via direct ps -o psr sampling to cause hyperthread-
+    # sibling collisions (two workers on the same physical core at
+    # once) at every n_workers value tested, not just when n_workers
+    # exceeds the physical core count. pin_cpus is one representative
+    # logical CPU per physical core (None if unavailable - non-Linux,
+    # or the physical-core probe itself failed); next_pin_index is a
+    # cross-process shared counter each worker atomically increments
+    # on startup to claim a distinct entry (ProcessPoolExecutor's
+    # initializer gives every worker identical initargs, with no
+    # built-in per-worker ordinal of its own).
+    pin_cpus = _physical_core_representative_cpus()
+    next_pin_index = multiprocessing.Value("i", 0)
+
     with ProcessPoolExecutor(
         max_workers=n_workers,
         initializer=_parallel_worker_init,
         initargs=(
             operator, is_sparse_input, sorted_inverse, sorted_p_nz, sorted_q_nz,
-            active_x, dim, n_qubits, z_indices, atol,
+            active_x, dim, n_qubits, z_indices, atol, pin_cpus, next_pin_index,
         ),
     ) as pool:
         pending_iter = iter(pending)
