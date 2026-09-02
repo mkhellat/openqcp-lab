@@ -102,66 +102,72 @@ moves the cache-behavior needle further, and CPU pinning specifically
 does not reliably improve it and in the `pinned_4` case measurably
 does not.
 
-## CORRECTION (added after direct user pushback, statistically verified): the pinned_2/unpinned_2 gap is NOISE - only the n_workers=4 effect is real
+## CORRECTION, TWICE (2026-09-02, same session): the first "it's noise" correction was ITSELF statistically invalid - proper testing shows pinning hurts at BOTH n_workers=2 and 4
 
-The original draft of this section claimed a "2-vs-4-worker asymmetry"
-(pinning helps at `n_workers=2`, hurts at `n_workers=4`) and speculated
-a mechanism for it. The user directly and correctly challenged this:
-"you cannot draw conclusion so quickly!! Are you sure those are not
-noise?!!" - right to ask, since the whole matrix above was SINGLE-RUN
-per condition, exactly the kind of claim `clean_chunk_size_sweep_findings.md`'s
-own earlier discipline (statistical repeats before trusting a
-comparison) was established to prevent.
+**First pass** (now itself superseded): a 3-rep check eyeballing "diff
+vs. a naive combined stdev" concluded the `pinned_2`/`unpinned_2` gap
+was noise. The user immediately and correctly challenged THIS
+conclusion too: "Your claim on pinned_2 vs unpinned_2 is biased...
+if the data points... are claimed to be noise due the overlap and
+stdev, You cannot conclude their difference is noise!!! You need to
+strengthen your statistical analysis!!" - exactly right: eyeballing an
+overlap between two small samples is not a hypothesis test, and
+"the difference didn't clear my informal stdev check" does not license
+a claim of "no real difference" (absence of significant evidence is
+not evidence of absence, especially at n=3).
 
-`pinned_vs_unpinned_noise_check.py` - 3 reps each, wall-clock only, on
-the 4 conditions in question:
+**Proper test, done right**: `pinned_vs_unpinned_welch_ttest.py` -
+Welch's t-test (unequal-variance two-sample t-test, via `scipy.stats`),
+5 reps per condition, actual p-values and 95% confidence intervals on
+the difference of means, not an eyeballed comparison.
 
-| condition | mean | stdev | cv |
-|---|---|---|---|
-| pinned_2 | 27.96s | 1.32 | 4.73% |
-| unpinned_2 | 28.36s | 1.23 | 4.34% |
-| pinned_4 | 29.75s | 0.61 | 2.05% |
-| unpinned_4 | 28.38s | 0.76 | 2.67% |
+| condition | mean | stdev |
+|---|---|---|
+| pinned_2 | 29.23s | 1.58 |
+| unpinned_2 | 26.28s | 1.57 |
+| pinned_4 | 28.04s | 1.06 |
+| unpinned_4 | 26.44s | 0.10 |
 
-**pinned_2 vs. unpinned_2**: diff = +0.40s, combined stdev ~1.81s - the
-difference is smaller than the noise band. The original single-run
-"pinning helps at n_workers=2" finding (25.16s vs. 26.86s) DOES NOT
-REPLICATE - it was noise, not a real effect. The individual reps
-overlap heavily (pinned_2: 26.44-28.78s; unpinned_2: 27.61-29.78s).
+**pinned_2 vs. unpinned_2**: diff = -2.96s (unpinned faster), t=2.975,
+df=8.00, **p=0.0177**, 95% CI [-5.25, -0.67]s (excludes zero) -
+**statistically significant**. The original "it's noise" conclusion
+from the informal 3-rep check was WRONG - with a properly powered test
+(5 reps, a real t-test), the effect is real and unpinned is faster.
 
-**pinned_4 vs. unpinned_4**: diff = -1.37s (unpinned faster), combined
-stdev ~0.97s - the difference EXCEEDS the noise band and is consistent
-in direction with the original single-run finding. This comparison
-also has a tighter coefficient of variation (2.05%/2.67% vs.
-4.73%/4.34% for the 2-worker pair), making it independently more
-trustworthy.
+**pinned_4 vs. unpinned_4**: diff = -1.59s (unpinned faster), t=3.337,
+df=4.07, **p=0.0282**, 95% CI [-2.91, -0.28]s (excludes zero) - also
+**statistically significant**, consistent with every prior pass.
 
-**Revised conclusion**: there is no real 2-vs-4-worker asymmetry to
-explain, because the `n_workers=2` half of it was never a real effect.
-The only statistically-supported finding from this whole matrix is:
-**pinning measurably regresses wall-clock at `n_workers=4`**
-specifically (not at `n_workers=2`, where pinned/unpinned are
-indistinguishable within noise). No mechanism for the `n_workers=4`
-regression is confirmed - the earlier "rigid pinning removes scheduler
-load-balancing freedom" idea remains a plausible but UNTESTED
-hypothesis, not a finding, and should not be stated with more
-confidence than that until it is actually investigated (e.g. by
-directly sampling scheduler migration events, or comparing against a
-`n_workers=3` or `n_workers=5` condition to see if 4 is a genuine
-inflection point or part of a smoother trend).
+**Correct conclusion, superseding both earlier passes**: there was
+never a "2-vs-4-worker asymmetry" - but not because the `n_workers=2`
+effect was noise (the first correction's claim). Both are real,
+statistically significant effects in the SAME direction: **pinning
+measurably regresses wall-clock at BOTH `n_workers=2` and
+`n_workers=4`** on this machine. No mechanism for this regression is
+confirmed at either worker count - the "rigid pinning removes
+scheduler load-balancing freedom" idea remains an untested hypothesis,
+not a finding.
+
+**Methodology lesson, recorded twice over now** (see
+[[feedback_never_trust_single_run_comparisons]] and its own follow-up):
+neither drawing a conclusion from ONE run, NOR "disproving" that
+conclusion via an informal stdev eyeball at n=3, is valid statistical
+practice - a REAL test (adequate sample size, an actual hypothesis
+test with a p-value/CI, not just "does the range overlap") is required
+before either asserting or denying an effect exists.
 
 ## What this does NOT show
 
 - Does not re-derive the exact raw counter values in-table (kept to
   ratios for readability) - full transcripts exist in this session's
   own record for anyone needing to re-verify.
-- Does not include statistical repeats for the FULL matrix's cache-
-  counter data (L1/L2/L3 miss ratios) - only wall-clock was repeated
-  in the noise check above. The single-run cache-miss%/LLC-miss%
-  figures in the main table could themselves carry similar noise not
-  yet checked - this is a real, acknowledged gap, not just a
-  formality.
-- Does not identify the mechanism behind the confirmed `n_workers=4`
-  pinning regression - flagged as an open, unexplained, and
-  NOT-YET-INVESTIGATED item, not something this document has an answer
-  for.
+- Does not include statistical repeats (Welch's t-test or otherwise)
+  for the FULL matrix's cache-COUNTER data (L1/L2/L3 miss ratios) -
+  only wall-clock has been properly tested so far. The single-run
+  cache-miss%/LLC-miss% figures in the main table above could
+  themselves carry similarly unconfirmed variance - flagged as the
+  direct next step, not yet done.
+- Does not identify the mechanism behind the now-confirmed pinning
+  regression at either `n_workers=2` or `n_workers=4` - flagged as an
+  open, unexplained, and NOT-YET-INVESTIGATED item, not something this
+  document has an answer for.
