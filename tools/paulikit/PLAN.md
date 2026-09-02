@@ -2503,6 +2503,23 @@ not yet conclusive, flagged for follow-up (a `perf stat` pass under
 concurrent load, per the scoping doc's own verification plan, is
 still open).
 
+**Real bug found and FIXED same day**: `per_worker_memory_budget_bytes`
+was built and unit-tested but never actually wired into
+`parallel_decompose` - auto `chunk_size` inherited Phase 12's
+single-process cache-locality formula unchanged, with no memory bound
+of its own (that formula was never memory-bounded even in the
+single-process case). Under parallelism, up to `n_workers` chunks'
+working sets are live simultaneously rather than one at a time - the
+user directly observed real memory spikes comparing against the
+non-parallel chunked path, which is exactly what this gap predicts.
+Fixed via `_recommended_parallel_chunk_size(dim, n_workers)`, which
+takes the smaller of the cache-driven value and the largest
+chunk_size whose working set fits one worker's share of the memory
+budget. On this dev machine at N=150 the cache bound was already
+binding (no change), but the fix protects the real-risk case (tight
+memory budget or high worker count). 4 new regression tests, 130
+passing repo-wide.
+
 
 ## 6. Explicitly out of scope
 
