@@ -45,6 +45,7 @@ probe call was independently confirmed reliable).
 
 from __future__ import annotations
 
+import math
 import os
 import threading
 import warnings
@@ -154,20 +155,59 @@ def _detect_l2_boundary_bytes_via_probe() -> int | None:
     return samples[boundary_indices[1] - 1][0]
 
 
-def _min_chunk_size_floor() -> int:
-    """Absolute floor below which chunk_size hurts more than it helps.
+# Real, measured (dim, best-chunk_size) anchor points -
+# profiling/phase12/chunk_size_floor_scale_dependence_findings.md.
+# Best chunk_size decreases monotonically as dim grows (fixed
+# per-chunk overhead dominates at small dim/total-work; at large dim
+# even chunk_size=1 has enough work per chunk to amortize that
+# overhead, and the cache-locality target itself shifts from L2
+# toward L3). The relationship does NOT resolve to one clean
+# closed-form fit to these 4 points alone (verified: neither a fixed
+# constant nor a simple chunk_size = K/dim fits both ends - see the
+# findings doc's own "does NOT show" section, including the
+# unfilled dim=2048..16384 gap) - piecewise log-log interpolation
+# between real anchors is the honest choice here, not a fabricated
+# formula extrapolated from sparse data.
+_FLOOR_ANCHORS_DIM_TO_CHUNK_SIZE: tuple[tuple[int, int], ...] = (
+    (512, 8),  # N=25 - measured best, chunk_size=2 was ~57% slower
+    (2048, 8),  # N=50 - measured best, chunk_size=2 was ~12% slower
+    (16384, 2),  # N=150 - measured best, ~11% faster than the old floor of 8
+    (32768, 1),  # N=200 - measured best, ~22% faster than the old floor of 8
+)
 
-    PLAN.md Phase 12's original sweep found chunk_size=1 at N=25 was
-    57% *slower* than dense - too little work per chunk lets fixed
-    per-chunk overhead (generator suspend/resume, per-chunk
-    gather/WHT dispatch) dominate. A fresh sweep to precisely re-derive
-    this floor has not been done (see PLAN.md Phase 12's design
-    section, design question 2) - this constant is a conservative
-    placeholder based on that one data point, not a re-verified
-    formula. Revisit with real measurement before trusting this
-    number in a performance-critical context.
+
+def _min_chunk_size_floor(dim: int) -> int:
+    """Dim-dependent floor below which chunk_size hurts more than it
+    helps, derived from real measurement at 4 anchor dims (see
+    ``_FLOOR_ANCHORS_DIM_TO_CHUNK_SIZE``), not a single static guess.
+
+    Below the smallest measured dim, or above the largest, clamps to
+    that anchor's value rather than extrapolating past measured data.
+    Between anchors, interpolates log-linearly in both dim and
+    chunk_size (both anchor columns span roughly an order of magnitude
+    each) - a reasoned interpolation of real endpoints, not a fit to
+    an assumed closed form; the dim=2048..16384 gap between anchors is
+    real and unfilled (see the findings doc), so this is a deliberate
+    compromise for that range, not a fully re-verified value.
     """
-    return 8
+    anchors = _FLOOR_ANCHORS_DIM_TO_CHUNK_SIZE
+    if dim <= anchors[0][0]:
+        return anchors[0][1]
+    if dim >= anchors[-1][0]:
+        return anchors[-1][1]
+
+    for (dim_lo, cs_lo), (dim_hi, cs_hi) in zip(anchors, anchors[1:]):
+        if dim_lo <= dim <= dim_hi:
+            if cs_lo == cs_hi:
+                return cs_lo
+            log_dim_lo, log_dim_hi = math.log(dim_lo), math.log(dim_hi)
+            log_cs_lo, log_cs_hi = math.log(cs_lo), math.log(cs_hi)
+            t = (math.log(dim) - log_dim_lo) / (log_dim_hi - log_dim_lo)
+            interpolated = math.exp(log_cs_lo + t * (log_cs_hi - log_cs_lo))
+            return max(1, round(interpolated))
+
+    # Unreachable given the clamps above, but keeps the function total.
+    return anchors[-1][1]
 
 
 def recommended_chunk_size(dim: int) -> int:
@@ -215,7 +255,7 @@ def recommended_chunk_size(dim: int) -> int:
             return _cached_chunk_size
 
         bytes_per_row = dim * 16  # complex128
-        chunk_size = max(_min_chunk_size_floor(), l2_bytes // max(bytes_per_row, 1))
+        chunk_size = max(_min_chunk_size_floor(dim), l2_bytes // max(bytes_per_row, 1))
         _cached_chunk_size = chunk_size
         return _cached_chunk_size
 

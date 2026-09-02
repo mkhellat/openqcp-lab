@@ -499,7 +499,13 @@ that dropped to 177-593 MiB free - itself confirmation the fix works.
   non-idempotency across repeated same-process calls was root-caused,
   confirmed harmless for the shipped call pattern, and a genuine
   thread-safety gap found in its place (fixed with a lock). See
-  `phase12/README.md` for both fix writeups. Also open: Phase 5
+  `phase12/README.md` for both fix writeups. A third issue, the
+  `chunk_size` floor being scale-dependent (static 8 wrong at
+  N=150/200), was found in the same investigation and **fixed
+  2026-09-02**: `_min_chunk_size_floor(dim)` now interpolates between 4
+  real measured anchor points instead of returning one constant — see
+  `phase12/chunk_size_floor_scale_dependence_findings.md`'s own "Fix"
+  section. Also open: Phase 5
   (prebuilt wheels, to make the native extension a hard requirement)
   and Phase 7's remaining items (TBB false-sharing/partitioner tuning —
   explicitly conditional on TBB re-entering the hot path, which it has

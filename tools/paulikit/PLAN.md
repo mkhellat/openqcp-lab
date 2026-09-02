@@ -2381,23 +2381,38 @@ contrast to the pre-fix bug-hunting runs that dropped to 177-593 MiB
 free, itself confirmation the fix is working as intended.
 
 **Known gaps:**
-- **Investigated 2026-09-01 (same day, follow-up), NOT YET FIXED** -
-  see `profiling/phase12/chunk_size_floor_scale_dependence_findings.md`.
+- **Investigated 2026-09-01, FIXED 2026-09-02** - see
+  `profiling/phase12/chunk_size_floor_scale_dependence_findings.md`.
   Design question 2 (the small-chunk-size floor) prompted by direct
   user suspicion after noticing streaming's abundant unused memory
   during the re-measurement runs. Real N=150/N=200 chunk_size sweeps
   (single-run then repeated-run then `perf stat`-confirmed) found the
-  current floor (8) is measurably suboptimal at both scales -
+  old static floor (8) was measurably suboptimal at both scales -
   `chunk_size=2` wins at N=150 (11% faster, mechanism confirmed via
   cache-miss ratio), `chunk_size=1` wins at N=200 (22% faster) - while
   a direct re-check found `chunk_size=8` is still clearly best at
-  N=25/50 (2 would be 12-57% slower there). **No single static floor
-  constant is right across N=25-200** - best `chunk_size` decreases
+  N=25/50 (2 would be 12-57% slower there). No single static floor
+  constant was right across N=25-200 - best `chunk_size` decreases
   monotonically as `dim` grows (8 at dim=512/2048, 2 at dim=16384, 1
   at dim=32768), and even the "best working-set size" doesn't resolve
   to one fixed cache-level target (fits L2 at small N, spills into L3
-  at N=150/200). A real dim-dependent formula is needed, not a
-  one-off constant change - not yet designed. Also confirmed directly
+  at N=150/200) - a single closed-form fit to those 4 sparse points
+  would have been fabricated, not derived. **Fix**: `_min_chunk_size_
+  floor(dim)` now takes `dim` and returns a value derived by
+  log-log-interpolating between the 4 real measured anchor points
+  (`_FLOOR_ANCHORS_DIM_TO_CHUNK_SIZE` in `autotune.py`), clamped to the
+  endpoint values outside the measured dim range rather than
+  extrapolating past real data. The dim=2048..16384 gap between
+  anchors (no direct measurement there - see the findings doc's own
+  "does NOT show" section) is bridged by interpolation, a deliberate,
+  documented compromise for that specific range, not a re-verified
+  value - a candidate for a future N=75/100 repeated-run sweep to
+  narrow. 2 new regression tests pin the exact anchor values and the
+  interpolation's monotonicity. On this dev machine,
+  `recommended_chunk_size` now returns exactly the measured optima at
+  dim=16384 (2) and dim=32768 (1), where it previously returned the
+  stale floor of 8 at N=150 and clamped there for N=200 as well before
+  the cache-target term brought it down. Also confirmed directly
   during this investigation: real system memory usage stayed flat
   (~2.6-2.9 GiB, process RSS 88-106 MiB) throughout every N=150/200
   run regardless of `chunk_size`, confirming Phase 9's streaming

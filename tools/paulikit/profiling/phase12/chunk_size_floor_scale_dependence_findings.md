@@ -166,11 +166,23 @@ code search) - a real, unexplored opportunity given each chunk is
 already an independent sub-problem by design, distinct from and
 potentially more impactful than fine-tuning the floor constant alone.
 
+## Fix (2026-09-02)
+
+`_min_chunk_size_floor()` now takes `dim` and returns a value derived
+by log-log interpolation between the 4 real anchor points measured
+above (512->8, 2048->8, 16384->2, 32768->1), clamped to the endpoint
+values below/above the measured range rather than extrapolating. See
+`src/paulikit/algorithms/autotune.py`'s
+`_FLOOR_ANCHORS_DIM_TO_CHUNK_SIZE` and PLAN.md Phase 12's "Known gaps"
+entry for the full rationale, including why a single closed-form fit
+to 4 sparse points was rejected in favor of interpolating real
+endpoints. This section's "does NOT show" list below is left as
+originally written (historical record of the gap at the time this
+finding was made); the interpolation gap it names is now bridged by
+formula, not by new measurement - see the fix note above.
+
 ## What this does NOT show
 
-- Does not yet fix `_min_chunk_size_floor()` - this document
-  establishes the evidence base; the fix (a real dim-dependent
-  formula, not a static constant) is separate, subsequent work.
 - Does not fill the N=2048-16384 `dim` gap (between N=50 and N=150) -
   the crossover point where the optimal shifts from 8 toward 2 is not
   pinpointed; a real formula would benefit from at least one more data

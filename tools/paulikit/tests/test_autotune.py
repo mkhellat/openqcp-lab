@@ -82,7 +82,39 @@ def test_recommended_chunk_size_respects_floor(monkeypatch):
     monkeypatch.setattr(autotune, "_cache_probe", None)
     monkeypatch.setattr(autotune, "_declared_l2_size_bytes", lambda: 1024)  # tiny
     # dim large enough that the cache-driven size would be < floor
-    assert autotune.recommended_chunk_size(dim=4096) == autotune._min_chunk_size_floor()
+    assert autotune.recommended_chunk_size(dim=4096) == autotune._min_chunk_size_floor(4096)
+
+
+@pytest.mark.parametrize(
+    ("dim", "expected"),
+    [
+        (256, 8),  # below smallest anchor - clamps to it, no extrapolation
+        (512, 8),  # N=25 anchor, exact
+        (2048, 8),  # N=50 anchor, exact
+        (16384, 2),  # N=150 anchor, exact
+        (32768, 1),  # N=200 anchor, exact
+        (65536, 1),  # above largest anchor - clamps to it, no extrapolation
+    ],
+)
+def test_min_chunk_size_floor_matches_measured_anchors(dim, expected):
+    # Regression test for the real N=25/50/150/200 measurements in
+    # profiling/phase12/chunk_size_floor_scale_dependence_findings.md -
+    # pins the exact anchor points so a future edit can't silently drift
+    # away from measured data without a deliberate, documented decision.
+    assert autotune._min_chunk_size_floor(dim) == expected
+
+
+def test_min_chunk_size_floor_interpolates_monotonically_in_the_unmeasured_gap():
+    # The dim=2048..16384 gap has no real measurement (see the findings
+    # doc's own "does NOT show" section) - this only pins that the
+    # interpolation stays monotonically non-increasing and within the
+    # bracketing anchors' range, not any specific unmeasured value.
+    dims = [2048, 4096, 8192, 16384]
+    floors = [autotune._min_chunk_size_floor(d) for d in dims]
+    assert floors == sorted(floors, reverse=True)
+    assert floors[0] == 8
+    assert floors[-1] == 2
+    assert all(2 <= f <= 8 for f in floors)
 
 
 def test_recommended_chunk_size_falls_back_to_32_when_nothing_works(monkeypatch):
