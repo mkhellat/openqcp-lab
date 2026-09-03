@@ -46,7 +46,10 @@ N_OSCILLATORS = 150
 CHUNK_SIZE = 2
 
 condition = sys.argv[1]
-assert condition in ("pinned_4", "unpinned_4", "workers_8", "pinned_2", "unpinned_2", "seq_1")
+assert condition in (
+    "pinned_4", "unpinned_4", "workers_8", "pinned_2", "unpinned_2", "seq_1",
+    "pinned_4_4cores", "pinned_4_2cores",
+)
 
 
 def _rss_kib(pid: int) -> int:
@@ -124,6 +127,17 @@ if condition in ("unpinned_4", "unpinned_2"):
     # Same code path parallel_decompose already uses when pinning is
     # genuinely unavailable (e.g. non-Linux) - not a separate bypass.
     fwht._physical_core_representative_cpus = lambda: None
+elif condition == "pinned_4_4cores":
+    # 4 logical CPUs, one from each of the 4 DISTINCT physical cores
+    # (0=coreA, 1=coreB, 2=coreC, 3=coreD) - identical to plain
+    # "pinned_4" (kept as a separate name for clarity in this specific
+    # A-vs-B comparison).
+    fwht._physical_core_representative_cpus = lambda: [0, 1, 2, 3]
+elif condition == "pinned_4_2cores":
+    # 4 logical CPUs, but only 2 DISTINCT physical cores - both
+    # hyperthread siblings of core A (0,4) and core B (1,5), leaving
+    # physical cores C and D completely unused.
+    fwht._physical_core_representative_cpus = lambda: [0, 4, 1, 5]
 
 total_terms = 0
 root_pid = os.getpid()
@@ -135,7 +149,8 @@ with RssMonitor(root_pid) as mon:
             total_terms += len(chunk)
     else:
         n_workers = {"pinned_4": 4, "unpinned_4": 4, "workers_8": 8,
-                     "pinned_2": 2, "unpinned_2": 2}[condition]
+                     "pinned_2": 2, "unpinned_2": 2,
+                     "pinned_4_4cores": 4, "pinned_4_2cores": 4}[condition]
         for chunk in parallel_decompose(padded, chunk_size=CHUNK_SIZE, n_workers=n_workers):
             total_terms += len(chunk)
     elapsed = time.perf_counter() - t0
