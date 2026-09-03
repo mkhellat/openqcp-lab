@@ -79,11 +79,15 @@ def run_once(condition: str) -> dict:
     cache_misses = counters.get("cache-misses")
     llc_loads = counters.get("LLC-loads")
     llc_misses = counters.get("LLC-load-misses")
+    cycles = counters.get("cycles")
+    instructions = counters.get("instructions")
 
     return {
         "elapsed": elapsed,
         "peak_rss_mib": peak_rss_mib,
-        "cycles": counters.get("cycles"),
+        "cycles": cycles,
+        "instructions": instructions,
+        "ipc": instructions / cycles if (instructions and cycles) else None,
         "cache_miss_ratio": 100 * cache_misses / cache_refs if cache_refs else None,
         "llc_miss_ratio": 100 * llc_misses / llc_loads if llc_loads else None,
         "settled_temp": settled_temp,
@@ -130,6 +134,7 @@ if __name__ == "__main__":
             r = run_once(condition)
             results[condition].append(r)
             print(f"{condition} rep={rep}: elapsed={r['elapsed']} cycles={r['cycles']} "
+                  f"instructions={r['instructions']} ipc={r['ipc']:.4f} "
                   f"cache_miss_ratio={r['cache_miss_ratio']:.3f}% "
                   f"llc_miss_ratio={r['llc_miss_ratio']:.3f}% "
                   f"peak_rss_mib={r['peak_rss_mib']} "
@@ -141,6 +146,8 @@ if __name__ == "__main__":
         print(f"\n{condition}:")
         print(f"  elapsed: {[r['elapsed'] for r in runs]}")
         print(f"  cycles: {[r['cycles'] for r in runs]}")
+        print(f"  instructions: {[r['instructions'] for r in runs]}")
+        print(f"  ipc: {[round(r['ipc'], 4) for r in runs]}")
         print(f"  cache_miss_ratio: {[round(r['cache_miss_ratio'], 3) for r in runs]}")
         print(f"  llc_miss_ratio: {[round(r['llc_miss_ratio'], 3) for r in runs]}")
         print(f"  peak_rss_mib: {[r['peak_rss_mib'] for r in runs]}")
@@ -150,6 +157,8 @@ if __name__ == "__main__":
 
     welch_report(results, cond_a, cond_b, "elapsed", "wall-clock (s)")
     welch_report(results, cond_a, cond_b, "cycles", "cycles (raw count)")
+    welch_report(results, cond_a, cond_b, "instructions", "instructions (raw count)")
+    welch_report(results, cond_a, cond_b, "ipc", "IPC (instructions/cycle)")
     welch_report(results, cond_a, cond_b, "cache_miss_ratio", "cache-miss ratio (%)")
     welch_report(results, cond_a, cond_b, "llc_miss_ratio", "LLC-miss ratio (%)")
     welch_report(results, cond_a, cond_b, "peak_rss_mib", "peak RSS (MiB)")
