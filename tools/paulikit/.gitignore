@@ -11,6 +11,9 @@ config.log
 config.status
 
 # Raw sweep output — written incrementally by profiling/phase13's
-# background measurement drivers; the analysis/findings .md files are
-# the committed deliverable, not this raw data.
+# background measurement drivers. Most of these are throwaway scratch
+# runs (findings .md files are the deliverable, not raw scratch data),
+# but full_optimum_sweep_results.jsonl is the actual dataset behind
+# the publication-grade sweep and is committed deliberately below.
 profiling/phase13/*_results.jsonl
+!profiling/phase13/full_optimum_sweep_results.jsonl
