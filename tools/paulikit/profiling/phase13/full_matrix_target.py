@@ -76,6 +76,53 @@ _CONDITIONS: dict[str, tuple[int, list[int] | None]] = {
     "pinned_5_4cores": (5, [0, 4, 1, 2, 3]),
     "pinned_5_3cores": (5, [0, 4, 1, 5, 2]),
 }
+
+# Full enumeration for the publication-grade sweep
+# (full_optimum_sweep_findings.md): every DISTINCT valid (n_workers,
+# n_physical_cores_used) configuration on this machine (4 physical
+# cores, 2 hyperthreads each - a core hosts at most 2 workers). Named
+# w<n_workers>_c<n_cores> for unambiguous, systematic identification.
+# Core assignment always fills cores in order A,B,C,D, doubling up
+# (both hyperthread siblings) before moving to the next core, i.e. the
+# "most packed" valid assignment for that (n_workers, n_cores) pair -
+# matches the packing convention already used and verified in every
+# earlier pinned_N_Mcores condition in this file.
+_CORE_PAIRS = [(0, 4), (1, 5), (2, 6), (3, 7)]  # physical cores A,B,C,D
+
+
+def _packed_cpu_list(n_workers: int, n_cores: int) -> list[int]:
+    """One representative logical CPU per worker, spread as EVENLY as
+    possible across exactly n_cores DISTINCT physical cores (using
+    both hyperthread siblings of a core only when n_workers exceeds
+    n_cores) - e.g. (4 workers, 3 cores) -> 2+1+1, not 2+2+(0 workers
+    on a 3rd core). This is the only assignment that actually uses
+    n_cores distinct cores for every (n_workers, n_cores) pair in
+    range - a naive "pack cores 0..n_cores-1 to 2 each, ignore the
+    rest" would silently collapse several distinct n_cores values onto
+    the same CPU list (a real bug caught before running anything: an
+    earlier version of this function did exactly that, generating only
+    14 of the intended 17 configurations with silent duplicates)."""
+    assert 1 <= n_cores <= 4
+    assert n_cores <= n_workers <= 2 * n_cores
+    base, extra = divmod(n_workers, n_cores)
+    cpus = []
+    for core_idx in range(n_cores):
+        take = base + (1 if core_idx < extra else 0)
+        cpus.extend(_CORE_PAIRS[core_idx][:take])
+    assert len(cpus) == n_workers
+    return cpus
+
+
+_SWEEP_CONFIGS: dict[str, tuple[int, list[int]]] = {}
+for _n_workers in range(1, 9):
+    _min_cores = (_n_workers + 1) // 2  # ceil(n_workers / 2)
+    _max_cores = min(_n_workers, 4)
+    for _n_cores in range(_min_cores, _max_cores + 1):
+        _SWEEP_CONFIGS[f"w{_n_workers}_c{_n_cores}"] = (
+            _n_workers, _packed_cpu_list(_n_workers, _n_cores)
+        )
+_CONDITIONS.update(_SWEEP_CONFIGS)
+
 assert condition in _CONDITIONS, f"unknown condition {condition!r}"
 
 
