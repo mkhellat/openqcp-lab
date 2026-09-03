@@ -46,10 +46,37 @@ N_OSCILLATORS = 150
 CHUNK_SIZE = 2
 
 condition = sys.argv[1]
-assert condition in (
-    "pinned_4", "unpinned_4", "workers_8", "pinned_2", "unpinned_2", "seq_1",
-    "pinned_4_4cores", "pinned_4_2cores",
-)
+
+# Physical-core topology on this dev machine (checked directly, see
+# scoping.md): core A=(0,4), B=(1,5), C=(2,6), D=(3,7). Each entry is
+# (n_workers, explicit_cpu_list_or_None). None means unpinned
+# (_physical_core_representative_cpus -> None, the same code path
+# parallel_decompose already uses when pinning is genuinely
+# unavailable). A list gives one CPU per worker, in claim order -
+# workers 2+ on the SAME physical core as an earlier worker means that
+# core is "doubled up" (both hyperthread siblings in use); a core
+# never appearing means it is left completely idle.
+_CONDITIONS: dict[str, tuple[int, list[int] | None]] = {
+    "seq_1": (0, None),  # special-cased below (no pool at all)
+    "pinned_2": (2, [0, 1]),
+    "unpinned_2": (2, None),
+    "pinned_4": (4, [0, 1, 2, 3]),
+    "unpinned_4": (4, None),
+    "workers_8": (8, [0, 1, 2, 3]),  # 8 logical CPUs, pinned default
+    # 4-vs-2-physical-cores comparison (pinned4_4cores_vs_2cores_findings.md):
+    "pinned_4_4cores": (4, [0, 1, 2, 3]),
+    "pinned_4_2cores": (4, [0, 4, 1, 5]),
+    # 2-vs-1-physical-core comparison:
+    "pinned_2_2cores": (2, [0, 1]),
+    "pinned_2_1core": (2, [0, 4]),
+    # 3-vs-2-physical-cores comparison (2+1 packing on the 2-core side):
+    "pinned_3_3cores": (3, [0, 1, 2]),
+    "pinned_3_2cores": (3, [0, 4, 1]),
+    # 5-vs-4-vs-3-physical-cores comparison (2+1+1+1, then 2+2+1 packing):
+    "pinned_5_4cores": (5, [0, 4, 1, 2, 3]),
+    "pinned_5_3cores": (5, [0, 4, 1, 5, 2]),
+}
+assert condition in _CONDITIONS, f"unknown condition {condition!r}"
 
 
 def _rss_kib(pid: int) -> int:
@@ -123,21 +150,11 @@ masses = _default_masses(N_OSCILLATORS)
 unpadded = build_hamiltonian(N_OSCILLATORS, spring_constants, masses, sparse=True)
 padded, n_qubits = pad_to_power_of_two(unpadded, sparse=True)
 
-if condition in ("unpinned_4", "unpinned_2"):
-    # Same code path parallel_decompose already uses when pinning is
-    # genuinely unavailable (e.g. non-Linux) - not a separate bypass.
-    fwht._physical_core_representative_cpus = lambda: None
-elif condition == "pinned_4_4cores":
-    # 4 logical CPUs, one from each of the 4 DISTINCT physical cores
-    # (0=coreA, 1=coreB, 2=coreC, 3=coreD) - identical to plain
-    # "pinned_4" (kept as a separate name for clarity in this specific
-    # A-vs-B comparison).
-    fwht._physical_core_representative_cpus = lambda: [0, 1, 2, 3]
-elif condition == "pinned_4_2cores":
-    # 4 logical CPUs, but only 2 DISTINCT physical cores - both
-    # hyperthread siblings of core A (0,4) and core B (1,5), leaving
-    # physical cores C and D completely unused.
-    fwht._physical_core_representative_cpus = lambda: [0, 4, 1, 5]
+n_workers, cpu_list = _CONDITIONS[condition]
+if condition != "seq_1":
+    fwht._physical_core_representative_cpus = (
+        (lambda cpus=cpu_list: cpus) if cpu_list is not None else (lambda: None)
+    )
 
 total_terms = 0
 root_pid = os.getpid()
@@ -148,9 +165,6 @@ with RssMonitor(root_pid) as mon:
         for chunk in fwht_pauli_terms_iter(padded, chunk_size=CHUNK_SIZE):
             total_terms += len(chunk)
     else:
-        n_workers = {"pinned_4": 4, "unpinned_4": 4, "workers_8": 8,
-                     "pinned_2": 2, "unpinned_2": 2,
-                     "pinned_4_4cores": 4, "pinned_4_2cores": 4}[condition]
         for chunk in parallel_decompose(padded, chunk_size=CHUNK_SIZE, n_workers=n_workers):
             total_terms += len(chunk)
     elapsed = time.perf_counter() - t0
