@@ -58,20 +58,71 @@ frequency (2590 MHz) than cpu6 (24.6% busy, notably busier) at 2123
 MHz. There is essentially no per-core relationship between actual
 utilization and reported frequency in this data.
 
-## Conclusion: scaling_cur_freq is NOT a reliable per-core utilization signal on this machine
+## CORRECTION (same day, direct user pushback): "package-wide" was an overclaim - cores mostly DON'T match
+
+The framing above ("frequency selection responds substantially to
+package-level state... idle cores ride along at a similar
+voltage/frequency plane") was itself checked too loosely - it was
+pattern-matched from a few visually striking synchronized moments
+(e.g. all 8 cores reading exactly 800MHz at `t=4.0s`) without
+checking whether that synchronization was the RULE or the EXCEPTION.
+User asked directly: "should not all cores declare exact same
+frequencies all over the place?!! What is up with the different
+clocks?!!" - checked properly this time.
+
+Computed the max-min frequency SPREAD across all 8 cores at every one
+of the 65 samples in the same run:
+
+- Mean spread: **1639 MHz** (on an 8-core reading with these
+  8-core-i7-8550U-typical values ranging roughly 400-4000 MHz - this
+  is a LARGE spread, not a tight cluster).
+- Only **9 of 65 samples (14%)** show near-uniform frequency across
+  all 8 cores (spread < 100 MHz).
+- **40 of 65 samples (62%)** show a spread greater than 1000 MHz.
+- **31 of 65 samples (48%)** show a spread greater than 2000 MHz -
+  nearly half the time, the busiest and idlest cores' reported
+  frequencies differ by more than 2 GHz.
+
+**So "package-wide uniform throttling" is actually the EXCEPTION in
+this data, not the dominant behavior** - true synchronized-frequency
+moments do happen (real, visible, and worth noting), but most samples
+show substantial, genuine per-core frequency divergence. This directly
+contradicts the "idle cores ride along with busy ones" framing stated
+above, which should be read as WRONG, not just imprecise.
+
+## Conclusion, revised: frequency varies per-core, but not in step with per-core WORK - the real puzzle is sharper than "why is it all uniform"
+
+The two things established, taken together:
+1. Frequency genuinely DOES vary per-core most of the time (NOT
+   locked together) - consistent with what you'd naively expect from
+   a per-core P-state mechanism.
+2. But that per-core variation does NOT correlate with per-core
+   utilization (`/proc/stat` busy% vs. mean freq shows no clean
+   relationship - cpu7 at 15.9% busy averaging HIGHER frequency than
+   cpu6 at 24.6% busy).
+
+Combined, these mean the real open question is not "why is everything
+locked to one frequency" (it mostly isn't) but **"what IS actually
+driving per-core frequency selection, if not this core's own recent
+work?"** - genuinely unresolved. Plausible but UNVERIFIED candidates:
+scheduler migration history (a core recently vacated by a
+higher-priority thread might retain an elevated P-state briefly),
+measurement/sampling lag in the kernel's APERF/MPERF-based estimate
+(the 0.2-0.5s sampling interval used here may not resolve genuine
+sub-interval per-core changes accurately), or some genuine but
+partial package-level coupling that shows up only intermittently
+(the 9 near-uniform samples) rather than continuously. None of these
+have been directly tested - this document establishes that the simple
+"per-core load determines per-core frequency" model is false and that
+the simple "it's all one package-wide number" model is ALSO false,
+without yet identifying what the real mechanism is.
 
 Every claim earlier in this investigation that treated
-`scaling_cur_freq` as evidence of "this core was doing real work" or
-used it to reason about per-core contention is now known to be on
-shaky ground - the mechanism, now confirmed via HWP's existence and
-the direct busy%-vs-freq mismatch, is that frequency selection under
-`intel_pstate`/HWP responds substantially to PACKAGE-level state
-(thermal budget, the busiest core's demand, power delivery
-constraints), not purely to each core's own individual load. Idle
-cores "ride along" at a similar voltage/frequency plane to busy ones,
-for reasons intrinsic to how modern Intel mobile SoCs share power
-delivery and thermal budget across the die - not a bug in any of this
-session's measurement scripts.
+`scaling_cur_freq` as evidence of "this core was doing real work" is
+still on shaky ground, for the (corrected) reason that frequency does
+not reliably track per-core utilization - not because it's uniformly
+package-wide, which the data above does not support as the general
+case.
 
 **The only trustworthy per-core signal collected in this investigation
 is `/proc/stat`'s busy% (or the earlier `ps -o psr` process-placement
