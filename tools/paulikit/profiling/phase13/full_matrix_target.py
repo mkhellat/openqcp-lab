@@ -19,17 +19,17 @@ bypass.
 
 Usage (foreground only, one job at a time):
     OPENBLAS_NUM_THREADS=1 perf stat --no-inherit \
-      -e task-clock,mem_load_retired.l1_hit,mem_load_retired.l1_miss,\
-mem_load_retired.l2_hit,mem_load_retired.l2_miss,L1-dcache-loads,\
-L1-dcache-load-misses \
-      python full_matrix_target.py <condition_name> l1l2
-
-    OPENBLAS_NUM_THREADS=1 perf stat --no-inherit \
       -e task-clock,cycles,instructions,cache-references,cache-misses,\
 LLC-loads,LLC-load-misses \
-      python full_matrix_target.py <condition_name> l3
+      python full_matrix_target.py <condition_name> [chunk_size]
 
-condition_name in: pinned_4, unpinned_4, workers_8, pinned_2, unpinned_2, seq_1
+condition_name: any key of CONDITIONS (condition_table.py), including
+the w<n_workers>_c<n_cores> sweep configs. chunk_size is optional,
+defaults to 2 (the single-process N=150 tuned value) - added to test
+whether that value, tuned only for an uncontended process
+(chunk_size_floor_scale_dependence_findings.md's own "does NOT show"
+list flags multi-core contention as untested), still holds once
+several workers share the machine's cache concurrently.
 """
 import os
 import subprocess
@@ -46,10 +46,10 @@ from paulikit.cli import _default_masses, _default_spring_constants
 from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
 
 N_OSCILLATORS = 150
-CHUNK_SIZE = 2
 
 condition = sys.argv[1]
 assert condition in _CONDITIONS, f"unknown condition {condition!r}"
+CHUNK_SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 2
 
 
 def _rss_kib(pid: int) -> int:

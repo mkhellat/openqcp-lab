@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Code-specificity profiling capture: is the 2-physical-core wall-clock
+# ceiling paulikit-specific (hot in _parallel_worker_chunk's own math -
+# gather, WHT, popcount/phase, nonzero filter) or a generic hardware/
+# OS-multiprocessing property (contention shows up as syscall/futex/
+# scheduling overhead instead)? Captures BOTH signals for lone (w1_c1)
+# vs maximally-contended (w8_c4) runs so they can be compared directly.
+#
+# Must run as root (py-spy needs ptrace, strace -f needs ptrace on all
+# forked children): sudo ./code_specificity_capture
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "must run as root (sudo ./code_specificity_capture)" >&2
+    exit 1
+fi
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+
+PYTHON=/home/desadm/.venvs/paulikit/bin/python
+PYSPY=/home/desadm/.venvs/paulikit/bin/py-spy
+TARGET="$DIR/full_matrix_target.py"
+COOLDOWN_TARGET_C=55.0
+COOLDOWN_TIMEOUT_S=180
+TEMP_PATH=/sys/class/thermal/thermal_zone7/temp
+
+cooldown() {
+    local start now temp
+    start=$(date +%s)
+    while true; do
+        temp=$(($(cat "$TEMP_PATH" 2>/dev/null || echo 0) / 1000))
+        if [ "$temp" -le "${COOLDOWN_TARGET_C%.*}" ]; then
+            echo "cooled to ${temp}C"
+            return
+        fi
+        now=$(date +%s)
+        if [ $((now - start)) -gt "$COOLDOWN_TIMEOUT_S" ]; then
+            echo "cooldown timed out at ${temp}C"
+            return
+        fi
+        sleep 2
+    done
+}
+
+# --- py-spy: attach to a live worker mid-run, dump its stack a few
+# times over the run so a transient snapshot doesn't mislead. Runs the
+# whole condition under `perf stat`-free direct invocation (py-spy
+# attaches separately so we don't need perf permissions at all here).
+pyspy_capture() {
+    local condition="$1" chunk_size="$2" outfile="$3"
+    echo "=== py-spy capture: $condition (chunk_size=$chunk_size) ==="
+    OPENBLAS_NUM_THREADS=1 "$PYTHON" "$TARGET" "$condition" "$chunk_size" &
+    local root_pid=$!
+    sleep 5
+
+    # ProcessPoolExecutor's actual worker process is a DIRECT child of
+    # root_pid for every condition here, including w1_c1 (n_workers=1
+    # still goes through parallel_decompose's real pool - only seq_1
+    # bypasses it, and seq_1 isn't used by this script) - verified via
+    # `pstree -p` directly, not assumed (an earlier version of this
+    # script guessed a grandchild level, which was wrong and also
+    # caused it to fall back to sampling root_pid itself - the mostly-
+    # idle main thread waiting on the pool, not the worker doing the
+    # actual gather/WHT/filter math). Retries briefly since the child
+    # may not have forked yet exactly at the sleep boundary. `pgrep`
+    # exits 1 on no match, which would kill the whole script under
+    # `set -e` if not guarded with `|| true`.
+    local target_pid="" attempt
+    for attempt in 1 2 3 4 5; do
+        target_pid="$(pgrep -P "$root_pid" 2>/dev/null | head -1 || true)"
+        [ -n "$target_pid" ] && break
+        sleep 1
+    done
+    target_pid="${target_pid:-$root_pid}"
+
+    : > "$outfile"
+    for i in 1 2 3; do
+        echo "--- dump $i (pid=$target_pid) ---" >> "$outfile"
+        "$PYSPY" dump --pid "$target_pid" >> "$outfile" 2>&1 || true
+        sleep 3
+    done
+
+    wait "$root_pid" 2>/dev/null || true
+    echo "done -> $outfile"
+}
+
+# --- strace -f -c: full-process-tree syscall summary for the whole
+# run (not just one worker) - this is the generic-OS-overhead signal.
+strace_capture() {
+    local condition="$1" chunk_size="$2" outfile="$3"
+    echo "=== strace capture: $condition (chunk_size=$chunk_size) ==="
+    OPENBLAS_NUM_THREADS=1 strace -f -c -o "$outfile" \
+        "$PYTHON" "$TARGET" "$condition" "$chunk_size"
+    echo "done -> $outfile"
+}
+
+echo "cooling down before w1_c1 py-spy capture..."
+cooldown
+pyspy_capture w1_c1 2 pyspy_w1_c1.txt
+
+echo "cooling down before w8_c4 py-spy capture..."
+cooldown
+pyspy_capture w8_c4 2 pyspy_w8_c4.txt
+
+echo "cooling down before w1_c1 strace capture..."
+cooldown
+strace_capture w1_c1 2 strace_w1_c1.txt
+
+echo "cooling down before w8_c4 strace capture..."
+cooldown
+strace_capture w8_c4 2 strace_w8_c4.txt
+
+echo
+echo "All captures done:"
+ls -la pyspy_w1_c1.txt pyspy_w8_c4.txt strace_w1_c1.txt strace_w8_c4.txt
+
+# outputs are written as root (script ran under sudo) - hand them back
+# to the invoking user so they're readable/editable normally afterward.
+if [ -n "${SUDO_USER:-}" ]; then
+    chown "$SUDO_USER":"$SUDO_USER" \
+        pyspy_w1_c1.txt pyspy_w8_c4.txt strace_w1_c1.txt strace_w8_c4.txt
+fi

@@ -1,0 +1,68 @@
+--- dump 1 (pid=24497) ---
+Process 24497: /home/desadm/.venvs/paulikit/bin/python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/phase13/full_matrix_target.py w8_c4 2
+Python v3.12.13 (/home/desadm/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12)
+
+Thread 24497 (idle): "MainThread"
+    __enter__ (multiprocessing/synchronize.py:95)
+    put (multiprocessing/queues.py:398)
+    _sendback_result (concurrent/futures/process.py:220)
+    _process_worker (concurrent/futures/process.py:270)
+    run (multiprocessing/process.py:108)
+    _bootstrap (multiprocessing/process.py:314)
+    _launch (multiprocessing/popen_fork.py:71)
+    __init__ (multiprocessing/popen_fork.py:19)
+    _Popen (multiprocessing/context.py:282)
+    start (multiprocessing/process.py:121)
+    _spawn_process (concurrent/futures/process.py:799)
+    _launch_processes (concurrent/futures/process.py:789)
+    _start_executor_manager_thread (concurrent/futures/process.py:762)
+    submit (concurrent/futures/process.py:823)
+    _submit_next (paulikit/algorithms/fwht.py:1556)
+    parallel_decompose (paulikit/algorithms/fwht.py:1560)
+    <module> (full_matrix_target.py:141)
+--- dump 2 (pid=24497) ---
+Process 24497: /home/desadm/.venvs/paulikit/bin/python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/phase13/full_matrix_target.py w8_c4 2
+Python v3.12.13 (/home/desadm/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12)
+
+Thread 24497 (idle): "MainThread"
+    _send (multiprocessing/connection.py:384)
+    _send_bytes (multiprocessing/connection.py:421)
+    send_bytes (multiprocessing/connection.py:200)
+    put (multiprocessing/queues.py:399)
+    _sendback_result (concurrent/futures/process.py:220)
+    _process_worker (concurrent/futures/process.py:270)
+    run (multiprocessing/process.py:108)
+    _bootstrap (multiprocessing/process.py:314)
+    _launch (multiprocessing/popen_fork.py:71)
+    __init__ (multiprocessing/popen_fork.py:19)
+    _Popen (multiprocessing/context.py:282)
+    start (multiprocessing/process.py:121)
+    _spawn_process (concurrent/futures/process.py:799)
+    _launch_processes (concurrent/futures/process.py:789)
+    _start_executor_manager_thread (concurrent/futures/process.py:762)
+    submit (concurrent/futures/process.py:823)
+    _submit_next (paulikit/algorithms/fwht.py:1556)
+    parallel_decompose (paulikit/algorithms/fwht.py:1560)
+    <module> (full_matrix_target.py:141)
+--- dump 3 (pid=24497) ---
+Process 24497: /home/desadm/.venvs/paulikit/bin/python /home/desadm/Projects/__0__science-tools__/openqcp-lab/tools/paulikit/profiling/phase13/full_matrix_target.py w8_c4 2
+Python v3.12.13 (/home/desadm/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12)
+
+Thread 24497 (idle): "MainThread"
+    __enter__ (multiprocessing/synchronize.py:95)
+    put (multiprocessing/queues.py:398)
+    _sendback_result (concurrent/futures/process.py:220)
+    _process_worker (concurrent/futures/process.py:270)
+    run (multiprocessing/process.py:108)
+    _bootstrap (multiprocessing/process.py:314)
+    _launch (multiprocessing/popen_fork.py:71)
+    __init__ (multiprocessing/popen_fork.py:19)
+    _Popen (multiprocessing/context.py:282)
+    start (multiprocessing/process.py:121)
+    _spawn_process (concurrent/futures/process.py:799)
+    _launch_processes (concurrent/futures/process.py:789)
+    _start_executor_manager_thread (concurrent/futures/process.py:762)
+    submit (concurrent/futures/process.py:823)
+    _submit_next (paulikit/algorithms/fwht.py:1556)
+    parallel_decompose (paulikit/algorithms/fwht.py:1560)
+    <module> (full_matrix_target.py:141)
