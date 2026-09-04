@@ -191,15 +191,114 @@ gather/WHT/scatter design that does not scale past 1 physical core
 here, which is a substantively different and more actionable
 conclusion than a hardware ceiling would be.
 
-**Not yet measured**: whether the differentiator really is
-memory-bandwidth/cache-footprint (as reasoned above) rather than some
-other coincidental difference between the two workloads - would need
-either (a) a memory-bandwidth counter comparison (`perf stat` with a
-bandwidth-sensitive event set) between the two synthetic-workload
-core-packing conditions, or (b) a synthetic workload deliberately
-scaled up to touch `dim`-sized arrays per task instead of 48x48, to
-see if the ceiling reappears once the memory footprint matches
-paulikit's own.
+**Not yet measured (at the time this paragraph was first written)**:
+whether the differentiator really is memory-bandwidth/cache-footprint
+rather than some other coincidental difference between the two
+workloads. **Now measured, same day - see the next section.**
+
+## Second correction (2026-09-04, later same day): direct perf stat confirmation - and a real mechanistic refinement
+
+Ran the proposed direct test: `bandwidth_hypothesis_sweep.py`, `perf
+stat` with the same cache-hierarchy event set used throughout this
+investigation (`cache-references`, `cache-misses`, `LLC-loads`,
+`LLC-load-misses`, plus `task-clock`/`cycles`/`instructions`), across
+the real 2x2 - {paulikit, synthetic} x {`w2_c1`, `w8_c4`} - 5
+thermal-cooldown-controlled reps per cell
+(`bandwidth_hypothesis_results.jsonl`).
+
+**A real methodology bug was found and fixed while building this
+script, affecting EVERY prior `perf stat` measurement in this entire
+investigation**: every earlier invocation used `perf stat --no-inherit`,
+which explicitly EXCLUDES child-process counters. Since both
+paulikit's `parallel_decompose` and the synthetic control do all their
+real work in `ProcessPoolExecutor` worker SUBPROCESSES, `--no-inherit`
+was only ever measuring the tiny, mostly-idle launcher process -
+confirmed directly (`task-clock` dropped from 27,332ms to 798ms on a
+run whose real wall-clock was 12.5s, once `--no-inherit` was added).
+Per direct user decision, older `perf stat` results in this
+investigation are NOT retroactively re-measured, but should be read
+with this caveat; `bandwidth_hypothesis_sweep.py` and everything from
+here on uses the correct (child-inheriting) invocation.
+
+**Result 1 - the core hypothesis is confirmed, decisively**:
+
+| workload | condition | cache-miss ratio | LLC-miss ratio |
+|---|---|---|---|
+| paulikit | `w2_c1` | 9.372% (sd 0.378) | 8.333% (sd 0.326) |
+| paulikit | `w8_c4` | 9.180% (sd 0.235) | 8.570% (sd 0.361) |
+| synthetic | `w2_c1` | 0.155% (sd 0.155) | 0.140% (sd 0.145) |
+| synthetic | `w8_c4` | 0.440% (sd 0.163) | 0.355% (sd 0.183) |
+
+paulikit's cache-miss ratio is **~60x higher** than the synthetic
+workload's at the same core-packing condition (9.37% vs 0.16% at
+`w2_c1`, Welch t=50.5, p=2.5e-8; ~21x at `w8_c4`, same direction).
+This directly confirms paulikit's per-chunk gather/WHT/scatter is
+genuinely memory/cache-bound, while the synthetic 48x48-matmul control
+is not - the mechanistic premise behind the whole hypothesis holds up
+cleanly.
+
+**Result 2 - a genuine surprise, and a real refinement to the
+mechanism**: paulikit's OWN cache-miss ratio does NOT increase
+significantly from `w2_c1` to `w8_c4` (9.37% -> 9.18%, t=0.96,
+p=0.37 - not significant; same for LLC-miss ratio, p=0.31). This
+means the earlier "more cores competing for shared L3 makes each
+individual memory access more expensive" framing (in the first
+Correction section above) was too simple - the PER-ACCESS cost of a
+cache miss, measured this way, is not what changes under contention.
+
+What DOES change is effective parallelism actually achieved,
+visible in `task_clock_ms / elapsed` (aggregated CPU-time-per-wall-
+second, i.e. how many workers are concurrently doing real work on
+average):
+
+| workload | condition | task_clock/elapsed ("effective workers") |
+|---|---|---|
+| paulikit | `w2_c1` | 2.69x |
+| paulikit | `w8_c4` | **2.33x** |
+| synthetic | `w2_c1` | 2.18x |
+| synthetic | `w8_c4` | **7.58x** |
+
+The synthetic workload scales its effective parallelism almost
+linearly with its 8 workers (7.58x out of a possible 8x - excellent
+utilization). **paulikit's `w8_c4` run achieves essentially the SAME
+effective parallelism as its own `w2_c1` run (2.33x vs 2.69x) despite
+having 8 worker processes and 4 physical cores available** - the
+extra workers are barely contributing any additional concurrent work.
+
+**Refined mechanism**: paulikit's workers are not paying a higher
+per-access memory latency under contention (miss ratio is flat) - they
+are simply not running concurrently as much as they nominally could,
+consistent with the earlier py-spy finding (contended paulikit
+workers' sampled stacks were 3/3 blocked in `multiprocessing`
+lock/pipe code, not application math). The likely reconciling
+explanation: paulikit's per-chunk memory traffic is intense enough in
+absolute terms (`cache_refs_per_ms` ~= 311-315K for paulikit vs
+~235-272K for synthetic - about 15-30% higher raw traffic *intensity*,
+even though the miss RATIO doesn't rise under contention) that when
+several workers' bursts land on the shared memory subsystem at once,
+the resulting serialization shows up as time spent blocked in the
+`ProcessPoolExecutor`/`multiprocessing` IPC path (queue locks, pipe
+reads/writes) rather than as a directly-visible increase in any single
+worker's own miss ratio - the contention is real and memory-subsystem-
+rooted, but it manifests as workers waiting their turn to access
+memory/IPC resources, not as each individual access becoming costlier.
+This is a testable follow-up in its own right (not yet done): a
+finer-grained bandwidth counter (uncore IMC `data_reads`/`data_writes`
+- attempted here, unavailable without root on this machine, see below)
+or a synthetic workload tuned to match paulikit's ~311-315K
+cache-refs/ms intensity (not just its per-chunk footprint) would
+confirm this more directly.
+
+**uncore IMC (memory controller) bandwidth counters were attempted and
+found unavailable**: this CPU (Intel i7-8550U, Coffee Lake) exposes
+`uncore_imc/data_reads/` and `uncore_imc/data_writes/` via `perf list`
+- the gold-standard direct DRAM-bandwidth measurement - but they
+require system-wide (`-a`) collection and root privileges beyond what
+per-process cache-hierarchy counters need; `perf stat -a` on these
+events failed even attempted (`No supported events found` /
+`Invalid argument`) on this machine's kernel/perf configuration. The
+cache-hierarchy event set used above is the strongest bandwidth-
+adjacent signal available here without further kernel-level changes.
 
 ## What this does NOT show (original list, superseded above where noted)
 
