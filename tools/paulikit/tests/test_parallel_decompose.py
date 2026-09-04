@@ -16,8 +16,11 @@ import os
 import pytest
 
 from paulikit.algorithms import autotune
+import numpy as np
+
 from paulikit.algorithms.fwht import (
     _detect_available_worker_count,
+    _per_worker_resident_bytes,
     _physical_core_representative_cpus,
     _recommended_parallel_chunk_size,
     fwht_pauli_terms,
@@ -186,6 +189,86 @@ def test_recommended_parallel_chunk_size_uses_cache_bound_when_smaller(monkeypat
     monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 2**40)  # huge
 
     assert _recommended_parallel_chunk_size(dim=16384, n_workers=4) == 2
+
+
+def test_recommended_parallel_chunk_size_subtracts_fixed_resident_bytes(monkeypatch):
+    # Regression test for a real bug (REVIEW_NOTES.md 2026-09-04):
+    # _recommended_parallel_chunk_size only bounded the per-chunk
+    # transient buffer against a worker's memory share, never
+    # subtracting the fixed operator-copy + setup-array footprint
+    # every worker also holds resident - silently overestimating how
+    # much budget is actually left for chunk_size.
+    monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 999999)
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 512 * 1024 * 1024)
+
+    dim = 16384
+    n_workers = 4
+    worker_budget = (512 * 1024 * 1024) // n_workers
+    fixed_bytes = worker_budget // 2  # a real, non-negligible fixed footprint
+
+    without_fixed = _recommended_parallel_chunk_size(dim, n_workers)
+    with_fixed = _recommended_parallel_chunk_size(dim, n_workers, fixed_bytes)
+    assert with_fixed < without_fixed, (
+        "a nonzero fixed_resident_bytes must shrink the recommended "
+        "chunk_size relative to ignoring it entirely"
+    )
+
+    expected = max(1, (worker_budget - fixed_bytes) // (dim * 16))
+    assert with_fixed == expected
+
+
+def test_recommended_parallel_chunk_size_never_goes_below_one_when_fixed_bytes_exceed_budget(
+    monkeypatch,
+):
+    # If the fixed resident footprint alone already exceeds a
+    # worker's share of the budget, the memory-bound chunk_size must
+    # clamp to 1 (still make progress, correctness over throughput),
+    # not go negative or raise.
+    monkeypatch.setattr(autotune, "recommended_chunk_size", lambda dim: 999999)
+    monkeypatch.setattr(autotune, "available_memory_bytes", lambda: 1024)
+
+    dim = 16384
+    n_workers = 1
+    huge_fixed_bytes = 10 * 1024 * 1024  # far exceeds the whole budget
+    assert _recommended_parallel_chunk_size(dim, n_workers, huge_fixed_bytes) == 1
+
+
+def test_per_worker_resident_bytes_dense_matches_operator_nbytes_plus_setup_arrays():
+    dim = 8
+    operator = np.zeros((dim, dim), dtype=complex)
+    operator[0, 1] = 1.0
+    operator[2, 3] = 1.0
+    nnz = 2
+
+    result = _per_worker_resident_bytes(operator, is_sparse_input=False, nnz=nnz)
+    expected = operator.nbytes + 3 * nnz * np.dtype(np.intp).itemsize
+    assert result == expected
+
+
+def test_per_worker_resident_bytes_sparse_uses_csr_buffers_not_dense_equivalent():
+    pytest.importorskip("scipy")
+    import scipy.sparse as sp
+
+    dim = 8
+    dense = np.zeros((dim, dim), dtype=complex)
+    dense[0, 1] = 1.0
+    dense[2, 3] = 1.0
+    operator = sp.csr_matrix(dense)
+    nnz = 2
+
+    result = _per_worker_resident_bytes(operator, is_sparse_input=True, nnz=nnz)
+    dense_equivalent = dim * dim * 16
+    assert result < dense_equivalent, (
+        "sparse footprint must be O(nnz), not O(dim**2) - the whole "
+        "point of the sparse input path"
+    )
+    expected = (
+        operator.data.nbytes
+        + operator.indices.nbytes
+        + operator.indptr.nbytes
+        + 3 * nnz * np.dtype(np.intp).itemsize
+    )
+    assert result == expected
 
 
 def test_parallel_decompose_auto_chunk_size_stays_correct_under_a_tight_memory_budget(

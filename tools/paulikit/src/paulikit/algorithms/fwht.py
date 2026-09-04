@@ -1356,7 +1356,44 @@ def _pin_current_process_to_cpu(cpu: int) -> bool:
         return False
 
 
-def _recommended_parallel_chunk_size(dim: int, n_workers: int) -> int:
+def _per_worker_resident_bytes(
+    operator, is_sparse_input: bool, nnz: int
+) -> int:
+    """Estimated fixed footprint EVERY ``parallel_decompose`` worker
+    holds resident for its whole lifetime, independent of
+    ``chunk_size`` - a real gap found by review (REVIEW_NOTES.md
+    2026-09-04): ``_recommended_parallel_chunk_size`` bounded only the
+    per-chunk transient buffer against the per-worker memory budget,
+    never subtracting this fixed cost first, so the memory-bound
+    chunk_size was an overestimate on operators large/dense enough for
+    this fixed cost to matter.
+
+    Each worker's ``_parallel_worker_init`` (see its own docstring's
+    note on pickling cost) receives and holds one full copy of
+    ``operator`` plus the ``nnz``-length ``sorted_inverse``/
+    ``sorted_p_nz``/``sorted_q_nz`` setup arrays - this estimates that
+    total in bytes. Dense operators use ``operator.nbytes`` directly;
+    sparse (CSR) operators are estimated via their own
+    ``data``/``indices``/``indptr`` buffers rather than a
+    dim-squared-equivalent, since a CSR matrix's real resident size is
+    ``O(nnz)``, not ``O(dim**2)`` (the whole reason the sparse input
+    path exists - see ``_prepare_operator_for_fwht``).
+    """
+    if is_sparse_input:
+        operator_bytes = (
+            operator.data.nbytes + operator.indices.nbytes + operator.indptr.nbytes
+        )
+    else:
+        operator_bytes = operator.nbytes
+    # sorted_inverse/sorted_p_nz/sorted_q_nz: three intp arrays of
+    # length nnz (see parallel_decompose's own sort-then-slice setup).
+    setup_arrays_bytes = 3 * nnz * np.dtype(np.intp).itemsize
+    return operator_bytes + setup_arrays_bytes
+
+
+def _recommended_parallel_chunk_size(
+    dim: int, n_workers: int, fixed_resident_bytes: int = 0
+) -> int:
     """Auto chunk_size for ``parallel_decompose``, accounting for
     memory in a way ``autotune.recommended_chunk_size`` alone does not
     - PLAN.md Phase 13's own bug fix, found by the user noticing real
@@ -1375,14 +1412,20 @@ def _recommended_parallel_chunk_size(dim: int, n_workers: int) -> int:
     check. Returns the smaller of the cache-driven value and the
     largest chunk_size whose working set fits within one worker's
     share of the memory budget
-    (``autotune.per_worker_memory_budget_bytes(n_workers)``).
+    (``autotune.per_worker_memory_budget_bytes(n_workers)``), after
+    first subtracting ``fixed_resident_bytes`` - the operator copy and
+    setup arrays every worker holds resident regardless of
+    ``chunk_size`` (see ``_per_worker_resident_bytes``) - from that
+    per-worker budget, so the remaining chunk_size bound reflects what
+    is actually still available for the per-chunk transient buffer.
     """
     from paulikit.algorithms import autotune
 
     cache_chunk_size = autotune.recommended_chunk_size(dim)
     worker_budget = autotune.per_worker_memory_budget_bytes(n_workers)
+    remaining_budget = max(0, worker_budget - fixed_resident_bytes)
     bytes_per_row = dim * 16  # complex128, matches recommended_chunk_size's own accounting
-    memory_bound_chunk_size = max(1, worker_budget // max(bytes_per_row, 1))
+    memory_bound_chunk_size = max(1, remaining_budget // max(bytes_per_row, 1))
     return min(cache_chunk_size, memory_bound_chunk_size)
 
 
@@ -1428,12 +1471,15 @@ def parallel_decompose(
             PLAN.md Phase 13's scoping doc) and (b) the largest
             chunk_size whose ``O(chunk_size * dim)`` working set fits
             within one worker's share of the memory budget
-            (``autotune.per_worker_memory_budget_bytes(n_workers)``) -
-            this second bound is necessary because up to ``n_workers``
-            chunks are live simultaneously here, unlike the
-            single-process path, where only one chunk's working set is
-            ever live at a time. Pass an explicit value to override
-            either bound.
+            (``autotune.per_worker_memory_budget_bytes(n_workers)``),
+            AFTER first subtracting each worker's fixed resident
+            footprint - the ``operator`` copy and setup arrays every
+            worker holds for its whole lifetime, not just its current
+            chunk (see ``_per_worker_resident_bytes``) - this second
+            bound is necessary because up to ``n_workers`` chunks are
+            live simultaneously here, unlike the single-process path,
+            where only one chunk's working set is ever live at a time.
+            Pass an explicit value to override either bound.
         n_workers: If ``None`` (default), uses
             ``_detect_available_worker_count()`` -
             ``len(os.sched_getaffinity(0))`` where available (Linux),
@@ -1507,7 +1553,12 @@ def parallel_decompose(
         n_workers = len(physical_cpus) if physical_cpus else logical_default
 
     if chunk_size is None:
-        chunk_size = _recommended_parallel_chunk_size(dim, n_workers)
+        fixed_resident_bytes = _per_worker_resident_bytes(
+            operator, is_sparse_input, len(p_nz)
+        )
+        chunk_size = _recommended_parallel_chunk_size(
+            dim, n_workers, fixed_resident_bytes
+        )
 
     n_workers = max(1, min(n_workers, max(1, (n_active + chunk_size - 1) // chunk_size)))
 
