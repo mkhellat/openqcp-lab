@@ -61,7 +61,7 @@ _WARNED_NO_CACHE_PROBE = False
 # persisted to disk) and the lock guarding their population (see
 # module docstring's "Thread safety" section).
 _cache_lock = threading.Lock()
-_cached_chunk_size: int | None = None
+_cached_l2_bytes: int = -1  # see _L2_BYTES_UNSET below
 _cached_memory_budget_bytes: int | None = None
 
 
@@ -210,29 +210,25 @@ def _min_chunk_size_floor(dim: int) -> int:
     return anchors[-1][1]
 
 
-def recommended_chunk_size(dim: int) -> int:
-    """Auto-computed ``chunk_size`` for a given operator dimension.
+_L2_BYTES_UNSET = -1  # sentinel: probe/declared-size lookup not yet attempted
 
-    Targets a per-chunk working-set size (``chunk_size * dim * 16``
-    bytes - one row of ``dim`` complex128 entries per active row,
-    matching ``fwht_pauli_coefficients``'s own accounting) that fits
-    within the empirically-measured L2 cache boundary, subject to
-    ``_min_chunk_size_floor()``'s lower bound.
 
-    Cached per-process after the first call - see module docstring
-    (including its "Thread safety" section: population is
-    lock-guarded, so concurrent callers cannot race to invoke the
-    underlying probe more than once).
+def _l2_bytes_or_none() -> int | None:
+    """Empirically-measured or declared L2 boundary in bytes, cached
+    per-process after the first call (dim-independent, safe to cache
+    for the whole process lifetime - see module docstring's "Thread
+    safety" section: population is lock-guarded, so concurrent callers
+    cannot race to invoke the underlying probe more than once).
+    Returns ``None`` if neither the probe nor ``/sys`` could determine
+    it (that ``None`` result is itself cached, not re-attempted).
     """
-    global _cached_chunk_size
-    if _cached_chunk_size is not None:
-        return _cached_chunk_size
+    global _cached_l2_bytes
+    if _cached_l2_bytes != _L2_BYTES_UNSET:
+        return _cached_l2_bytes
 
     with _cache_lock:
-        # Re-check inside the lock: another thread may have populated
-        # the cache while this one was waiting to acquire it.
-        if _cached_chunk_size is not None:
-            return _cached_chunk_size
+        if _cached_l2_bytes != _L2_BYTES_UNSET:
+            return _cached_l2_bytes
 
         l2_bytes: int | None = None
         if _cache_probe is not None:
@@ -246,18 +242,39 @@ def recommended_chunk_size(dim: int) -> int:
         if l2_bytes is None:
             l2_bytes = _declared_l2_size_bytes()
 
-        if l2_bytes is None:
-            # Neither the probe nor /sys worked (non-Linux without the
-            # compiled probe, e.g.) - conservative fixed fallback,
-            # matches the smallest value PLAN.md Phase 12's own sweep
-            # validated as safe across N=25/50/100 (chunk_size=32).
-            _cached_chunk_size = 32
-            return _cached_chunk_size
+        _cached_l2_bytes = l2_bytes
+        return _cached_l2_bytes
 
-        bytes_per_row = dim * 16  # complex128
-        chunk_size = max(_min_chunk_size_floor(dim), l2_bytes // max(bytes_per_row, 1))
-        _cached_chunk_size = chunk_size
-        return _cached_chunk_size
+
+def recommended_chunk_size(dim: int) -> int:
+    """Auto-computed ``chunk_size`` for a given operator dimension.
+
+    Targets a per-chunk working-set size (``chunk_size * dim * 16``
+    bytes - one row of ``dim`` complex128 entries per active row,
+    matching ``fwht_pauli_coefficients``'s own accounting) that fits
+    within the empirically-measured L2 cache boundary, subject to
+    ``_min_chunk_size_floor()``'s lower bound.
+
+    The L2-boundary lookup (dim-independent) is cached per-process
+    after its first call, but the ``chunk_size`` computed from it is
+    recomputed fresh on every call, since it depends on ``dim`` -
+    caching the final result itself would silently reuse the first
+    call's ``dim`` forever (a real bug found and fixed 2026-09-04, see
+    REVIEW_NOTES.md: a process computing ``recommended_chunk_size(512)``
+    then ``recommended_chunk_size(16384)`` would wrongly get the same
+    answer for both).
+    """
+    l2_bytes = _l2_bytes_or_none()
+
+    if l2_bytes is None:
+        # Neither the probe nor /sys worked (non-Linux without the
+        # compiled probe, e.g.) - conservative fixed fallback,
+        # matches the smallest value PLAN.md Phase 12's own sweep
+        # validated as safe across N=25/50/100 (chunk_size=32).
+        return 32
+
+    bytes_per_row = dim * 16  # complex128
+    return max(_min_chunk_size_floor(dim), l2_bytes // max(bytes_per_row, 1))
 
 
 def _read_meminfo_available_bytes() -> int | None:

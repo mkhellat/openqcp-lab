@@ -21,10 +21,10 @@ def _reset_autotune_caches():
     """autotune's memory/chunk_size results are cached per-process
     (module-level) - reset before and after each test so tests don't
     leak state into each other via the cache."""
-    autotune._cached_chunk_size = None
+    autotune._cached_l2_bytes = autotune._L2_BYTES_UNSET
     autotune._cached_memory_budget_bytes = None
     yield
-    autotune._cached_chunk_size = None
+    autotune._cached_l2_bytes = autotune._L2_BYTES_UNSET
     autotune._cached_memory_budget_bytes = None
 
 
@@ -136,7 +136,33 @@ def test_recommended_chunk_size_is_cached_per_process(monkeypatch):
     first = autotune.recommended_chunk_size(dim=64)
     second = autotune.recommended_chunk_size(dim=64)
     assert first == second
-    assert len(calls) == 1
+    assert len(calls) == 1, (
+        "the L2-boundary lookup itself must still be cached (dim-"
+        "independent, expensive) even though the returned chunk_size "
+        "is recomputed per call"
+    )
+
+
+def test_recommended_chunk_size_recomputes_per_dim_despite_l2_cache(monkeypatch):
+    # Regression test for a real bug (REVIEW_NOTES.md, found 2026-09-04):
+    # recommended_chunk_size(dim) used to cache its FINAL RESULT keyed on
+    # nothing, so a process calling it with dim=512 and then dim=16384
+    # wrongly got dim=512's answer for both. Only the dim-independent
+    # L2-boundary lookup should be cached - the chunk_size math itself
+    # must run fresh every call.
+    monkeypatch.setattr(autotune, "_cache_probe", None)
+    monkeypatch.setattr(autotune, "_declared_l2_size_bytes", lambda: 256 * 1024)
+
+    small_dim_result = autotune.recommended_chunk_size(dim=512)
+    large_dim_result = autotune.recommended_chunk_size(dim=16384)
+    assert small_dim_result != large_dim_result, (
+        "different dims must not silently share a cached chunk_size"
+    )
+    # 512*16=8192 bytes/row -> 262144//8192 = 32
+    assert small_dim_result == 32
+    # 16384*16=262144 bytes/row -> 262144//262144 = 1, floored to the
+    # N=150 anchor's own floor (2)
+    assert large_dim_result == autotune._min_chunk_size_floor(16384)
 
 
 @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=lambda f: f.name)
@@ -224,7 +250,7 @@ def test_recommended_chunk_size_thread_safe_single_underlying_call(monkeypatch):
     # during Bug 2's investigation (profiling/phase12/
     # cache_probe_idempotency_investigation_findings.md): without a
     # lock, multiple threads could all observe an empty
-    # _cached_chunk_size and all invoke the underlying probe/detection
+    # _cached_l2_bytes and all invoke the underlying probe/detection
     # concurrently. An artificial delay inside the (mocked) detection
     # widens the race window so this test reliably exercises it rather
     # than depending on timing luck.
