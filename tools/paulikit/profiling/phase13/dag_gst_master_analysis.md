@@ -318,6 +318,31 @@ confirms nor refutes gather/access-pattern as paulikit's trigger; the
 operator/setup-array resident footprint (traffic_intensity_findings.md's
 still-untested item) remains the next unisolated suspect.
 
+**Result (`resident_footprint_findings.md`, tested after the above):
+REFUTED, closes the decision tree.** Extended `gather_and_wht` with a
+real, actively-used 1.951 MiB resident array per worker (the real
+N=150 operator's own measured footprint via `_per_worker_resident_bytes`,
+`nnz=45,000`), re-read via a scattered gather on EVERY task, held for
+each worker's whole lifetime. Result: **no statistically detectable
+effect** at either core-packing condition (w2_c1: Welch p=0.95 vs.
+`gather_and_wht`; w8_c4: p=0.64) - scales normally (1.266x, nearly
+identical to `gather_and_wht`'s 1.279x). This closes ALL FOUR items
+from `traffic_intensity_findings.md`'s original decision tree
+(dense traffic, large IPC payload, gather irregularity, resident
+footprint) - none, individually, is sufficient to reproduce
+paulikit's ceiling. The remaining candidates are qualitatively
+different from anything the synthetic-control lineage has tested: a
+COMBINATION of factors, the real Hamiltonian's actual (non-random)
+values/sparsity interacting with the real phase-multiply/threshold/
+label-construction steps every control has omitted, or paulikit's
+real repeated allocation pattern (`np.zeros` per chunk) rather than
+access pattern per se. `resident_footprint_findings.md`'s own
+recommendation: the next methodologically different step is deeper
+profiling of the REAL `parallel_decompose` run (line-level `perf
+record`/`perf annotate` attribution inside a contended worker) rather
+than another synthetic proxy - four single-factor hypotheses have now
+been exhausted without a positive result.
+
 ---
 
 ## 4. Joint conclusions (careful)
