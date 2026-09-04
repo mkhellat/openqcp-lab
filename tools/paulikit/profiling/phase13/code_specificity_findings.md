@@ -130,7 +130,78 @@ algorithm itself (WHT, gather, filtering) was the dominant cost in the
 uncontended case and essentially never showed up as the bottleneck in
 the contended sampled data.
 
-## What this does NOT show
+## Correction (2026-09-04, same day): the "generic" framing above is WRONG
+
+The "What this does NOT show" section below (written earlier the same
+day) named the missing control explicitly: a paulikit-free synthetic
+`ProcessPoolExecutor` workload, same core-packing conditions, to check
+whether ANY multiprocessing workload hits this ceiling here. That
+control was run (`synthetic_ipc_control.py` /
+`synthetic_ipc_control_sweep.py`, `synthetic_ipc_control_results.jsonl`)
+- 8192 independent CPU-bound tasks (a fixed-size 48x48 dense matmul
+repeated ~150 times per task, sized to land near paulikit's own real
+~2.5ms/chunk average at N=150/chunk_size=2), same `w2_c1` vs `w8_c4`
+core-packing comparison, same default `ProcessPoolExecutor` pickle-
+over-pipe IPC and bounded-in-flight submission pattern paulikit's own
+`parallel_decompose` uses - deliberately sharing NOTHING with paulikit
+except that coarse task shape.
+
+**Result: the ceiling does NOT reproduce - it reverses.** 5 reps each,
+thermal-cooldown-controlled (same protocol as every other measurement
+in this investigation):
+
+| condition | mean elapsed (n=5) | sd |
+|---|---|---|
+| `w2_c1` | 12.443s | 0.085 |
+| `w8_c4` | 4.283s | 0.060 |
+
+Welch's t-test: t=175.7, p=2.1e-14 - `w8_c4` (4 physical cores) beats
+`w2_c1` (1 physical core) by ~3x, the OPPOSITE direction from
+paulikit's own sweep, and about as statistically unambiguous as a
+5-rep comparison can be.
+
+**This falsifies the "generic hardware/OS-multiprocessing property"
+conclusion above.** The py-spy/strace evidence (contended paulikit
+workers spending their sampled time blocked in `multiprocessing`
+IPC/lock code, not application math) was accurate as far as it went,
+but the conclusion drawn from it was overreach: that same
+`ProcessPoolExecutor` IPC overhead is present in BOTH workloads (it's
+inherent to the pool mechanism), yet it only dominates and produces a
+1-physical-core ceiling for paulikit's workload, not for the synthetic
+one. The likely differentiator (not yet directly measured, see below):
+paulikit's chunks gather/scatter `dim`-sized (16384-element) complex
+arrays and run a `dim`-wide WHT per chunk - a genuinely memory-
+bandwidth/cache-footprint-heavy access pattern - while the synthetic
+workload's 48x48 matrices comfortably fit in L1/L2 and are essentially
+pure-FLOP-bound. Multiple physical cores sharing one L3/memory-
+bandwidth budget would starve the memory-bound workload far more
+than the compute-bound one - consistent with every earlier finding in
+this whole investigation being driven by cache/memory-bandwidth
+effects (Phase 12's chunk_size floor, the 4-vs-2-physical-core
+pinning results, this sweep's own core-count-not-worker-count
+pattern).
+
+**Corrected conclusion**: the 2-physical-core ceiling is NOT a
+generic property of multiprocessing on this machine - it is specific
+to paulikit's own memory-access pattern (or at minimum, to memory-
+bandwidth-bound workloads in general, a narrower and more specific
+claim than "any multiprocessing workload"). Multi-core parallelism is
+NOT useless on this hardware; it is paulikit's current per-chunk
+gather/WHT/scatter design that does not scale past 1 physical core
+here, which is a substantively different and more actionable
+conclusion than a hardware ceiling would be.
+
+**Not yet measured**: whether the differentiator really is
+memory-bandwidth/cache-footprint (as reasoned above) rather than some
+other coincidental difference between the two workloads - would need
+either (a) a memory-bandwidth counter comparison (`perf stat` with a
+bandwidth-sensitive event set) between the two synthetic-workload
+core-packing conditions, or (b) a synthetic workload deliberately
+scaled up to touch `dim`-sized arrays per task instead of 48x48, to
+see if the ceiling reappears once the memory footprint matches
+paulikit's own.
+
+## What this does NOT show (original list, superseded above where noted)
 
 - **Small n.** 3 py-spy samples per condition, 1 run each (not a
   repeated/statistical measurement) - a real screening signal, not a
@@ -139,16 +210,14 @@ the contended sampled data.
   `py-spy record` capture, if `perf_event_paranoid`/ptrace access can
   be arranged more conveniently than one-off `sudo` runs) before being
   treated as final.
-- **Does not identify which OTHER program would show the same
-  behavior.** The finding is "this bottleneck lives in generic
-  `ProcessPoolExecutor`/`multiprocessing` code, not paulikit's own
-  algorithm" - it does NOT independently confirm that literally any
-  other CPU-bound multiprocessing Python program on this exact machine
-  would show the identical ceiling. That would need a second,
-  paulikit-free synthetic workload (e.g. a trivial CPU-bound function
-  parallelized the same way) run through the same w2_c1-vs-w8_c4
-  comparison - not done here, a natural follow-up if this needs to be
-  fully nailed down.
+- ~~**Does not identify which OTHER program would show the same
+  behavior**~~ **RESOLVED, see Correction above**: the paulikit-free
+  synthetic control WAS run, and it does NOT show the same ceiling -
+  it reverses (w8_c4 beats w2_c1 by ~3x, p=2.1e-14). This is the
+  single most important update to this document: the ceiling is
+  paulikit-specific (or memory-bandwidth-workload-specific) after all,
+  not a generic multiprocessing property, contradicting this
+  document's own original conclusion above.
 - **Does not, by itself, suggest a fix.** Even having identified the
   mechanism (IPC/synchronization contention under `ProcessPoolExecutor`),
   no alternative IPC strategy (shared memory instead of pickled
