@@ -335,6 +335,28 @@ project's own "Actual next isolation step") is designed to test.
    wide; Master tells us how to redesign the inner kernel; GST tells
    us how good life could be if DAG C stops dominating.**
 
+6. **Master's "restructure the inner kernel" prescription now has a
+   hard, falsifiable bound**, not just a qualitative direction: see
+   `roofline_analysis.md` (Roofline model, Williams/Waterman/Patterson
+   2009 - the standard performance-engineering tool for exactly this
+   compute-bound-vs-memory-bound question, complementary to but
+   distinct from DAG+GST+Master, which was built for Cilk-style
+   shared-memory fork-join programs, not for bounding a single
+   kernel's memory-traffic ceiling). Paulikit's WHT kernel today runs
+   at arithmetic intensity 0.0625 FLOPs/byte, 64x below this
+   machine's measured ridge point (4.01 FLOPs/byte, from a real
+   thermal-controlled DRAM-bandwidth probe, not a spec-sheet guess) -
+   severely memory-bound. Even a THEORETICALLY PERFECT cache-blocking
+   (zero re-traffic across all 14 butterfly stages) only reaches AI
+   0.875 FLOPs/byte - still 4.6x below the ridge point, so the kernel
+   never becomes compute-bound - bounding the maximum possible
+   single-chunk/single-core wall-clock speedup at 14.0x (exactly
+   `log2(dim)`, the stage count). This bounds only DAG B in isolation
+   (single-core); it does NOT bound or predict whether cache-blocking
+   relieves DAG C's multi-worker contention (section 3e) - that
+   remains a separate, untested question, most directly addressed by
+   the gather-pattern isolation experiment, not by this calculation.
+
 ---
 
 ## 4b. Consolidated Work/Span/Parallelism/critical-path answer
