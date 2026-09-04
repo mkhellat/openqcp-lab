@@ -216,6 +216,43 @@ def _parallel_checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
     return Path(str(checkpoint_path) + ".parallel_progress.json")
 
 
+def _read_checkpoint_triples(
+    checkpoint_path: Path,
+) -> tuple[list[int], list[int], list[complex]]:
+    """Read ``(x, z, coeff)`` triples from a checkpoint JSONL file,
+    tolerating a truncated final line.
+
+    Both checkpoint formats append one JSON object per line and only
+    update their progress-marker file *after* a chunk's lines are
+    fully written (see ``_append_checkpoint_chunk``/
+    ``_append_parallel_checkpoint_chunk``) - so a crash mid-write can
+    leave the checkpoint file's LAST line truncated while every
+    earlier line is a complete, already-flushed write. Only the last
+    line is treated as possibly-truncated: a ``json.loads`` failure on
+    any earlier line is a real corruption, not a resumable crash
+    artifact, and is left to raise.
+    """
+    x_vals: list[int] = []
+    z_vals: list[int] = []
+    coeff_vals: list[complex] = []
+    with open(checkpoint_path) as f:
+        lines = f.readlines()
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            if i == len(lines) - 1:
+                continue  # truncated final line from a mid-write crash
+            raise
+        x_vals.append(record["x"])
+        z_vals.append(record["z"])
+        coeff_vals.append(complex(record["re"], record["im"]))
+    return x_vals, z_vals, coeff_vals
+
+
 def _load_parallel_checkpoint(
     checkpoint_path: str | Path | None,
 ) -> tuple[set[int], tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
@@ -245,18 +282,7 @@ def _load_parallel_checkpoint(
         progress = json.load(f)
     completed = set(progress["completed_chunk_indices"])
 
-    x_vals: list[int] = []
-    z_vals: list[int] = []
-    coeff_vals: list[complex] = []
-    with open(checkpoint_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            record = json.loads(line)
-            x_vals.append(record["x"])
-            z_vals.append(record["z"])
-            coeff_vals.append(complex(record["re"], record["im"]))
+    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
 
     if not x_vals:
         return completed, None
@@ -321,18 +347,7 @@ def _load_checkpoint(
         progress = json.load(f)
     next_chunk = progress["next_chunk"]
 
-    x_vals: list[int] = []
-    z_vals: list[int] = []
-    coeff_vals: list[complex] = []
-    with open(checkpoint_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            record = json.loads(line)
-            x_vals.append(record["x"])
-            z_vals.append(record["z"])
-            coeff_vals.append(complex(record["re"], record["im"]))
+    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
 
     return next_chunk, (
         np.array(x_vals, dtype=np.intp),

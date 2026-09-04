@@ -110,6 +110,44 @@ def test_streaming_checkpoint_resume(tmp_path):
         assert combined[label] == pytest.approx(reference[label], abs=1e-9)
 
 
+def test_streaming_checkpoint_resume_survives_truncated_inflight_line(tmp_path):
+    """Regression test for a real bug (REVIEW_NOTES.md, found
+    2026-09-04): ``_append_checkpoint_chunk`` writes a chunk's triple
+    lines before advancing the progress marker's ``next_chunk`` (see
+    its own docstring) - so a crash mid-write can leave the checkpoint
+    file with a truncated trailing line for a chunk the progress
+    marker still considers NOT YET completed (that chunk gets
+    resubmitted on resume, exactly as designed). Loading must not
+    raise json.JSONDecodeError on that stale partial line - it will be
+    superseded by the resubmitted chunk's own fresh append and must
+    simply be skipped while reading the earlier, real chunks' data."""
+    fixture = ALL_FIXTURES[-1]
+    padded = fixture.padded_hamiltonian()
+    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    reference = fwht_pauli_terms(padded, chunk_size=2)
+
+    gen = fwht_pauli_terms_iter(padded, chunk_size=2, checkpoint_path=checkpoint_path)
+    next(gen)  # consume exactly one full, flushed chunk
+    del gen
+
+    # Simulate a crash mid-write of the NEXT (not-yet-progress-marked)
+    # chunk: append a truncated trailing line without ever writing a
+    # progress-marker update for it - progress.json still correctly
+    # points at the chunk before this partial line.
+    with open(checkpoint_path, "a") as f:
+        f.write('{"x": 1, "z": 2, "re": 0.5')  # deliberately unterminated
+
+    combined = {}
+    for chunk_dict in fwht_pauli_terms_iter(
+        padded, chunk_size=2, checkpoint_path=checkpoint_path
+    ):
+        combined.update(chunk_dict)
+
+    assert set(combined) == set(reference)
+    for label in reference:
+        assert combined[label] == pytest.approx(reference[label], abs=1e-9)
+
+
 def test_streaming_assume_hermitian_true_raises_mid_stream_on_non_hermitian_input():
     n_qubits = 2
     dim = 2**n_qubits
