@@ -220,7 +220,7 @@ def _read_checkpoint_triples(
     checkpoint_path: Path,
 ) -> tuple[list[int], list[int], list[complex]]:
     """Read ``(x, z, coeff)`` triples from a checkpoint JSONL file,
-    tolerating a truncated final line.
+    tolerating a truncated final line and deduplicating by ``(x, z)``.
 
     Both checkpoint formats append one JSON object per line and only
     update their progress-marker file *after* a chunk's lines are
@@ -231,6 +231,16 @@ def _read_checkpoint_triples(
     line is treated as possibly-truncated: a ``json.loads`` failure on
     any earlier line is a real corruption, not a resumable crash
     artifact, and is left to raise.
+
+    A crash between finishing a chunk's triple-line writes and its
+    progress-marker update means that chunk gets recomputed and
+    re-appended on resume (correct - the marker still says it is not
+    done), leaving TWO sets of lines for the same ``(x, z)`` pairs in
+    the file (a real bug found via review, REVIEW_NOTES.md 2026-09-04
+    "over-record resume"). Both sets hold the same recomputed value
+    for a given ``(x, z)``, so keeping only the LAST occurrence (the
+    resumed run's fresh append, which is always later in the file than
+    any stale earlier attempt) is correct and removes the duplicate.
     """
     x_vals: list[int] = []
     z_vals: list[int] = []
@@ -250,6 +260,15 @@ def _read_checkpoint_triples(
         x_vals.append(record["x"])
         z_vals.append(record["z"])
         coeff_vals.append(complex(record["re"], record["im"]))
+
+    last_by_key: dict[tuple[int, int], int] = {}
+    for idx, (x, z) in enumerate(zip(x_vals, z_vals)):
+        last_by_key[(x, z)] = idx
+    if len(last_by_key) != len(x_vals):
+        keep = sorted(last_by_key.values())
+        x_vals = [x_vals[i] for i in keep]
+        z_vals = [z_vals[i] for i in keep]
+        coeff_vals = [coeff_vals[i] for i in keep]
     return x_vals, z_vals, coeff_vals
 
 

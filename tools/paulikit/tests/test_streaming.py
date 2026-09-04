@@ -10,7 +10,11 @@ into one combined dict.
 import numpy as np
 import pytest
 
-from paulikit.algorithms.fwht import fwht_pauli_terms, fwht_pauli_terms_iter
+from paulikit.algorithms.fwht import (
+    _read_checkpoint_triples,
+    fwht_pauli_terms,
+    fwht_pauli_terms_iter,
+)
 from paulikit.testing.fixtures import ALL_FIXTURES
 
 
@@ -146,6 +150,62 @@ def test_streaming_checkpoint_resume_survives_truncated_inflight_line(tmp_path):
     assert set(combined) == set(reference)
     for label in reference:
         assert combined[label] == pytest.approx(reference[label], abs=1e-9)
+
+
+def test_streaming_checkpoint_resume_dedupes_over_recorded_chunk(tmp_path):
+    """Regression test for a real bug (REVIEW_NOTES.md, found
+    2026-09-04, "over-record resume"): _append_checkpoint_chunk writes
+    a chunk's triple lines, THEN advances the progress marker - a
+    crash landing between those two writes leaves the triples flushed
+    but the marker still pointing at that same chunk, so resume
+    recomputes and re-appends it, leaving two sets of lines for the
+    same (x, z) pairs in the checkpoint file. Loading must dedupe by
+    (x, z) rather than double-counting those terms."""
+    fixture = ALL_FIXTURES[-1]
+    padded = fixture.padded_hamiltonian()
+    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    reference = fwht_pauli_terms(padded, chunk_size=2)
+
+    gen = fwht_pauli_terms_iter(padded, chunk_size=2, checkpoint_path=checkpoint_path)
+    next(gen)  # chunk 0's triples + progress marker are now fully flushed
+    del gen
+
+    # Simulate the crash-between-triples-and-marker window: duplicate
+    # chunk 0's already-written lines, but leave the progress marker
+    # untouched (still says chunk 0 is not yet done, matching what a
+    # real crash there would leave behind).
+    with open(checkpoint_path) as f:
+        original_lines = f.readlines()
+    with open(checkpoint_path, "a") as f:
+        f.writelines(original_lines)
+
+    combined = {}
+    for chunk_dict in fwht_pauli_terms_iter(
+        padded, chunk_size=2, checkpoint_path=checkpoint_path
+    ):
+        combined.update(chunk_dict)
+
+    assert set(combined) == set(reference)
+    for label in reference:
+        assert combined[label] == pytest.approx(reference[label], abs=1e-9)
+
+
+def test_read_checkpoint_triples_dedupes_by_x_z_keeping_last(tmp_path):
+    """Direct unit test on the shared reader: duplicate (x, z) lines
+    (the "over-record resume" scenario) must collapse to one entry,
+    keeping the value from the LAST occurrence in the file."""
+    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    with open(checkpoint_path, "w") as f:
+        f.write('{"x": 1, "z": 2, "re": 0.5, "im": 0.0}\n')
+        f.write('{"x": 3, "z": 4, "re": 1.5, "im": -0.5}\n')
+        # A stale re-append of the first line's (x, z), same value
+        # (as a real resume-recompute would produce - deterministic
+        # math, not a differing value):
+        f.write('{"x": 1, "z": 2, "re": 0.5, "im": 0.0}\n')
+
+    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
+    assert len(x_vals) == 2, "duplicate (x, z) pair must collapse to one entry"
+    assert set(zip(x_vals, z_vals)) == {(1, 2), (3, 4)}
 
 
 def test_streaming_assume_hermitian_true_raises_mid_stream_on_non_hermitian_input():
