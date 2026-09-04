@@ -295,12 +295,28 @@ measured), but it is a **downstream symptom**, not the *trigger*.
 Something specific to paulikit's own per-chunk work - not shared by
 any traffic-volume-matched control - is what causes that IPC path to
 serialize in the first place. The leading remaining suspect (not yet
-tested) is the **irregular gather/scatter access pattern** (sparse
-`operator` index lookups scattered into a dense buffer at arbitrary
-positions) and/or the resident `operator`/setup-array footprint each
-worker carries - both untouched by any control tested so far. This is
-exactly what the gather-pattern isolation experiment (see this
-project's own "Actual next isolation step") is designed to test.
+tested at the time this section was written) is the **irregular
+gather/scatter access pattern** (sparse `operator` index lookups
+scattered into a dense buffer at arbitrary positions) and/or the
+resident `operator`/setup-array footprint each worker carries - both
+untouched by any control tested so far. This is exactly what the
+gather-pattern isolation experiment (see this project's own "Actual
+next isolation step") was designed to test.
+
+**Result (`gather_pattern_findings.md`, tested after this section was
+first written): mixed, not a clean confirm/refute.** A pure-gather
+control (irregular scatter, no WHT) DOES reverse like paulikit
+(0.822x, w8 slower, p=1.6e-3) - the first control in this whole
+investigation to reproduce paulikit's direction. But it runs at
+~150-180 us/chunk, dominated by `ProcessPoolExecutor`'s own per-task
+dispatch overhead rather than real gather work, so this may be a
+task-granularity artifact rather than evidence about the access
+pattern itself. A gather+WHT control (closer to paulikit's real
+per-chunk cost scale, ~1.3-1.6 ms/chunk) does NOT reverse - it scales
+normally (1.279x), same as the dense-traffic controls. Neither
+confirms nor refutes gather/access-pattern as paulikit's trigger; the
+operator/setup-array resident footprint (traffic_intensity_findings.md's
+still-untested item) remains the next unisolated suspect.
 
 ---
 
