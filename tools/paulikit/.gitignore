@@ -22,3 +22,10 @@ profiling/phase13/*_results.jsonl
 # sample data) — the post-processed perf report/annotate .txt outputs
 # and the findings .md are the deliverable, not the raw .perf.data.
 profiling/phase13/*.perf.data
+
+# Full (non-truncated) perf annotate dumps - mostly 0%-sample
+# disassembly lines, several MB each; regeneratable from perf_deep_dive
+# against the (gitignored) .perf.data. The full *.report.full.txt and
+# *.symbol_histogram.txt (much smaller, and where the actual finding
+# lives) are committed.
+profiling/phase13/*.annotate.full.txt

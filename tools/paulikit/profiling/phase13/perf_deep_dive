@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Deep, non-truncated perf report/annotate/script pass over the
+# already-recorded perf_w1_c1.perf.data / perf_w8_c4.perf.data
+# captures (from perf_record_annotate_capture). Reading an existing
+# perf.data file does NOT require root - only live `perf record`
+# attachment does (confirmed directly: `perf report -i ...` runs fine
+# unprivileged on this machine). This script does not need sudo, but
+# running it with sudo is harmless if preferred.
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+
+for cond in w1_c1 w8_c4; do
+    f="perf_${cond}.perf.data"
+    echo "=== ${cond}: header ==="
+    perf report -i "$f" --header-only
+
+    echo "=== ${cond}: full report (no percent-limit truncation) ==="
+    perf report -i "$f" --stdio -g graph,0.1,caller --percent-limit 0.1 \
+        > "perf_${cond}.report.full.txt" 2>&1
+    echo "-> perf_${cond}.report.full.txt ($(wc -l < "perf_${cond}.report.full.txt") lines)"
+
+    echo "=== ${cond}: full annotate, top symbols ==="
+    perf annotate -i "$f" --stdio > "perf_${cond}.annotate.full.txt" 2>&1
+    echo "-> perf_${cond}.annotate.full.txt ($(wc -l < "perf_${cond}.annotate.full.txt") lines)"
+
+    echo "=== ${cond}: symbol-frequency histogram from perf script ==="
+    # Leaf frame is the first indented call-chain line after each event
+    # header (perf script's default output), not a same-line field -
+    # --fields sym only works with --no-callchain, which this perf
+    # version doesn't support. Extract the symbol name (2nd whitespace
+    # field of the first indented line per sample block).
+    perf script -i "$f" 2>/dev/null \
+        | awk '/^\t/ { if (!got) { sub(/\+0x[0-9a-f]+$/, "", $2); print $2; got=1 }; next } { got=0 }' \
+        | sort | uniq -c | sort -rn \
+        > "perf_${cond}.symbol_histogram.txt"
+    echo "-> perf_${cond}.symbol_histogram.txt (top 20 below)"
+    head -20 "perf_${cond}.symbol_histogram.txt"
+
+    echo "=== ${cond}: any multiprocessing/queue/lock/futex frames? ==="
+    grep -iE "multiprocessing|synchronize|queues\.py|connection\.py|futex|_send_bytes|Lock\.__enter__" \
+        "perf_${cond}.report.full.txt" || echo "  (none found)"
+
+    echo
+done
+
+echo "All done. Diff the two symbol histograms with:"
+echo "  diff perf_w1_c1.symbol_histogram.txt perf_w8_c4.symbol_histogram.txt"
