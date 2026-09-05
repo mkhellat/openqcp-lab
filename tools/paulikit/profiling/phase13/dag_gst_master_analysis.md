@@ -1,5 +1,20 @@
 # DAG / GST / Master analysis for Phase 13 parallelism (2026-09-04)
 
+**Superseded for the Work/Span/Parallelism question specifically by
+`dag_extraction_and_parallelism.md` (2026-09-05).** This document's
+own Section 3f (added 2026-09-05) drifted into calibrating a DAG
+node's "Work" from a measured microbenchmark and folding that back
+into a GST bound — a methodological error, flagged directly: DAG
+extraction must be done from the algorithm's code structure alone
+(nodes = operations the code performs, costs = algorithmic
+complexity), with any comparison to measurement kept as a strictly
+separate, later step. `dag_extraction_and_parallelism.md` redoes the
+extraction correctly and is the authoritative Work/Span/Parallelism
+answer going forward. This document is kept as the historical record
+of the investigation's reasoning and its own self-corrections, and
+its non-DAG content (Section 0's race analysis, the Roofline
+cross-reference, the merge-sort analogy) still stands.
+
 Careful two-way analysis: (1) forward from the shipped code’s
 computational DAG + Master/GST; (2) reverse from measured wall-clock
 and effective concurrency. Numbers below are for the real N=150
@@ -345,6 +360,140 @@ been exhausted without a positive result.
 
 ---
 
+## 3f. DAG C corrected: it was never actually modeled as a DAG (2026-09-05)
+
+**Direct correction, flagged by the user.** Sections 1-3e above build
+real DAGs for A and B — nodes, edges, a recurrence, a computed
+Work/Span/parallelism number each. "DAG C" was never actually built
+the same way: it is a bulleted list of runtime phenomena (queue
+lock, pipe send/recv, shared-L3 serialization, "main-process drain
+loop... serializes result handoff") with no nodes, no edges, no
+Work(C), no Span(C), and no parallelism number. Calling the GST bound
+violation in 3a "DAG C dominates" was an *inference* from the
+violation, not a *derivation* from an actually-modeled graph — a real
+gap in this analysis, not a defensible modeling choice. This section
+fixes that for the one DAG-C item that can be modeled directly from
+code: the main-process drain loop. It does not claim to model shared
+L3/memory-bus contention as a DAG (that is not a dependency-graph
+phenomenon in the same sense and is left as future work, honestly
+labeled as such).
+
+### The drain loop as an actual DAG node
+
+`parallel_decompose`'s consumption loop (`fwht.py:1636-1666`):
+
+```python
+while in_flight:
+    done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+    for future in done:
+        chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
+        _submit_next()
+        if checkpoint_path is not None:
+            _append_parallel_checkpoint_chunk(...)      # main process, file I/O
+        labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)  # main process, C ext.
+        ... build dict / yield ...
+```
+
+This is a **real DAG node, per chunk**, call it `D_i` — it runs
+strictly after chunk `i`'s worker node completes (a genuine
+dependency edge, `A_i -> D_i`), and it runs on exactly **one**
+thread (the main process) for **all 5595 chunks**, i.e. every `D_i`
+is also sequentially ordered with respect to every other `D_j` (they
+cannot overlap — one Python thread, one `while` loop). This was
+completely absent from DAG A's model, which only counted worker-side
+`W_chunk` and treated IPC as "runtime, not math."
+
+### Measured Work(D)
+
+Direct microbenchmark of `_pauli_label_batch` (native C extension
+confirmed loaded — `fwht._native is not None` — so this is not the
+slow pure-Python fallback) at the real average surviving-term count
+per chunk (`total_terms / n_chunks = 91,652,096 / 5595 ≈ 16,381`
+terms/chunk, measured directly from `full_matrix_target.py`'s own
+`total_terms` counter, not assumed):
+
+| terms in chunk | `_pauli_label_batch` time |
+|---|---|
+| 1,000 | 0.29 ms |
+| 5,000 | 0.30 ms |
+| **16,381 (real avg)** | **0.89 ms** |
+| 32,000 | 2.65 ms |
+
+This measures ONLY the label-construction call; it does NOT include
+`_append_parallel_checkpoint_chunk`'s file I/O (not exercised in this
+run — no `checkpoint_path` passed by `full_matrix_target.py`) or
+dict-construction (`assume_hermitian=False` path's
+`{label: complex(c) for ...}`), both of which are additional, not-yet
+-measured main-process-serial cost on top of this number — so
+`Work(D)` below is a **lower bound** on the drain loop's true cost,
+not a complete accounting.
+
+\[
+\mathrm{Work}(D) = C \cdot 0.8928\,\mathrm{ms} = 5595 \times 0.8928\,\mathrm{ms} \approx \mathbf{5.00\,s}
+\]
+
+### Corrected GST bound, with DAG D's node included
+
+DAG D cannot be parallelized across workers — it IS the single main
+process — so unlike DAG A's `W_chunk`, `Work(D)` does **not** divide
+by `P`. The corrected bound is:
+
+\[
+T_P \;\ge\; \frac{W_{\mathrm{chunk}} \cdot C}{P} \;+\; \mathrm{Work}(D)
+\]
+
+| P | worker term (÷P) | + Work(D) floor | corrected \(T_P\) bound | observed \(T_P\) | still unexplained |
+|---|---|---|---|---|---|
+| 1 | 26.30 s | 5.00 s | 31.29 s | 26.37 s (measured T1 itself pre-dates this correction) | — |
+| 2 | 13.15 s | 5.00 s | 18.14 s | 20.54 s | 2.40 s |
+| 4 | 6.57 s | 5.00 s | 11.57 s | ~21.4-23.9 s | 9.8-12.3 s |
+| 8 | 3.29 s | 5.00 s | 8.28 s | 23.96 s | **15.68 s** |
+
+(Row P=1's own bound exceeds the measured T1 because `Work(D)` was
+benchmarked in isolation, outside the real pipeline's other overheads
+that overlap productively at P=1 only — an artifact of the
+microbenchmark's isolation, flagged rather than papered over.)
+
+### Honest reading: this closes part of the gap, not all of it
+
+Including DAG D **is** a real fix to the earlier analysis — DAG A/B's
+Work/Span calculation genuinely omitted a node that (a) exists, (b)
+has real measured cost, and (c) cannot be parallelized by adding more
+workers. It explains why `T_P` cannot approach DAG A's naive `T_1/P`
+even in principle: there is a real ~5.0 s floor from consumer-side
+work alone, in the current single-threaded-drain design, regardless
+of `P`.
+
+**It does NOT close the whole gap.** At `w8_c4`, the corrected bound
+(8.28 s) still falls **15.7 s short** of the observed 23.96 s —
+65% of the observed time remains unexplained by DAG D's *measured
+CPU cost* alone. That residual is consistent with (not yet separately
+measured or modeled): time workers spend actually BLOCKED waiting for
+their turn at the `Queue.put()` lock while DAG D is busy with a
+different chunk (queueing delay, not the ~0.89ms of useful work
+itself — this is exactly what py-spy caught: `(idle)`, inside
+`Lock.__enter__`, not inside computation), plus the omitted checkpoint-
+I/O and dict-construction cost noted above, plus any genuine shared-
+L3/memory-bus contention (the original DAG C's other bullet, still not
+modeled as a DAG here). **Do not claim DAG D fully explains the
+observed slowdown** — it is a real, quantified, previously-missing
+node that accounts for a MINIMUM ~5 s of unavoidable serial cost, not
+the entire gap.
+
+### What would fully close it
+
+A true accounting would need: (1) direct measurement of time-blocked-
+in-`Queue.put()` per worker (not yet done — would need `perf sched`
+or repeated fine-grained py-spy sampling specifically timing time-in-
+lock, not just catching a few point samples inside it), (2) the
+checkpoint-I/O and dict-build costs added to `Work(D)`, and (3) a
+real accounting (not a bulleted list) of any shared-L3/memory-
+controller contention as workers' bursts overlap. None of these are
+done in this document — flagging them as open, not quietly dropping
+them.
+
+---
+
 ## 4. Joint conclusions (careful)
 
 1. **Ideal parallelism from the code DAG is huge** (~5600 outer, ~1170
@@ -410,14 +559,21 @@ This table is the single place all three are stated side by side.
 |---|---|---|---|---|
 | DAG A (outer chunks, ideal) | 26.366 s | \(\approx\) 4.7 ms | \(\approx\) 5595 | one chunk's own compute |
 | DAG B (inner WHT, ideal, **not scheduled today**) | \(\Theta(d\log d)\) per row | \(\Theta(\log d)\approx\)14 hops | \(\Theta(d/\log d)\approx\)1170 (dim=16384) | the 14 sequential butterfly stages |
-| DAG C (resource layer, what actually binds) | - | **implied span grows with \(P\)**: 7.35 s (\(P{=}2\)) \(\to\) 20.67 s (\(P{=}8\)) | - | shared memory bus + `ProcessPoolExecutor` lock/pipe contention |
+| DAG D (main-process drain loop, **actually modeled, section 3f**) | \(\ge\) 5.00 s (measured, lower bound - checkpoint I/O + dict-build not included) | = Work(D) (fully serial, one thread, does not divide by P) | 1 (cannot parallelize by construction) | 5595 serialized `_pauli_label_batch` calls in the main process |
+| DAG C residual (memory-bus/lock-queueing, still **not modeled as a graph**) | - | **implied span grows with \(P\)** even after subtracting DAG D's floor: e.g. at \(P{=}8\), 23.96 s observed vs. 8.28 s corrected bound leaves 15.7 s (65%) unexplained | - | lock/queueing delay + possible shared-L3 contention - honestly unresolved, not yet modeled |
 
-A growing implied span (row DAG C) is impossible for a true DAG - span
-is a fixed structural property. That growth is the mathematical
-signature that **the real critical path lives in DAG C, not in DAG A
-or DAG B** - a resource-contention path whose cost scales with how
-many workers compete for it simultaneously, unlike a genuine data
-dependency edge.
+DAG D (section 3f) is a genuine correction: a real node with measured
+Work that DAG A's model omitted entirely, and it establishes a hard
+~5 s serial floor that no amount of added workers can remove in the
+current design. It does **not**, by itself, explain the full gap to
+observed wall-clock — 65% of the `w8_c4` slowdown remains in the
+"DAG C residual" row, which (unlike DAG D) has still NOT been
+reduced to an actual dependency graph with nodes/edges/Work/Span —
+it remains, honestly, an inference from what's left over, not a
+derivation. A growing implied span for that residual row is
+impossible for a true DAG — span is a fixed structural property —
+which is the mathematical signature that whatever this residual is,
+it behaves like queueing/contention delay, not a data dependency.
 
 **Direct answer to "what is our parallelism, and why":** ideal
 parallelism from the code's own DAG structure is enormous (~5595
