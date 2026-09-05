@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Line/function-level perf record+annotate capture: sharper follow-up
+# to code_specificity_capture's py-spy 3-sample stack dumps (checkpoint
+# #8, project_paulikit_phase13.md - four synthetic-proxy isolation
+# experiments were exhausted without a positive result, so the next
+# step is deeper REAL-process profiling, not another synthetic
+# control). Captures a real w1_c1 (lone) vs w8_c4 (max-contended)
+# worker's call graph via `perf record -p <pid> -g --call-graph dwarf`
+# while the run is actively executing, then post-processes with `perf
+# report`/`perf annotate` for function- and (where symbols/debug info
+# allow) line-level hot-path attribution - diffable between the two
+# conditions, unlike py-spy's independent point samples.
+#
+# Must run as root (perf_event_paranoid=2 on this machine, no
+# passwordless sudo - confirmed 2026-09-05):
+#   sudo ./perf_record_annotate_capture
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "must run as root (sudo ./perf_record_annotate_capture)" >&2
+    exit 1
+fi
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+
+PYTHON=/home/desadm/.venvs/paulikit/bin/python
+TARGET="$DIR/full_matrix_target.py"
+CHUNK_SIZE=2
+COOLDOWN_TARGET_C=55.0
+COOLDOWN_TIMEOUT_S=180
+TEMP_PATH=/sys/class/thermal/thermal_zone7/temp
+# How long to sample once perf record attaches - the target run itself
+# takes ~25-42s (full_optimum_sweep_results.jsonl's thermal-controlled
+# means were ~25-35s; two quick uncontrolled single-run timing checks
+# just before writing this script measured 41.7s/w1_c1 and 38.9s/w8_c4
+# - using the wider range here); sampling for 15s starting after a 5s
+# warmup keeps the capture comfortably inside the run's steady state,
+# not its startup/teardown, across that whole range.
+WARMUP_S=5
+SAMPLE_S=15
+
+cooldown() {
+    local start now temp
+    start=$(date +%s)
+    while true; do
+        temp=$(($(cat "$TEMP_PATH" 2>/dev/null || echo 0) / 1000))
+        if [ "$temp" -le "${COOLDOWN_TARGET_C%.*}" ]; then
+            echo "cooled to ${temp}C"
+            return
+        fi
+        now=$(date +%s)
+        if [ $((now - start)) -gt "$COOLDOWN_TIMEOUT_S" ]; then
+            echo "cooldown timed out at ${temp}C"
+            return
+        fi
+        sleep 2
+    done
+}
+
+# --- Resolve the real worker PID, same verified logic as
+# code_specificity_capture (pstree -p confirmed the worker is always a
+# DIRECT child of the launched process, including at w1_c1 - only
+# seq_1, unused here, bypasses the pool). Guarded with `|| true` since
+# `pgrep` exits 1 on no match, which would kill the script under
+# `set -e` at exactly the wrong moment (transient empty match while the
+# child hasn't forked yet).
+resolve_worker_pid() {
+    local root_pid="$1" target_pid="" attempt
+    for attempt in 1 2 3 4 5; do
+        target_pid="$(pgrep -P "$root_pid" 2>/dev/null | head -1 || true)"
+        [ -n "$target_pid" ] && break
+        sleep 1
+    done
+    echo "${target_pid:-$root_pid}"
+}
+
+perf_capture() {
+    local condition="$1" outprefix="$2"
+    echo "=== perf record+annotate capture: $condition (chunk_size=$CHUNK_SIZE) ==="
+    OPENBLAS_NUM_THREADS=1 "$PYTHON" "$TARGET" "$condition" "$CHUNK_SIZE" &
+    local root_pid=$!
+    sleep "$WARMUP_S"
+
+    local target_pid
+    target_pid="$(resolve_worker_pid "$root_pid")"
+    echo "sampling pid=$target_pid for ${SAMPLE_S}s (root_pid=$root_pid)"
+
+    perf record -p "$target_pid" -g --call-graph dwarf \
+        -o "${outprefix}.perf.data" -- sleep "$SAMPLE_S" 2>"${outprefix}.record.stderr" || true
+
+    wait "$root_pid" 2>/dev/null || true
+
+    echo "--- perf report (top 40 lines) ---" > "${outprefix}.report.txt"
+    perf report -i "${outprefix}.perf.data" --stdio -g graph,0.5,caller \
+        --percent-limit 1 2>>"${outprefix}.report.txt" \
+        | head -n 60 >> "${outprefix}.report.txt" || true
+
+    echo "--- perf annotate (top symbol, line-level where available) ---" > "${outprefix}.annotate.txt"
+    perf annotate -i "${outprefix}.perf.data" --stdio \
+        2>>"${outprefix}.annotate.txt" | head -n 150 >> "${outprefix}.annotate.txt" || true
+
+    echo "done -> ${outprefix}.perf.data, ${outprefix}.report.txt, ${outprefix}.annotate.txt"
+}
+
+echo "cooling down before w1_c1 perf capture..."
+cooldown
+perf_capture w1_c1 perf_w1_c1
+
+echo "cooling down before w8_c4 perf capture..."
+cooldown
+perf_capture w8_c4 perf_w8_c4
+
+echo
+echo "All captures done:"
+ls -la perf_w1_c1.* perf_w8_c4.*
+
+# outputs are written as root (script ran under sudo) - hand them back
+# to the invoking user so they're readable/editable normally afterward.
+if [ -n "${SUDO_USER:-}" ]; then
+    chown "$SUDO_USER":"$SUDO_USER" perf_w1_c1.* perf_w8_c4.*
+fi

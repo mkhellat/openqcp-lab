@@ -17,3 +17,8 @@ config.status
 # the publication-grade sweep and is committed deliberately below.
 profiling/phase13/*_results.jsonl
 !profiling/phase13/full_optimum_sweep_results.jsonl
+
+# Raw perf record capture (hundreds of MB, machine/run-specific binary
+# sample data) — the post-processed perf report/annotate .txt outputs
+# and the findings .md are the deliverable, not the raw .perf.data.
+profiling/phase13/*.perf.data

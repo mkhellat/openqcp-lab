@@ -1,0 +1,151 @@
+--- perf annotate (top symbol, line-level where available) ---
+ Percent |	Source code & Disassembly of _multiarray_umath.cpython-312-x86_64-linux-gnu.so for cpu/cycles/P (4147 samples, percent: local period)
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+         :
+         :
+         :
+         : 3      Disassembly of section .text:
+         :
+         : 5      000000000054acd0 <CDOUBLE_add_X86_V3>:
+    0.18 :   54acd0: push   %rbp
+    0.00 :   54acd1: mov    %rsp,%rbp
+    0.00 :   54acd4: push   %r15
+    0.00 :   54acd6: push   %r14
+    0.00 :   54acd8: push   %r13
+    0.00 :   54acda: push   %r12
+    0.00 :   54acdc: push   %rbx
+    0.00 :   54acdd: and    $0xffffffffffffffe0,%rsp
+    0.00 :   54ace1: sub    $0x20,%rsp
+    0.00 :   54ace5: mov    (%rsi),%rax
+    0.00 :   54ace8: mov    (%rdi),%r11
+    0.00 :   54aceb: mov    0x8(%rdi),%rbx
+    0.00 :   54acef: mov    0x10(%rdi),%r10
+    0.00 :   54acf3: mov    (%rdx),%rdi
+    0.00 :   54acf6: mov    0x8(%rdx),%r8
+    0.00 :   54acfa: mov    %rax,0x8(%rsp)
+    0.00 :   54acff: mov    0x10(%rdx),%r9
+    0.00 :   54ad03: test   %rdi,%rdi
+    0.00 :   54ad06: jne    54aef0 <CDOUBLE_add_X86_V3+0x220>
+    0.00 :   54ad0c: cmp    %r9,%rdi
+    0.00 :   54ad0f: jne    54aef0 <CDOUBLE_add_X86_V3+0x220>
+    0.00 :   54ad15: cmp    %r10,%r11
+    0.00 :   54ad18: je     54b0f0 <CDOUBLE_add_X86_V3+0x420>
+    0.00 :   54ad1e: sub    $0x1,%rax
+    0.00 :   54ad22: mov    %r11,%r12
+    0.00 :   54ad25: mov    %r11,%rcx
+    0.00 :   54ad28: mov    %r10,%rsi
+    0.00 :   54ad2b: mov    %r10,%rdx
+    0.00 :   54ad2e: cmp    %rdx,%r12
+    0.00 :   54ad31: jb     54af37 <CDOUBLE_add_X86_V3+0x267>
+    0.00 :   54ad37: cmp    %rcx,%rsi
+    0.00 :   54ad3a: jb     54af37 <CDOUBLE_add_X86_V3+0x267>
+    0.00 :   54ad40: cmpq   $0x0,0x8(%rsp)
+    0.00 :   54ad46: jle    54aead <CDOUBLE_add_X86_V3+0x1dd>
+    0.00 :   54ad4c: mov    %rax,%rdx
+    0.00 :   54ad4f: xor    %esi,%esi
+    0.00 :   54ad51: mov    %rax,%r15
+    0.00 :   54ad54: mov    $0xf,%r12d
+    0.00 :   54ad5a: imul   %r9,%rdx
+    0.00 :   54ad5e: mov    %rsi,%rcx
+    0.00 :   54ad61: mov    %r9,%r13
+    0.00 :   54ad64: imul   %rdi,%r15
+    0.00 :   54ad68: test   %r9,%r9
+    0.00 :   54ad6b: cmovs  %rdx,%rcx
+    0.00 :   54ad6f: add    $0xf,%rdx
+    0.00 :   54ad73: add    %r10,%rcx
+    0.00 :   54ad76: test   %r9,%r9
+    0.00 :   54ad79: cmovs  %r12,%rdx
+    0.00 :   54ad7d: add    %r10,%rdx
+    0.00 :   54ad80: mov    %rdx,(%rsp)
+    0.00 :   54ad84: mov    %rax,%rdx
+    0.00 :   54ad87: imul   %r8,%rdx
+    0.00 :   54ad8b: test   %r8,%r8
+    0.00 :   54ad8e: lea    0xf(%rdx),%r14
+    0.00 :   54ad92: cmovs  %r12,%r14
+    0.00 :   54ad96: add    %rbx,%r14
+    0.00 :   54ad99: cmp    %rcx,%r14
+    0.00 :   54ad9c: setb   %r14b
+    0.00 :   54ada0: test   %r8,%r8
+    0.00 :   54ada3: cmovns %rsi,%rdx
+    0.00 :   54ada7: add    %rbx,%rdx
+    0.00 :   54adaa: cmp    %rdx,(%rsp)
+    0.00 :   54adae: setb   %dl
+    0.00 :   54adb1: or     %edx,%r14d
+    0.00 :   54adb4: test   %rdi,%rdi
+    0.00 :   54adb7: lea    0xf(%r15),%rdx
+    0.00 :   54adbb: cmovs  %r12,%rdx
+    0.00 :   54adbf: add    %r11,%rdx
+    0.00 :   54adc2: cmp    %rcx,%rdx
+    0.00 :   54adc5: setb   %dl
+    0.00 :   54adc8: test   %rdi,%rdi
+    0.00 :   54adcb: cmovns %rsi,%r15
+    0.00 :   54adcf: add    %r11,%r15
+    0.00 :   54add2: cmp    %r15,(%rsp)
+    0.00 :   54add6: setb   %cl
+    0.00 :   54add9: or     %ecx,%edx
+    0.00 :   54addb: test   %dl,%r14b
+    0.00 :   54adde: je     54aec4 <CDOUBLE_add_X86_V3+0x1f4>
+    0.00 :   54ade4: lea    0xf(%r9),%rdx
+    0.00 :   54ade8: cmp    $0x1e,%rdx
+    0.00 :   54adec: jbe    54aec4 <CDOUBLE_add_X86_V3+0x1f4>
+    0.00 :   54adf2: mov    0x8(%rsp),%rax
+    0.00 :   54adf7: cmp    $0x1,%rax
+    0.00 :   54adfb: je     54b5d9 <CDOUBLE_add_X86_V3+0x909>
+    0.00 :   54ae01: mov    %rax,%r15
+    0.00 :   54ae04: lea    (%rdi,%rdi,1),%r14
+    0.00 :   54ae08: lea    (%r8,%r8,1),%r13
+    0.00 :   54ae0c: mov    %r10,%rcx
+    0.00 :   54ae0f: shr    $1,%r15
+    0.00 :   54ae12: lea    (%r9,%r9,1),%r12
+    0.00 :   54ae16: mov    %rbx,%rdx
+    0.00 :   54ae19: mov    %r11,%rax
+    0.00 :   54ae1c: data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   54ae27: data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   54ae32: data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   54ae3d: nopl   (%rax)
+    5.83 :   54ae40: vmovupd (%rdx),%xmm0
+    0.31 :   54ae44: vmovupd (%rax),%xmm1
+    0.17 :   54ae48: add    $0x1,%rsi
+    0.70 :   54ae4c: vinsertf128 $0x1,(%rdx,%r8,1),%ymm0,%ymm0
+    0.41 :   54ae53: vinsertf128 $0x1,(%rax,%rdi,1),%ymm1,%ymm1
+    0.05 :   54ae5a: add    %r13,%rdx
+    0.27 :   54ae5d: add    %r14,%rax
+    0.25 :   54ae60: vaddpd %ymm1,%ymm0,%ymm0
+    0.42 :   54ae64: vmovupd %xmm0,(%rcx)
+    4.54 :   54ae68: vextractf128 $0x1,%ymm0,(%rcx,%r9,1)
+    0.20 :   54ae6f: add    %r12,%rcx
+    0.00 :   54ae72: cmp    %rsi,%r15
+    0.12 :   54ae75: jne    54ae40 <CDOUBLE_add_X86_V3+0x170>
+    0.00 :   54ae77: mov    0x8(%rsp),%rsi
+    0.00 :   54ae7c: mov    %rsi,%rax
+    0.00 :   54ae7f: and    $0xfffffffffffffffe,%rax
+    0.00 :   54ae83: and    $0x1,%esi
+    0.00 :   54ae86: je     54b260 <CDOUBLE_add_X86_V3+0x590>
+    0.00 :   54ae8c: vzeroupper
+    0.00 :   54ae8f: imul   %rax,%rdi
+    0.00 :   54ae93: imul   %rax,%r8
+    0.00 :   54ae97: imul   %r9,%rax
+    0.00 :   54ae9b: vmovupd (%rbx,%r8,1),%xmm0
+    0.00 :   54aea1: vaddpd (%r11,%rdi,1),%xmm0,%xmm0
+    0.00 :   54aea7: vmovupd %xmm0,(%r10,%rax,1)
+    0.00 :   54aead: lea    -0x28(%rbp),%rsp
+    0.00 :   54aeb1: pop    %rbx
+    0.00 :   54aeb2: pop    %r12
+    0.00 :   54aeb4: pop    %r13
+    0.00 :   54aeb6: pop    %r14
+    0.00 :   54aeb8: pop    %r15
+    0.00 :   54aeba: pop    %rbp
+    0.00 :   54aebb: ret
+    0.00 :   54aebc: nopl   0x0(%rax)
+    0.00 :   54aec0: sub    $0x1,%rax
+    0.00 :   54aec4: vmovupd (%r11),%xmm0
+    0.00 :   54aec9: vaddpd (%rbx),%xmm0,%xmm0
+    0.00 :   54aecd: add    %rdi,%r11
+    0.00 :   54aed0: add    %r8,%rbx
+    0.00 :   54aed3: vmovupd %xmm0,(%r10)
+    0.00 :   54aed8: add    %r13,%r10
+    0.00 :   54aedb: test   %rax,%rax
+    0.00 :   54aede: jne    54aec0 <CDOUBLE_add_X86_V3+0x1f0>
+    0.00 :   54aee0: lea    -0x28(%rbp),%rsp
+    0.00 :   54aee4: pop    %rbx
+    0.00 :   54aee5: pop    %r12

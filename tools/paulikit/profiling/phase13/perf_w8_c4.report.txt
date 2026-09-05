@@ -1,0 +1,61 @@
+--- perf report (top 40 lines) ---
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 9K of event 'cpu/cycles/P'
+# Event count (approx.): 7051689628
+#
+# Children      Self  Command  Shared Object                                      Symbol                                                                                                                                                                                                                                             
+# ........  ........  .......  .................................................  ...................................................................................................................................................................................................................................................
+#
+    53.57%     0.23%  python   _multiarray_umath.cpython-312-x86_64-linux-gnu.so  [.] ufunc_generic_fastcall
+            |          
+             --53.57%--ufunc_generic_fastcall
+                       |          
+                       |--43.36%--execute_ufunc_loop
+                       |          |          
+                       |          |--23.37%--generic_wrapped_legacy_loop
+                       |          |          |          
+                       |          |          |--9.88%--CDOUBLE_add_X86_V3
+                       |          |          |          |          
+                       |          |          |           --1.55%--asm_exc_page_fault
+                       |          |          |                     |          
+                       |          |          |                      --1.46%--exc_page_fault
+                       |          |          |                                |          
+                       |          |          |                                 --1.42%--do_user_addr_fault
+                       |          |          |                                           |          
+                       |          |          |                                            --1.22%--handle_mm_fault
+                       |          |          |                                                      |          
+                       |          |          |                                                       --1.11%--__handle_mm_fault
+                       |          |          |          
+                       |          |          |--7.04%--PyUFunc_DD_D
+                       |          |          |          |          
+                       |          |          |           --6.08%--nc_pow
+                       |          |          |                     |          
+                       |          |          |                      --5.65%--npy_cpow
+                       |          |          |          
+                       |          |           --5.60%--CDOUBLE_subtract_X86_V3
+                       |          |          
+                       |          |--10.70%--NpyIter_Reset
+                       |          |          |          
+                       |          |           --10.44%--npyiter_copy_to_buffers
+                       |          |                     |          
+                       |          |                      --10.36%--PyArray_TransferNDimToStrided
+                       |          |                                |          
+                       |          |                                |--8.13%--_contig_to_contig
+                       |          |                                |          |          
+                       |          |                                |           --1.76%--0x7f7324776421
+                       |          |                                |                     |          
+                       |          |                                |                      --1.02%--asm_exc_page_fault
+                       |          |                                |          
+                       |          |                                 --1.12%--_aligned_contig_cast_long_to_cdouble
+                       |          |          
+                       |           --8.34%--npyiter_buffered_iternext
+                       |                     |          
+                       |                      --8.17%--npyiter_copy_to_buffers
+                       |                                |          
+                       |                                 --8.09%--PyArray_TransferNDimToStrided
+                       |                                           |          
+                       |                                            --6.16%--_contig_to_contig
