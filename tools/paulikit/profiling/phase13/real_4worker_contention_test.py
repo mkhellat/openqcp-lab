@@ -67,7 +67,7 @@ def _worker(cpu: int, worker_index: int, chunk_starts, n_active, results, barrie
     for chunk_index in my_chunk_indices:
         chunk_start = chunk_starts[chunk_index]
         chunk_end = min(chunk_start + CHUNK_SIZE, n_active)
-        _, chunk_x_out, _, _ = _parallel_worker_chunk(chunk_index, chunk_start, chunk_end)
+        _, chunk_x_out, _, _, _ = _parallel_worker_chunk(chunk_index, chunk_start, chunk_end)
         total_terms += len(chunk_x_out)
     elapsed = time.perf_counter() - t0
     results[worker_index] = (elapsed, total_terms)
