@@ -1223,24 +1223,36 @@ def _parallel_worker_init(
 
 def _parallel_worker_chunk(
     chunk_index: int, chunk_start: int, chunk_end: int
-) -> tuple[int, NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating], list[str]]:
+) -> tuple[int, NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]]:
     """Runs in a worker process (via the pool started by
     ``parallel_decompose``): computes exactly one chunk's ``(x, z,
     coefficient)`` triples - the same per-chunk body as
     ``_iter_chunked_coefficients``, factored out so it can run as an
-    independent task with no generator/closure state to pickle. Also
-    labels its own triples (see the ``_pauli_label_batch`` call below)
-    so this cost runs in parallel across workers instead of being
-    serialized once per chunk in the drain loop.
+    independent task with no generator/closure state to pickle.
 
-    Returns ``(chunk_index, chunk_x_out, z_idx, chunk_coeff_out,
-    labels)`` - the index is threaded through so the main process can
-    checkpoint and reassemble results regardless of which order the
-    pool's ``as_completed`` delivers them in (workers do not complete
-    chunks in submission order - see PLAN.md Phase 13's scoping doc).
-    ``chunk_x_out``/``z_idx`` are still returned (not just ``labels``)
-    because the checkpoint file format stores raw indices, not labels
-    - see ``_append_parallel_checkpoint_chunk``.
+    Returns ``(chunk_index, chunk_x_out, z_idx, chunk_coeff_out)`` -
+    the index is threaded through so the main process can checkpoint
+    and reassemble results regardless of which order the pool's
+    ``as_completed`` delivers them in (workers do not complete chunks
+    in submission order - see PLAN.md Phase 13's scoping doc).
+
+    NOTE (PLAN.md Phase 13, reverts dag_extraction_with_labeling_moved.md):
+    labeling (``_pauli_label_batch``) was tried here instead of in
+    ``parallel_decompose``'s drain loop, on the theory that it would
+    let that Theta(t_i * n_qubits) cost run in parallel instead of
+    being serialized once per chunk. Measured real regression instead
+    (~18-23% slower wall-clock across every worker/core configuration,
+    including n_workers=1, where nothing about parallelism should have
+    changed at all): returning ``labels`` (a ``list[str]``) through the
+    ProcessPoolExecutor's result queue costs ~4x more to pickle than
+    the raw NumPy arrays alone (measured ~1.76ms/chunk extra, ~9.8s
+    total at N=150's 5595 chunks) - MORE than the ~5s total the
+    labeling compute itself costs even fully serialized. The DAG
+    analysis that motivated the change was correct about the
+    computation graph it modeled, but that graph has no node at all
+    for IPC/pickling cost - a real, now-documented gap in the
+    methodology, not an arithmetic error in the Work/Span numbers it
+    did compute. Reverted; see PLAN.md Phase 13 for the measurement.
     """
     state = _parallel_worker_state
     assert state is not None, "_parallel_worker_init must run before _parallel_worker_chunk"
@@ -1271,20 +1283,7 @@ def _parallel_worker_chunk(
     chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
     chunk_coeff_out = chunk_coefficients[row_idx, z_idx]
 
-    # Labeling moved here from parallel_decompose's drain loop
-    # (PLAN.md Phase 13, dag_extraction_with_labeling_moved.md): this
-    # chunk's labels depend only on this chunk's own x_out/z_idx, never
-    # on any other chunk, so there is no reason to defer this work to
-    # the single-threaded drain loop that every chunk's result must
-    # pass through. Doing it here means it runs in parallel across
-    # workers instead of being serialized once per chunk on the one
-    # thread that also has to service every other chunk - the DAG-
-    # derived theoretical parallelism ceiling for the whole pipeline
-    # rises from ~3.0 to ~41.9 as a result (see that document for the
-    # full derivation).
-    labels = _pauli_label_batch(chunk_x_out, z_idx, state["n_qubits"])
-
-    return chunk_index, chunk_x_out, z_idx, chunk_coeff_out, labels
+    return chunk_index, chunk_x_out, z_idx, chunk_coeff_out
 
 
 def _detect_available_worker_count() -> int:
@@ -1667,7 +1666,7 @@ def parallel_decompose(
         while in_flight:
             done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
             for future in done:
-                chunk_index, chunk_x_out, z_idx, chunk_coeff_out, labels = future.result()
+                chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
                 _submit_next()  # keep in_flight near max_in_flight as work drains
 
                 if checkpoint_path is not None:
@@ -1676,6 +1675,7 @@ def parallel_decompose(
                         chunk_x_out, z_idx, chunk_coeff_out,
                     )
 
+                labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)
                 if assume_hermitian:
                     yield _build_real_terms(labels, chunk_coeff_out, atol)
                 else:

@@ -1,5 +1,19 @@
 # DAG re-extraction: parallelism if `_pauli_label_batch` moves into the worker (2026-09-06)
 
+**REVERTED 2026-09-06, same day, after real measurement — see the
+"Real measurement result" section appended at the end of this
+document before reading the rest.** The Work/Span/Parallelism
+derivation below is not wrong on its own terms, but the DAG
+methodology it uses has a real, now-documented blind spot: it has no
+node at all for IPC/pickling cost. Implementing the change this
+document proposes made every measured wall-clock condition ~18-23%
+SLOWER, not faster, because shipping `labels` (a `list[str]`) back
+through the `ProcessPoolExecutor` result queue costs far more to
+pickle than it saves in parallelized compute. Kept here as the
+historical record of the derivation and of this real gap in the
+method, exactly as `dag_gst_master_analysis.md` was kept after its own
+retraction.
+
 **Purpose.** `dag_extraction_and_parallelism.md` computed the current
 code's whole-DAG parallelism at ≈3.0, and identified the cause: the
 single-threaded drain loop's `d4` step
@@ -210,3 +224,55 @@ law or n_workers defaults.
   prior-session empirical measurement: dict construction ~60% of
   pipeline time vs. labeling ~7% — corroborates this document's
   Θ(T_x) dict/yield bottleneck prediction for the post-fix code)
+
+## Real measurement result (2026-09-06, same day) — REVERTED
+
+The fix this document derived was implemented (worker calls
+`_pauli_label_batch`, returns `labels` alongside the existing tuple)
+and smoke-tested end-to-end via the real `parallel_decompose`
+generator at N=150, across four conditions (`w1`, `w2_c1`, `w2_c2`,
+`w8_c4`), with thermal cooldown control between every timed run
+(`n150_labeling_moved_smoketest.py`). Correctness held on every run
+(`terms=91,652,096` exactly, 12/12 runs). Wall-clock did not improve —
+it got WORSE across every single condition, including `w1`
+(1 worker, no parallelism at all, where the fix should have been a
+pure no-op on wall-clock):
+
+| condition | before (this investigation's own prior measurements) | after (this fix) | change |
+|---|---|---|---|
+| w1 (sequential) | 34.42s (`n_workers_placement_and_cache_findings.md`) | 42.39s | **+23%** |
+| w2_c1 | 22.07s (`dag_gst_master_analysis.md` Section 3b) | 26.78s | **+21%** |
+| w8_c4 | 24.80s (`dag_gst_master_analysis.md` Section 3b) | 29.31s | **+18%** |
+
+A uniform ~18-23% regression across every condition — including the
+one condition with zero parallelism, where the relocation should be
+wall-clock-neutral — is not consistent with a contention or
+scheduling explanation. Directly measured root cause: pickling
+`labels` (a `list[str]`, ~16,382 short strings per chunk at this
+workload's average chunk size) through the `ProcessPoolExecutor`
+result queue costs about **4x more per chunk** than pickling the raw
+NumPy arrays alone (measured ~1.76ms/chunk extra via `pickle.dumps`
+microbenchmark, ~9.8s total across N=150's 5595 chunks) — MORE than
+the ~5.0s the labeling compute itself costs even when fully serialized
+in the drain loop (measured directly via `_pauli_label_batch` alone).
+**The fix spent more on IPC/serialization overhead than it saved in
+parallelized compute.**
+
+This is not an error in the Work/Span arithmetic above — those numbers
+are still the correct Work/Span of the DAG **as modeled**. The gap is
+in the model's scope: nothing in this document's Step 1-4 extraction
+includes a node, of any cost, for serializing a node's return value
+and transporting it across a process boundary. That cost does not
+exist in a single-process DAG and was never added when this document
+moved a node across the worker/drain-loop process boundary. This is a
+real, generalizable methodology gap, not specific to this one fix:
+**relocating any node across a multiprocessing boundary must also
+account for the marshalling cost of whatever that node now returns,
+which this DAG framework does not model and did not warn about.**
+
+`fwht.py`'s `_parallel_worker_chunk`/`parallel_decompose` have been
+reverted to their pre-fix state (labeling restored to the drain loop);
+`_parallel_worker_chunk`'s docstring documents this reversion and the
+measurement inline. The ~3.0 parallelism ceiling from
+`dag_extraction_and_parallelism.md` stands as the current, live
+figure for the code as it actually exists.
