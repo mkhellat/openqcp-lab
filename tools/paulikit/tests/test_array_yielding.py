@@ -192,3 +192,67 @@ def test_parallel_decompose_arrays_non_hermitian_raises():
 
     with pytest.raises(ValueError, match="imaginary part"):
         list(parallel_decompose_arrays(operator, chunk_size=2, n_workers=2))
+
+
+def test_checkpoint_written_by_dict_path_resumes_under_array_path(tmp_path):
+    # Both functions must share one on-disk format. Asserted, not assumed.
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    padded = ALL_FIXTURES[1].padded_hamiltonian()
+    n_qubits = int(np.log2(padded.shape[0]))
+    reference = fwht_pauli_terms(padded)
+    checkpoint = tmp_path / "ckpt.jsonl"
+
+    # Consume only the first chunk from the dict path, leaving a
+    # partial checkpoint on disk.
+    gen = parallel_decompose(padded, chunk_size=2, n_workers=2,
+                             checkpoint_path=checkpoint)
+    next(gen)
+    gen.close()
+
+    combined = _combine_arrays(
+        parallel_decompose_arrays(padded, chunk_size=2, n_workers=2,
+                                  checkpoint_path=checkpoint),
+        n_qubits,
+    )
+
+    assert set(combined) == set(reference)
+    for label in reference:
+        assert combined[label] == pytest.approx(reference[label], abs=1e-9)
+
+
+def test_checkpoint_written_by_array_path_resumes_under_dict_path(tmp_path):
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    padded = ALL_FIXTURES[1].padded_hamiltonian()
+    reference = fwht_pauli_terms(padded)
+    checkpoint = tmp_path / "ckpt.jsonl"
+
+    gen = parallel_decompose_arrays(padded, chunk_size=2, n_workers=2,
+                                    checkpoint_path=checkpoint)
+    next(gen)
+    gen.close()
+
+    combined = {}
+    for chunk in parallel_decompose(padded, chunk_size=2, n_workers=2,
+                                    checkpoint_path=checkpoint):
+        combined.update(chunk)
+
+    assert set(combined) == set(reference)
+
+
+def test_resume_replay_still_checks_hermiticity(tmp_path):
+    # The replay path is separate code from the drain loop; it is easy
+    # to add the check to one and forget the other.
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    checkpoint = tmp_path / "ckpt.jsonl"
+    progress = tmp_path / "ckpt.jsonl.parallel_progress.json"
+    # A hand-written checkpoint holding one non-Hermitian term.
+    checkpoint.write_text('{"x": 0, "z": 0, "re": 1.0, "im": 0.5}\n')
+    progress.write_text('{"completed_chunk_indices": [0]}')
+
+    operator = np.eye(4, dtype=complex)
+    with pytest.raises(ValueError, match="imaginary part"):
+        list(parallel_decompose_arrays(operator, chunk_size=2, n_workers=2,
+                                       checkpoint_path=checkpoint))
