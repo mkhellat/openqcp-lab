@@ -818,6 +818,53 @@ def _check_hermitian_violation(
     )
 
 
+def terms_from_arrays(
+    x: NDArray[np.integer],
+    z: NDArray[np.integer],
+    coeff: NDArray[np.complexfloating],
+    n_qubits: int,
+    assume_hermitian: bool = True,
+    atol: float = 1e-10,
+) -> dict[str, complex] | dict[str, float]:
+    """Render one chunk's ``(x, z, coeff)`` arrays to a label -> coefficient dict.
+
+    The opt-in counterpart to ``parallel_decompose_arrays`` (PLAN.md
+    Phase 13): that function yields raw arrays so the ~91.6M Python
+    ``str`` objects and dict insertions a full decomposition would
+    otherwise need are never built in the parent process - which is
+    what lifts the multi-core speedup ceiling from ~1.21x to a measured
+    ~2.19x. This function is where a caller opts back IN to labels,
+    for as many terms as they actually want.
+
+    Building labels for every term of a large decomposition costs the
+    same here as it does inside ``parallel_decompose``; the saving
+    comes from calling this on a *subset* (filter by coefficient
+    magnitude, take the largest terms, render one chunk) rather than
+    on all of them.
+
+    Args:
+        x: Per-term x bitmasks, any integer dtype (``uint16`` from a
+            fresh run, ``intp`` from a legacy checkpoint - both work).
+        z: Per-term z bitmasks, same length and dtype rules as ``x``.
+        coeff: Per-term complex coefficients.
+        n_qubits: Number of qubits, i.e. ``int(log2(dim))``.
+        assume_hermitian: If ``True`` (default), raises ``ValueError``
+            when any coefficient has a non-negligible imaginary part
+            and returns real coefficients - identical contract and
+            identical error message to ``fwht_pauli_terms``. If
+            ``False``, returns complex coefficients unchecked.
+        atol: Tolerance floor for the Hermiticity check.
+
+    Returns:
+        ``dict[str, float]`` when ``assume_hermitian=True``, else
+        ``dict[str, complex]``.
+    """
+    labels = _pauli_label_batch(x, z, n_qubits)
+    if assume_hermitian:
+        return _build_real_terms(labels, coeff, atol)
+    return {label: complex(c) for label, c in zip(labels, coeff.tolist())}
+
+
 def fwht_pauli_terms(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     atol: float = 1e-10,

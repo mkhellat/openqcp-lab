@@ -53,3 +53,57 @@ def test_check_hermitian_violation_passes_for_hermitian_input():
     coeff = np.array([1.0 + 0.0j, 2.0 + 0.0j])
 
     assert _check_hermitian_violation(coeff, 1e-10, x, z, n_qubits=2) is None
+
+
+def test_terms_from_arrays_matches_build_real_terms():
+    from paulikit.algorithms.fwht import terms_from_arrays
+
+    x = np.array([0, 1, 2], dtype=np.uint16)
+    z = np.array([0, 2, 1], dtype=np.uint16)
+    coeff = np.array([1.5 + 0.0j, -2.0 + 0.0j, 0.25 + 0.0j])
+
+    expected = _build_real_terms(_pauli_label_batch(x, z, 2), coeff, 1e-10)
+    assert terms_from_arrays(x, z, coeff, n_qubits=2) == expected
+
+
+def test_terms_from_arrays_non_hermitian_raises():
+    from paulikit.algorithms.fwht import terms_from_arrays
+
+    x = np.array([0], dtype=np.uint16)
+    z = np.array([0], dtype=np.uint16)
+    coeff = np.array([1.0 + 0.5j])
+
+    with pytest.raises(ValueError, match="imaginary part"):
+        terms_from_arrays(x, z, coeff, n_qubits=2)
+
+
+def test_terms_from_arrays_assume_hermitian_false_keeps_complex():
+    from paulikit.algorithms.fwht import terms_from_arrays
+
+    x = np.array([0], dtype=np.uint16)
+    z = np.array([0], dtype=np.uint16)
+    coeff = np.array([1.0 + 0.5j])
+
+    result = terms_from_arrays(x, z, coeff, n_qubits=2, assume_hermitian=False)
+    assert result == {"II": 1.0 + 0.5j}
+
+
+@pytest.mark.parametrize("dtype", [np.uint16, np.uint32, np.intp])
+def test_terms_from_arrays_accepts_any_integer_dtype(dtype):
+    # Legacy checkpoints hold intp; new results hold uint16. Both must work.
+    from paulikit.algorithms.fwht import terms_from_arrays
+
+    x = np.array([1], dtype=dtype)
+    z = np.array([2], dtype=dtype)
+    coeff = np.array([1.0 + 0.0j])
+
+    assert terms_from_arrays(x, z, coeff, n_qubits=2) == {"ZX": 1.0}
+
+
+def test_terms_from_arrays_empty_input_returns_empty_dict():
+    from paulikit.algorithms.fwht import terms_from_arrays
+
+    empty_i = np.array([], dtype=np.uint16)
+    empty_c = np.array([], dtype=complex)
+
+    assert terms_from_arrays(empty_i, empty_i, empty_c, n_qubits=2) == {}
