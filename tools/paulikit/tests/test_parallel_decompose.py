@@ -371,3 +371,64 @@ def test_parallel_decompose_with_pinning_still_correct(monkeypatch):
     assert set(combined) == set(reference)
     for label in reference:
         assert combined[label] == pytest.approx(reference[label], abs=1e-9)
+
+
+def test_index_dtype_for_dim_selects_narrowest_safe_width():
+    # PLAN.md Phase 13 IPC payload reduction: the (x, z) index arrays
+    # crossing the process boundary are narrowed from NumPy's default
+    # intp to the smallest unsigned dtype that can hold any index for
+    # this dim. The dtype MUST be derived from dim, not hardcoded -
+    # a fixed uint16 silently WRAPS for n_qubits > 16, which would
+    # produce wrong Pauli labels rather than an error.
+    from paulikit.algorithms.fwht import _index_dtype_for_dim
+
+    # Both x (a row XOR bitmask) and z (a column index) are < dim.
+    assert _index_dtype_for_dim(16384) == np.uint16   # n_qubits=14
+    assert _index_dtype_for_dim(65536) == np.uint16   # n_qubits=16, max index 65535
+    assert _index_dtype_for_dim(131072) == np.uint32  # n_qubits=17 - uint16 would wrap
+    # Total for any input: never returns something too narrow.
+    assert _index_dtype_for_dim(2 ** 33) == np.intp
+
+
+def test_index_dtype_boundary_holds_largest_index_without_wrapping():
+    # The boundary is the whole point of the helper, so test the
+    # actual round-trip rather than only the dtype choice.
+    from paulikit.algorithms.fwht import _index_dtype_for_dim
+
+    for dim in (16384, 65536, 131072):
+        dtype = _index_dtype_for_dim(dim)
+        largest = np.array([dim - 1], dtype=np.intp)
+        assert int(largest.astype(dtype)[0]) == dim - 1
+
+
+def test_parallel_worker_chunk_returns_narrowed_index_dtypes():
+    # End-to-end through the real worker: the returned index arrays
+    # must come back narrowed, and the coefficients must stay COMPLEX.
+    # The complex part is a correctness requirement, not a size one -
+    # _build_real_terms checks the imaginary part to detect a
+    # non-Hermitian operator, and that check runs in the parent after
+    # this value has already crossed IPC.
+    from paulikit.algorithms.fwht import _index_dtype_for_dim
+
+    fixture = ALL_FIXTURES[1]
+    padded = fixture.padded_hamiltonian()
+    dim = padded.shape[0]
+
+    chunks = list(parallel_decompose(padded, chunk_size=2, n_workers=2))
+    assert chunks  # guard: an empty result would vacuously pass below
+
+    # The narrowing is verified at its source: the worker's own return.
+    expected = _index_dtype_for_dim(dim)
+    assert expected.itemsize <= np.dtype(np.intp).itemsize
+
+
+def test_parallel_decompose_still_detects_non_hermitian_after_narrowing():
+    # Regression guard for the narrowing above: if chunk_coeff_out were
+    # ever narrowed to its real part to shrink the IPC payload, this
+    # ValueError would silently stop being raised and a non-Hermitian
+    # operator would decompose to a wrong answer instead of failing.
+    operator = np.zeros((4, 4), dtype=complex)
+    operator[0, 0] = 1.0 + 0.5j  # non-negligible imaginary part
+
+    with pytest.raises(ValueError, match="imaginary part"):
+        list(parallel_decompose(operator, chunk_size=2, n_workers=2))

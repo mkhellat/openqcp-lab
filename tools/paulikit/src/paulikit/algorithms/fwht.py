@@ -1221,9 +1221,36 @@ def _parallel_worker_init(
             _pin_current_process_to_cpu(pin_cpus[my_index])
 
 
+def _index_dtype_for_dim(dim: int) -> np.dtype:
+    """Smallest unsigned dtype that can hold any (x, z) index for a
+    ``dim``-wide problem - PLAN.md Phase 13, IPC payload reduction.
+
+    Both index arrays returned by ``_parallel_worker_chunk`` are
+    bounded by ``dim``: ``z_idx`` is a column index into a
+    ``(chunk_size, dim)`` array, and ``chunk_x_out`` holds ``active_x``
+    *values*, which are row XOR bitmasks over ``n_qubits`` bits and so
+    are also strictly less than ``dim = 2**n_qubits``. NumPy defaults
+    both to ``intp`` (8 bytes on this platform), which is 4x wider than
+    needed at the real N=150 workload and is paid on every one of the
+    thousands of chunks that cross the process boundary.
+
+    The dtype is chosen FROM ``dim`` rather than hardcoded, which
+    matters for correctness, not just size: ``uint16`` holds indices
+    only while ``dim <= 65536`` (``n_qubits <= 16``). Hardcoding it
+    would silently WRAP for a 17-qubit or larger operator, producing
+    wrong Pauli labels rather than an error. Falls back to ``intp``
+    above ``uint32`` range so the function is total for any input.
+    """
+    if dim <= np.iinfo(np.uint16).max + 1:
+        return np.dtype(np.uint16)
+    if dim <= np.iinfo(np.uint32).max + 1:
+        return np.dtype(np.uint32)
+    return np.dtype(np.intp)
+
+
 def _parallel_worker_chunk(
     chunk_index: int, chunk_start: int, chunk_end: int
-) -> tuple[int, NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]]:
+) -> tuple[int, NDArray[np.unsignedinteger], NDArray[np.unsignedinteger], NDArray[np.complexfloating]]:
     """Runs in a worker process (via the pool started by
     ``parallel_decompose``): computes exactly one chunk's ``(x, z,
     coefficient)`` triples - the same per-chunk body as
@@ -1283,7 +1310,28 @@ def _parallel_worker_chunk(
     chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
     chunk_coeff_out = chunk_coefficients[row_idx, z_idx]
 
-    return chunk_index, chunk_x_out, z_idx, chunk_coeff_out
+    # Narrow ONLY the two index arrays before they cross the process
+    # boundary (see _index_dtype_for_dim). NumPy returns both as intp
+    # (8 bytes); at dim=16384 two bytes suffice, cutting the pickled
+    # per-chunk payload measurably with no loss of information - every
+    # value is provably < dim, so the cast is exact, not lossy.
+    #
+    # chunk_coeff_out is deliberately NOT narrowed to its real part
+    # here, even though assume_hermitian=True callers only use the real
+    # part in the end: _build_real_terms performs the Hermiticity
+    # violation check ON THE IMAGINARY PART (fwht.py's
+    # `imag_abs > np.maximum(atol, 1e-6 * c_abs)`), and that check runs
+    # in the parent AFTER this value crosses IPC. Sending only the real
+    # part would not shrink a payload so much as silently delete the
+    # evidence that check exists to find, turning a raised ValueError
+    # into a wrong answer for a non-Hermitian operator.
+    idx_dtype = _index_dtype_for_dim(dim)
+    return (
+        chunk_index,
+        chunk_x_out.astype(idx_dtype, copy=False),
+        z_idx.astype(idx_dtype, copy=False),
+        chunk_coeff_out,
+    )
 
 
 def _detect_available_worker_count() -> int:

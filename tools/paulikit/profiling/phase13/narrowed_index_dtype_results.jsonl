@@ -1,0 +1,15 @@
+{"condition": "w1_c1", "rep": 0, "elapsed": 27.2417, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 81.0}
+{"condition": "w1_c1", "rep": 1, "elapsed": 30.9798, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 83.0}
+{"condition": "w1_c1", "rep": 2, "elapsed": 26.4101, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 80.0}
+{"condition": "w1_c1", "rep": 3, "elapsed": 23.0253, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 86.0}
+{"condition": "w1_c1", "rep": 4, "elapsed": 24.4416, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 84.0}
+{"condition": "w2_c1", "rep": 0, "elapsed": 19.8225, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 81.0}
+{"condition": "w2_c1", "rep": 1, "elapsed": 19.8954, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 82.0}
+{"condition": "w2_c1", "rep": 2, "elapsed": 19.8525, "total_terms": 91652096, "settled_temp": 54.0, "temp_before": 54.0, "temp_after": 82.0}
+{"condition": "w2_c1", "rep": 3, "elapsed": 19.7347, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 85.0}
+{"condition": "w2_c1", "rep": 4, "elapsed": 20.0437, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 80.0}
+{"condition": "w8_c4", "rep": 0, "elapsed": 25.6704, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 77.0}
+{"condition": "w8_c4", "rep": 1, "elapsed": 24.0825, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 80.0}
+{"condition": "w8_c4", "rep": 2, "elapsed": 24.0786, "total_terms": 91652096, "settled_temp": 54.0, "temp_before": 54.0, "temp_after": 83.0}
+{"condition": "w8_c4", "rep": 3, "elapsed": 23.1617, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 86.0}
+{"condition": "w8_c4", "rep": 4, "elapsed": 24.6588, "total_terms": 91652096, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 82.0}
