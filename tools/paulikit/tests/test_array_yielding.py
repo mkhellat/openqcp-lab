@@ -107,3 +107,88 @@ def test_terms_from_arrays_empty_input_returns_empty_dict():
     empty_c = np.array([], dtype=complex)
 
     assert terms_from_arrays(empty_i, empty_i, empty_c, n_qubits=2) == {}
+
+
+def _combine_arrays(chunks, n_qubits):
+    """Render every yielded chunk and merge, mirroring _combine in
+    tests/test_parallel_decompose.py."""
+    from paulikit.algorithms.fwht import terms_from_arrays
+
+    combined = {}
+    for x, z, coeff in chunks:
+        combined.update(terms_from_arrays(x, z, coeff, n_qubits))
+    return combined
+
+
+@pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=lambda f: f.name)
+@pytest.mark.parametrize("chunk_size", [1, 2, 4])
+def test_parallel_decompose_arrays_matches_fwht_pauli_terms(fixture, chunk_size):
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    padded = fixture.padded_hamiltonian()
+    n_qubits = int(np.log2(padded.shape[0]))
+    reference = fwht_pauli_terms(padded)
+
+    combined = _combine_arrays(
+        parallel_decompose_arrays(padded, chunk_size=chunk_size, n_workers=2),
+        n_qubits,
+    )
+
+    assert set(combined) == set(reference)
+    for label in reference:
+        assert combined[label] == pytest.approx(reference[label], abs=1e-9)
+
+
+@pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=lambda f: f.name)
+def test_round_trip_equals_parallel_decompose(fixture):
+    # The correctness anchor: rendering the array path must reproduce
+    # the dict path exactly, term for term.
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    padded = fixture.padded_hamiltonian()
+    n_qubits = int(np.log2(padded.shape[0]))
+
+    dict_terms = {}
+    for chunk in parallel_decompose(padded, chunk_size=2, n_workers=2):
+        dict_terms.update(chunk)
+    array_terms = _combine_arrays(
+        parallel_decompose_arrays(padded, chunk_size=2, n_workers=2), n_qubits
+    )
+
+    assert array_terms == dict_terms
+
+
+@pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=lambda f: f.name)
+def test_parallel_decompose_arrays_no_duplicate_terms(fixture):
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    padded = fixture.padded_hamiltonian()
+    seen = set()
+    total = 0
+    for x, z, _coeff in parallel_decompose_arrays(padded, chunk_size=2, n_workers=2):
+        for xi, zi in zip(x.tolist(), z.tolist()):
+            seen.add((xi, zi))
+            total += 1
+
+    assert total == len(seen), "a term was yielded more than once"
+
+
+def test_parallel_decompose_arrays_yields_three_arrays_of_equal_length():
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    padded = ALL_FIXTURES[1].padded_hamiltonian()
+    for chunk in parallel_decompose_arrays(padded, chunk_size=2, n_workers=2):
+        assert len(chunk) == 3
+        x, z, coeff = chunk
+        assert len(x) == len(z) == len(coeff)
+        assert np.iscomplexobj(coeff), "coefficients must stay complex"
+
+
+def test_parallel_decompose_arrays_non_hermitian_raises():
+    from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+    operator = np.zeros((4, 4), dtype=complex)
+    operator[0, 0] = 1.0 + 0.5j
+
+    with pytest.raises(ValueError, match="imaginary part"):
+        list(parallel_decompose_arrays(operator, chunk_size=2, n_workers=2))
