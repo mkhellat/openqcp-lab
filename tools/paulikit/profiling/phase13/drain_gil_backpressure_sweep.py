@@ -32,7 +32,7 @@ TARGET = os.path.join(HERE, "drain_gil_backpressure_target.py")
 RESULTS = os.path.join(HERE, "drain_gil_backpressure_results.jsonl")
 
 CONDITIONS = ("w2_c1", "w8_c4")
-MODES = ("bare", "drain_work")
+MODES = ("bare", "drain_work", "arrays_only")
 REPS = int(os.environ.get("REPS", "5"))
 COOLDOWN_TARGET_C = 55.0
 COOLDOWN_TIMEOUT_S = 180
@@ -131,11 +131,11 @@ def main():
         summary[mode] = ma / mb
         print(f"{mode:>11} {ma:>9.3f} {mb:>9.3f} {ma/mb:>9.3f}x {p:>10.2e}")
 
-    if len(summary) == 2:
+    if {"bare", "drain_work"} <= summary.keys():
         print()
         print(f"bare       speedup (w2->w8): {summary['bare']:.3f}x")
         print(f"drain_work speedup (w2->w8): {summary['drain_work']:.3f}x")
-        print(f"reference: wht_large 2.23x (scales), paulikit 0.89x (collapses)")
+        print("reference: wht_large 2.23x (scales), paulikit 0.89x (collapses)")
         print()
         if summary["drain_work"] < 1.0 <= summary["bare"]:
             print("--> R3 CONFIRMED: adding GIL-held drain work, and nothing")
@@ -146,6 +146,34 @@ def main():
         else:
             print("--> PARTIAL: scaling degraded but not collapsed - drain")
             print("    work contributes but is not the whole mechanism.")
+
+    if "arrays_only" in summary:
+        ao = summary["arrays_only"]
+        print()
+        print("=" * 64)
+        print("API-CHANGE DECISION TEST (arrays_only)")
+        print(f"  arrays_only speedup (w2->w8): {ao:.3f}x")
+        print()
+        print("  This mode keeps the Hermiticity check but drops label")
+        print("  and dict construction - i.e. exactly what an")
+        print("  array-yielding API would do on the drain side.")
+        print()
+        if ao >= 1.8:
+            print("  --> RECOVERS SCALING. The label/dict construction is")
+            print("      confirmed as the specific cause of the multi-core")
+            print("      collapse, by direct measurement rather than by")
+            print("      inference from a microbenchmark. An array-yielding")
+            print("      API is justified.")
+        elif ao < 1.2:
+            print("  --> DOES NOT RECOVER SCALING. Removing label/dict work")
+            print("      is NOT sufficient: something else in the drain path")
+            print("      is responsible. Do NOT proceed with the API change")
+            print("      on this evidence - the premise is falsified.")
+        else:
+            print("  --> PARTIAL RECOVERY. Removing label/dict work helps but")
+            print("      does not restore the control's own scaling. The API")
+            print("      change would be a real but incomplete fix; decide")
+            print("      with that caveat explicit, not hidden.")
 
 
 if __name__ == "__main__":

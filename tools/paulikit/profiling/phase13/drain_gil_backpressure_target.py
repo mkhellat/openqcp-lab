@@ -81,8 +81,8 @@ from paulikit.algorithms.fwht import (  # noqa: E402
 
 condition = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else "bare"
-if mode not in ("bare", "drain_work"):
-    raise SystemExit(f"mode must be bare|drain_work, got {mode!r}")
+if mode not in ("bare", "drain_work", "arrays_only"):
+    raise SystemExit(f"mode must be bare|drain_work|arrays_only, got {mode!r}")
 
 # Matched to the real N=150/chunk_size=2 workload these are modeling.
 DIM = 16384
@@ -128,6 +128,38 @@ def _drain_work() -> int:
     """
     labels = _pauli_label_batch(_X, _Z, N_QUBITS)
     return len(_build_real_terms(labels, _COEFFS, ATOL))
+
+
+def _arrays_only_drain() -> int:
+    """The drain-side work an ARRAY-YIELDING API would do instead:
+    keep the correctness guarantee, drop the Python object
+    construction.
+
+    This is the third mode, added to test whether the proposed API
+    change actually removes the multi-core bottleneck BEFORE any
+    public API is touched - rather than inferring it from a
+    microbenchmark of the drain body in isolation, which is the same
+    class of reasoning that produced (and then had to retract) the
+    IPC-cost theory earlier in this investigation.
+
+    What it deliberately KEEPS: the Hermiticity violation check. That
+    check is the reason `chunk_coeff_out` must stay complex across
+    IPC, and any real array-yielding API still has to run it or it
+    silently turns a raised ValueError into a wrong answer for a
+    non-Hermitian operator. It is vectorized NumPy (GIL-releasing),
+    unlike the label/dict work it replaces.
+
+    What it drops: `_pauli_label_batch` (~t_i Python str objects) and
+    `_build_real_terms`'s `dict(zip(...))` (~t_i dict insertions with
+    string hashing) - together ~81.7% of the real pipeline's runtime
+    at N=150, and the work pinned to the single parent process.
+    """
+    imag_abs = np.abs(_COEFFS.imag)
+    if (imag_abs > np.maximum(ATOL, 1e-6 * np.abs(_COEFFS))).any():
+        raise ValueError("non-Hermitian")
+    # Return the arrays the caller would receive. Nothing is
+    # materialized per-term; this is what makes it cheap.
+    return len(_X)
 
 
 def _worker_init(cpu_list, next_pin_index):
@@ -177,6 +209,8 @@ with ProcessPoolExecutor(
             _submit_next()
             if mode == "drain_work":
                 terms_seen += _drain_work()
+            elif mode == "arrays_only":
+                terms_seen += _arrays_only_drain()
 
 elapsed = time.perf_counter() - t0
 print(
