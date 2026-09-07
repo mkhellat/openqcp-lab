@@ -783,6 +783,41 @@ def _build_real_terms(
     return dict(zip(labels, coefficient_values.real.tolist()))
 
 
+def _check_hermitian_violation(
+    coefficient_values: NDArray[np.complexfloating],
+    atol: float,
+    x: NDArray[np.integer],
+    z: NDArray[np.integer],
+    n_qubits: int,
+) -> None:
+    """Raise if any coefficient has a non-negligible imaginary part.
+
+    The array-yielding path's counterpart to the check inside
+    ``_build_real_terms`` - same tolerance rule, same error message,
+    but without building a label for every term first. On violation it
+    labels ONLY the single offending term, so the diagnostic is
+    byte-identical at O(1) cost rather than O(t_i).
+
+    The tolerance floor must match ``_build_real_terms`` exactly:
+    ``abs(c)`` is the *full complex magnitude*, not ``abs(c.real)``
+    (they only agree when the imaginary part is already negligible,
+    which is exactly the case this check exists to catch).
+    """
+    c_abs = np.abs(coefficient_values)
+    imag_abs = np.abs(coefficient_values.imag)
+    violation = imag_abs > np.maximum(atol, 1e-6 * c_abs)
+    if not violation.any():
+        return
+    first = int(np.nonzero(violation)[0][0])
+    label = _pauli_label_batch(x[first:first + 1], z[first:first + 1], n_qubits)[0]
+    c = coefficient_values[first]
+    raise ValueError(
+        f"term {label!r} has non-negligible "
+        f"imaginary part {c.imag!r} - operator may not be Hermitian; "
+        "pass assume_hermitian=False to decompose it anyway"
+    )
+
+
 def fwht_pauli_terms(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     atol: float = 1e-10,
