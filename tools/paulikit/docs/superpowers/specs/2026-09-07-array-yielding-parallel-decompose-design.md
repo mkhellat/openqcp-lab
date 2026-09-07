@@ -265,6 +265,34 @@ work, not follow-up:
 - **Memory checkpoint** — update the Phase 13 resume checkpoint with
   the outcome, including any failed predictions.
 
+## Rejected alternatives are revisitable, not closed
+
+Explicit user direction at design approval (2026-09-07): the three
+alternatives above — packed-byte labels, a `return_arrays=` flag, and
+a lazy result object — are **not permanently closed**. Any of them
+should be reopened if either condition holds:
+
+1. **New evidence** shows the chosen design is itself a roadblock. The
+   measurements that rejected each one are recorded above precisely so
+   a future attempt can check whether its premise still holds rather
+   than re-deriving it. In particular, the packed-byte rejection rests
+   on the parent paying ~3.870ms to decode `str` objects; a decoding
+   path that avoids per-term Python `str` construction entirely (e.g.
+   a NumPy fixed-width `S{n_qubits}` view, or consumers that never
+   need `str` at all) would invalidate that measurement, not merely
+   argue with it.
+2. **Meaningful extra control** over the execution system. The
+   governing principle for this whole design is that the caller should
+   not pay for what they do not need; an option that gives real
+   control over that tradeoff is worth revisiting even if it was
+   rejected on ergonomics or convention alone. This applies most
+   directly to the lazy result object, which was deferred rather than
+   rejected on measurement.
+
+What would NOT justify reopening: convenience, symmetry, or a
+preference for fewer public names. The bar is evidence or genuine
+added control.
+
 ## What this design does not claim
 
 - That a real implementation achieves 2.191×. The control measured a
