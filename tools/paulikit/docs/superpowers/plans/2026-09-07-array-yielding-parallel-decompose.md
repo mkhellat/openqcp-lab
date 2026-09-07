@@ -233,7 +233,10 @@ def test_terms_from_arrays_accepts_any_integer_dtype(dtype):
     z = np.array([2], dtype=dtype)
     coeff = np.array([1.0 + 0.0j])
 
-    assert terms_from_arrays(x, z, coeff, n_qubits=2) == {"XZ": 1.0}
+    # "ZX", not "XZ": paulikit labels qubit 0 as the HIGH bit (bit
+    # n-1), so x=1 (low bit) sets qubit 1 to 'X' and z=2 (high bit)
+    # sets qubit 0 to 'Z'. Verified against _pauli_label_batch.
+    assert terms_from_arrays(x, z, coeff, n_qubits=2) == {"ZX": 1.0}
 
 
 def test_terms_from_arrays_empty_input_returns_empty_dict():
