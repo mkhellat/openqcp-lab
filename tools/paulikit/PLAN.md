@@ -2543,6 +2543,67 @@ overhead as the dominant limiter, not L3/memory-bandwidth contention.
 A `perf stat` pass and a larger-chunk_size test under the now-fixed
 code remain the next steps to confirm.
 
+**Root cause found 2026-09-06**: a deep, non-truncated `perf.data`
+pass (`profiling/phase13/README.md` and the DAG re-derivation it
+links) traced the flat, near-1.0x speedup to its actual source rather
+than continuing to guess between IPC/dispatch overhead and
+cache/memory-bandwidth contention. At N=150, `parallel_decompose`
+builds roughly 91.6 million Python `str` objects (the Pauli labels)
+and the same number of dict entries, and every one of them is built
+in the single parent process's drain loop - the labeling step was
+never distributed across workers to begin with, only the FWHT
+coefficient math was. Measured directly: that labeling and dict-
+construction work is **~82% of the function's total runtime** (serial
+fraction 0.824). By Amdahl's law, a serial fraction of 0.824 caps the
+achievable speedup at **~1.21x even with infinitely many cores** -
+which matches, and now explains, everything measured above: best-ever
+observed was 1.284x, and the 8-worker configuration actually measured
+1.100x, both consistent with a hard ceiling near 1.21x rather than
+noise around a true multi-core scaling curve. A first attempt to fix
+this by relocating `_pauli_label_batch` into the worker processes
+(commit `9c5f1c6`) was reverted the same day (`9224b41`): moving the
+labeling work off the parent process meant shipping ~91.6M label
+strings back across the process boundary instead, and that IPC cost
+exceeded the compute it saved - a real, measured net loss, not a
+theoretical concern.
+
+**13c IMPLEMENTED 2026-09-07** - rather than relocating the existing
+labeling work, two new functions in `fwht.py` let a caller skip it
+entirely when they don't need it. `parallel_decompose_arrays` is
+`parallel_decompose`'s pool/drain machinery unchanged (same chunking,
+same auto-tuning, same bounded submission, same CPU pinning, same
+checkpoint format - checkpoints are interchangeable between the two
+functions, verified by test) except its drain loop yields each
+chunk's raw `(x, z, coeff)` NumPy arrays - `x`/`z` symplectic bitmasks
+and `complex128` coefficients - instead of building label strings and
+a `dict[str, complex]` from them. `terms_from_arrays(x, z, coeff,
+n_qubits, ...)` is the opt-in rendering step for callers who *do* want
+the usual label -> coefficient dict, for as many terms (or as small a
+filtered subset) as they actually need. `parallel_decompose` itself is
+untouched and remains the right choice for callers who want every
+term's label; its dict-building drain loop still caps it at ~1.21x,
+and that is a correct, understood, and supported limitation, not a
+bug to chase further.
+
+A controlled, single-variable experiment
+(`profiling/phase13/drain_gil_backpressure_results.jsonl`, referenced
+from both new functions' docstrings) isolated the drain loop's cost
+by comparing three conditions at fixed chunk_size and worker count: a
+drain loop doing full label+dict work measured 0.865x (i.e. slower
+than serial - consistent with the ~1.21x ceiling once other pipeline
+overhead is included), a drain loop doing only the array-yielding path
+measured 2.191x, and a control drain loop doing no per-chunk work at
+all was statistically indistinguishable from the 2.191x arrays-only
+result - meaning removing the label/dict construction recovers
+essentially all of the multi-core scaling this pipeline's chunk-level
+parallelism can offer. **This 2.191x figure is the controlled drain-
+loop experiment's result, not an end-to-end measurement of the shipped
+`parallel_decompose_arrays` with checkpointing enabled** - that
+full sweep (thermal-controlled, ≥5 reps, Welch's t-test, per this
+project's measurement protocol) is scoped as a follow-up task and has
+not run yet, so no end-to-end speedup claim is made for the shipped
+function here.
+
 
 ## 6. Explicitly out of scope
 
