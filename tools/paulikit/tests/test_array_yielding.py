@@ -256,3 +256,11 @@ def test_resume_replay_still_checks_hermiticity(tmp_path):
     with pytest.raises(ValueError, match="imaginary part"):
         list(parallel_decompose_arrays(operator, chunk_size=2, n_workers=2,
                                        checkpoint_path=checkpoint))
+
+
+def test_new_api_listed_in_package_docstring():
+    import paulikit
+
+    assert "parallel_decompose" in paulikit.__doc__
+    assert "parallel_decompose_arrays" in paulikit.__doc__
+    assert "terms_from_arrays" in paulikit.__doc__
