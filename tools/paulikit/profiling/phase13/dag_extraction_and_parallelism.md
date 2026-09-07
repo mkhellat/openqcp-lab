@@ -1,5 +1,29 @@
 # DAG extraction and Work/Span/Parallelism — derived from code alone (2026-09-05)
 
+> **SUPERSEDED 2026-09-07 for the Work/Span/Parallelism NUMBER by
+> `dag_extraction_v2_execution_tier.md`.** This document's method
+> (build the DAG from code alone, never from timings) and its central
+> structural finding (the drain loop's `D_i` nodes are totally ordered
+> by the single-threaded `while in_flight:` loop, and v0's ~5595 was a
+> subgraph-only figure) are both CORRECT and are carried forward
+> unchanged into v2.
+>
+> What is retracted is the **≈3.0 figure** and the node it blames.
+> Step 2 below costs `d4` (`_pauli_label_batch`) at Θ(t·n_qubits) and
+> `d5` (dict build) at Θ(t), making labeling look 14× heavier than
+> dict-building. `d4` is a **compiled C kernel**; `d5` is `t` **CPython
+> dict inserts**. Summing those as equal units puts the dominant weight
+> on the wrong node — and this document additionally has **no node at
+> all** for the Cython wrapper's own Python `str`-materialization loop
+> (`pauli_label_native.pyx:94-98`), which is the labeling path's real
+> cost. Correcting for execution tier moves parallelism DOWN toward
+> ~1.1-1.6, not up. The two fixes this document motivated (labeling
+> relocation, batched submit) both targeted nodes that were never the
+> bottleneck, and both failed in measurement.
+>
+> Kept unedited below as the historical record, per this project's
+> practice of correcting in place rather than rewriting.
+
 **Purpose of this document, stated precisely up front.** Work, Span,
 and Parallelism (T1, T-infinity, T1/T-infinity) are properties of a
 **dependency graph extracted from the algorithm as written** — nodes
