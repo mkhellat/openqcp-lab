@@ -1814,6 +1814,193 @@ def parallel_decompose(
                     }
 
 
+def parallel_decompose_arrays(
+    operator: NDArray[np.complexfloating] | NDArray[np.floating],
+    chunk_size: int | None = None,
+    n_workers: int | None = None,
+    atol: float = 1e-10,
+    assume_hermitian: bool = True,
+    checkpoint_path: str | Path | None = None,
+) -> Iterator[tuple[NDArray, NDArray, NDArray]]:
+    """Multi-core decomposition yielding raw ``(x, z, coeff)`` arrays -
+    PLAN.md Phase 13.
+
+    Identical machinery to ``parallel_decompose`` (same chunking, same
+    auto-tuning, same bounded submission, same CPU pinning, same
+    checkpoint format) with one difference: it yields each chunk's raw
+    arrays instead of building a ``dict[str, complex]`` from them.
+
+    That difference is the whole point. Building ~91.6M Python ``str``
+    objects and dict entries at N=150 is ~82% of ``parallel_decompose``'s
+    total runtime, all of it in the single parent process, which caps
+    its speedup at ~1.21x no matter how many cores are available
+    (measured: best-ever 1.284x, and 8 workers gives 1.100x). Removing
+    that work from the drain loop was measured to restore real
+    multi-core scaling - 2.191x, statistically indistinguishable from a
+    control doing no drain-side work at all. See
+    ``profiling/phase13/drain_gil_backpressure_results.jsonl``.
+
+    Use ``terms_from_arrays`` to render any chunk (or a filtered subset
+    of one) to the usual label -> coefficient dict.
+
+    Yields:
+        ``(x, z, coeff)`` per completed chunk: two integer arrays of
+        symplectic bitmasks and one ``complex128`` coefficient array,
+        all the same length. **Order is not guaranteed to match chunk
+        order** - same contract as ``parallel_decompose``. A chunk with
+        no surviving terms yields three empty arrays rather than being
+        skipped, so chunk count is stable.
+
+    Raises:
+        ValueError: If ``assume_hermitian=True`` and any coefficient
+            has a non-negligible imaginary part. Checked per chunk, so
+            this can raise *after* earlier chunks have been yielded -
+            the same partial-yield-then-error contract
+            ``fwht_pauli_terms_iter`` documents. Coefficients are kept
+            ``complex128`` across the process boundary precisely so
+            this check remains possible.
+    """
+    import multiprocessing
+    from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+
+    from paulikit.algorithms import autotune
+
+    operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz = _prepare_operator_for_fwht(
+        operator
+    )
+    active_x, inverse = np.unique(x_nz, return_inverse=True)
+    n_active = len(active_x)
+    z_indices = np.arange(dim)[np.newaxis, :]
+
+    if n_workers is None:
+        # _detect_available_worker_count() counts logical CPUs -
+        # correct for cgroup/cpuset restrictions, but on a
+        # hyperthreaded machine that over-counts real parallel
+        # capacity for this CPU-bound workload. Real measurement
+        # (profiling/phase13/n_workers_placement_and_cache_findings.md)
+        # found n_workers=2 beats both 4 (physical core count on the
+        # 4-core/8-thread dev machine) and 8 (logical CPU count) on
+        # wall-clock, and that neither n_workers=4 nor n_workers=8
+        # achieves meaningful isolation without explicit pinning
+        # (added below) - capping the auto-detected default to the
+        # number of distinct PHYSICAL cores (not logical CPUs) is the
+        # evidence-based choice here, not a guess. Falls back to the
+        # logical-CPU count if the physical-core probe itself is
+        # unavailable (non-Linux).
+        logical_default = _detect_available_worker_count()
+        physical_cpus = _physical_core_representative_cpus()
+        n_workers = len(physical_cpus) if physical_cpus else logical_default
+
+    if chunk_size is None:
+        fixed_resident_bytes = _per_worker_resident_bytes(
+            operator, is_sparse_input, len(p_nz)
+        )
+        chunk_size = _recommended_parallel_chunk_size(
+            dim, n_workers, fixed_resident_bytes
+        )
+
+    n_workers = max(1, min(n_workers, max(1, (n_active + chunk_size - 1) // chunk_size)))
+
+    order = np.argsort(inverse, kind="stable")
+    sorted_inverse = inverse[order]
+    sorted_p_nz = p_nz[order]
+    sorted_q_nz = q_nz[order]
+
+    chunk_starts = list(range(0, n_active, chunk_size))
+    completed_indices, checkpoint = _load_parallel_checkpoint(checkpoint_path)
+    if checkpoint is not None:
+        if assume_hermitian:
+            _check_hermitian_violation(
+                checkpoint[2], atol, checkpoint[0], checkpoint[1], n_qubits
+            )
+        yield checkpoint
+
+    pending = [
+        (i, start, min(start + chunk_size, n_active))
+        for i, start in enumerate(chunk_starts)
+        if i not in completed_indices
+    ]
+    if not pending:
+        return
+
+    # Bounded submission - a REAL bug found by direct measurement
+    # (profiling/phase13/n150_worker_count_sweep.py, 2026-09-02):
+    # submitting every chunk as a task up front (pool.submit for all
+    # of `pending`, often thousands of tasks at real N) lets completed
+    # workers' results pile up in the pool's IPC/result queue faster
+    # than this single-threaded as_completed loop drains them - the
+    # backlog of already-computed-but-not-yet-consumed (x, z, coeff)
+    # arrays is NOT bounded by chunk_size or per_worker_memory_budget_
+    # bytes at all, and grows with n_workers (more workers finish
+    # chunks faster, the drain rate here does not increase to match) -
+    # measured real RSS scaling from ~5 GiB (n_workers=1) to ~25 GiB
+    # (n_workers=8) at N=150, confirming this, not the chunk_size
+    # working set, was the dominant memory cost. Keeping at most
+    # roughly one in-flight task per worker (plus a small pipelining
+    # margin) bounds the backlog to O(n_workers), matching the
+    # O(chunk_size * dim) per-task footprint the memory-budget
+    # division above was already designed to control.
+    max_in_flight = max(1, 2 * n_workers)
+
+    # CPU-pinning fix (PLAN.md Phase 13a, found necessary by direct
+    # measurement - profiling/phase13/n_workers_placement_and_cache_
+    # findings.md): without this, ProcessPoolExecutor workers are
+    # freely migrated by the Linux scheduler across ALL logical CPUs,
+    # confirmed via direct ps -o psr sampling to cause hyperthread-
+    # sibling collisions (two workers on the same physical core at
+    # once) at every n_workers value tested, not just when n_workers
+    # exceeds the physical core count. pin_cpus is one representative
+    # logical CPU per physical core (None if unavailable - non-Linux,
+    # or the physical-core probe itself failed); next_pin_index is a
+    # cross-process shared counter each worker atomically increments
+    # on startup to claim a distinct entry (ProcessPoolExecutor's
+    # initializer gives every worker identical initargs, with no
+    # built-in per-worker ordinal of its own).
+    pin_cpus = _physical_core_representative_cpus()
+    next_pin_index = multiprocessing.Value("i", 0)
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_parallel_worker_init,
+        initargs=(
+            operator, is_sparse_input, sorted_inverse, sorted_p_nz, sorted_q_nz,
+            active_x, dim, n_qubits, z_indices, atol, pin_cpus, next_pin_index,
+        ),
+    ) as pool:
+        pending_iter = iter(pending)
+        in_flight: set = set()
+
+        def _submit_next() -> bool:
+            item = next(pending_iter, None)
+            if item is None:
+                return False
+            chunk_index, chunk_start, chunk_end = item
+            in_flight.add(pool.submit(_parallel_worker_chunk, chunk_index, chunk_start, chunk_end))
+            return True
+
+        for _ in range(max_in_flight):
+            if not _submit_next():
+                break
+
+        while in_flight:
+            done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
+                _submit_next()
+
+                if checkpoint_path is not None:
+                    _append_parallel_checkpoint_chunk(
+                        checkpoint_path, completed_indices, chunk_index,
+                        chunk_x_out, z_idx, chunk_coeff_out,
+                    )
+
+                if assume_hermitian:
+                    _check_hermitian_violation(
+                        chunk_coeff_out, atol, chunk_x_out, z_idx, n_qubits
+                    )
+                yield chunk_x_out, z_idx, chunk_coeff_out
+
+
 _WARNED_NO_NATIVE = False
 
 
