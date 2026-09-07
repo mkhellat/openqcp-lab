@@ -23,6 +23,12 @@ profiling/phase13/*_results.jsonl
 # and the findings .md are the deliverable, not the raw .perf.data.
 profiling/phase13/*.perf.data
 
+# Raw `perf sched record` scheduler-event capture (sched_offcpu_capture)
+# - every context switch over a ~25s run, larger than the cycles-event
+# .perf.data above. The post-processed sched_*.txt latency tables are
+# the deliverable and ARE committed.
+profiling/phase13/sched_*.data
+
 # Full (non-truncated) perf annotate dumps - mostly 0%-sample
 # disassembly lines, several MB each; regeneratable from perf_deep_dive
 # against the (gitignored) .perf.data. The full *.report.full.txt and
