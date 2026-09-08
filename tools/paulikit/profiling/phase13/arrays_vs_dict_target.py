@@ -42,7 +42,13 @@ from paulikit.algorithms.fwht import parallel_decompose, parallel_decompose_arra
 from paulikit.cli import _default_masses, _default_spring_constants
 from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
 
-N_OSCILLATORS = 150
+# Defaults to 150 so every existing sweep that invokes this script
+# keeps measuring exactly what it always did; the override exists so
+# the same harness can be pointed at another problem size without
+# forking it. Note N is not just a scale knob: N=180 crosses a
+# power-of-two boundary (dim 16384 -> 32768, 14 -> 15 qubits), which
+# also halves the auto-tuned chunk_size.
+N_OSCILLATORS = int(os.environ.get("PAULIKIT_N_OSCILLATORS", "150"))
 
 variant = sys.argv[1]
 assert variant in (
