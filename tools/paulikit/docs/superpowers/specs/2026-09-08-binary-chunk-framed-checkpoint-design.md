@@ -120,6 +120,32 @@ This is strictly stronger than the current behaviour: JSONL can only
 detect a truncated *final* line, and any earlier corruption raises.
 Frame length + magic validation detects corruption anywhere.
 
+### Known consequence: duplicate frames after a rollback-resume
+
+Removing `last_by_key` removes read-time *repair*, not the condition
+that created duplicates. Both writers append (`"a"`/`"ab"`), so a
+resume whose progress marker has been rolled back below what the file
+already holds recomputes those chunks and appends them again, leaving
+duplicate chunk indices in non-monotonic order. Measured on a 4-qubit
+fixture: 1216 bytes after a full run, then +872 bytes per rollback
+cycle, without bound.
+
+**This is inherited, not introduced** - the JSONL writer opened in
+append mode too, so the same growth always occurred; only the reader's
+dedup pass hid its effect on the replayed values. Results stay correct
+either way, now via idempotence rather than deduplication: every
+duplicate frame holds the same deterministic values for the same
+`(x, z)`, so an accumulator absorbing one twice is unaffected. This
+was verified directly - three consecutive rollback-resume cycles each
+reproduced the reference decomposition exactly.
+
+The cost is disk, not correctness, and it is bounded by how many times
+a caller rolls a marker back - normally zero. Compaction on resume
+(rewriting the file with only the frames being kept) is the obvious
+fix if this ever matters; it is deliberately not in scope here, since
+it trades a simple append for a read-modify-write on the path this
+design exists to keep cheap.
+
 ## Components
 
 Five private functions in `fwht.py`, replacing five existing ones:
