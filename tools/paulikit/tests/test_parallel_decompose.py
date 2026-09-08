@@ -104,7 +104,16 @@ def test_parallel_decompose_checkpoint_resume(tmp_path):
     gen.close()
 
     assert progress.exists()
-    assert _read_completed_indices(progress) == {0}
+    # Exactly one chunk recorded - but NOT necessarily chunk 0, and
+    # not even necessarily one of the first few: the pool keeps
+    # several chunks in flight, so whichever finishes first is the one
+    # recorded. That is precisely what parallel_decompose's docstring
+    # means by "order is not guaranteed to match chunk order"
+    # (observed 0, 1 and 2 across repeated runs). The invariant is the
+    # COUNT plus validity of the index - never its identity.
+    completed = _read_completed_indices(progress)
+    assert len(completed) == 1
+    assert all(i >= 0 for i in completed)
 
     combined = _combine(
         parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt))
