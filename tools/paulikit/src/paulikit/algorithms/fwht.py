@@ -383,62 +383,6 @@ def _iter_checkpoint_frames(
             yield chunk_index, x, z, coeff
 
 
-def _read_checkpoint_triples(
-    checkpoint_path: Path,
-) -> tuple[list[int], list[int], list[complex]]:
-    """Read ``(x, z, coeff)`` triples from a checkpoint JSONL file,
-    tolerating a truncated final line and deduplicating by ``(x, z)``.
-
-    Both checkpoint formats append one JSON object per line and only
-    update their progress-marker file *after* a chunk's lines are
-    fully written (see ``_append_checkpoint_chunk``/
-    ``_append_parallel_checkpoint_chunk``) - so a crash mid-write can
-    leave the checkpoint file's LAST line truncated while every
-    earlier line is a complete, already-flushed write. Only the last
-    line is treated as possibly-truncated: a ``json.loads`` failure on
-    any earlier line is a real corruption, not a resumable crash
-    artifact, and is left to raise.
-
-    A crash between finishing a chunk's triple-line writes and its
-    progress-marker update means that chunk gets recomputed and
-    re-appended on resume (correct - the marker still says it is not
-    done), leaving TWO sets of lines for the same ``(x, z)`` pairs in
-    the file (a real bug found via review, REVIEW_NOTES.md 2026-09-04
-    "over-record resume"). Both sets hold the same recomputed value
-    for a given ``(x, z)``, so keeping only the LAST occurrence (the
-    resumed run's fresh append, which is always later in the file than
-    any stale earlier attempt) is correct and removes the duplicate.
-    """
-    x_vals: list[int] = []
-    z_vals: list[int] = []
-    coeff_vals: list[complex] = []
-    with open(checkpoint_path) as f:
-        lines = f.readlines()
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            if i == len(lines) - 1:
-                continue  # truncated final line from a mid-write crash
-            raise
-        x_vals.append(record["x"])
-        z_vals.append(record["z"])
-        coeff_vals.append(complex(record["re"], record["im"]))
-
-    last_by_key: dict[tuple[int, int], int] = {}
-    for idx, (x, z) in enumerate(zip(x_vals, z_vals)):
-        last_by_key[(x, z)] = idx
-    if len(last_by_key) != len(x_vals):
-        keep = sorted(last_by_key.values())
-        x_vals = [x_vals[i] for i in keep]
-        z_vals = [z_vals[i] for i in keep]
-        coeff_vals = [coeff_vals[i] for i in keep]
-    return x_vals, z_vals, coeff_vals
-
-
 def _load_parallel_checkpoint(
     checkpoint_path: str | Path | None,
 ) -> tuple[set[int], Iterator[tuple[NDArray, NDArray, NDArray]] | None]:
@@ -513,14 +457,17 @@ def _append_parallel_checkpoint_chunk(
 
 def _load_checkpoint(
     checkpoint_path: str | Path | None,
-) -> tuple[int, tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
-    """Read an existing checkpoint, if any.
+) -> tuple[int, Iterator[tuple[NDArray, NDArray, NDArray]] | None]:
+    """Read an existing *sequential* checkpoint, if any.
 
-    Returns ``(resume_from_chunk_index, (x, z, coeff) | None)``: the
-    chunk index to resume from (0 if no checkpoint, or the checkpoint
-    is absent/incomplete) and the previously-recorded triples to
-    replay into the fresh accumulator, or ``None`` if there is nothing
-    to replay.
+    Returns ``(resume_from_chunk_index, frames | None)``: the chunk
+    index to resume from (0 if absent or incomplete) and a lazy
+    iterator of previously-recorded ``(x, z, coeff)`` triples, one per
+    frame, or ``None`` if there is nothing to replay.
+
+    Sequential chunks complete strictly in order, so a single monotonic
+    marker is sufficient here - every frame before ``next_chunk`` is
+    valid, and any frame at or beyond it was written but never marked.
     """
     if checkpoint_path is None:
         return 0, None
@@ -532,41 +479,37 @@ def _load_checkpoint(
     with open(progress_path) as f:
         progress = json.load(f)
     next_chunk = progress["next_chunk"]
+    if next_chunk <= 0:
+        return 0, None
 
-    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
+    def _frames() -> Iterator[tuple[NDArray, NDArray, NDArray]]:
+        for _index, x, z, coeff in _iter_checkpoint_frames(
+            checkpoint_path, valid_indices=set(range(next_chunk))
+        ):
+            yield x, z, coeff
 
-    return next_chunk, (
-        np.array(x_vals, dtype=np.intp),
-        np.array(z_vals, dtype=np.intp),
-        np.array(coeff_vals, dtype=complex),
-    )
+    return next_chunk, _frames()
 
 
 def _append_checkpoint_chunk(
     checkpoint_path: str | Path,
     next_chunk: int,
-    x_out: NDArray[np.intp],
-    z_out: NDArray[np.intp],
+    x_out: NDArray[np.integer],
+    z_out: NDArray[np.integer],
     coeff_out: NDArray[np.complexfloating],
+    idx_dtype: np.dtype,
 ) -> None:
-    """Append one completed chunk's surviving triples to the
-    checkpoint file, then update the progress marker.
+    """Append one completed chunk's frame, then advance the marker.
 
-    The triples are appended before the progress marker is updated,
-    so a crash mid-write leaves the progress marker pointing at a
-    chunk whose triples may be incompletely written - ``_load_checkpoint``
-    is only ever consulted for chunks strictly before ``next_chunk``
-    once this function has returned for the resumability guarantee to
-    hold; a crash during this function itself simply loses that one
-    in-flight chunk's checkpoint, which is then recomputed on resume
-    (not silently corrupted), since ``next_chunk`` is only advanced
-    (in the progress file) after this file's write succeeds.
+    ``next_chunk`` is the count of completed chunks, so the frame being
+    written carries index ``next_chunk - 1``. The frame is written
+    before the marker advances, so a crash mid-write leaves a torn or
+    unmarked frame that the reader drops, and that chunk is recomputed
+    on resume rather than silently corrupted.
     """
-    checkpoint_path = Path(checkpoint_path)
-    with open(checkpoint_path, "a") as f:
-        for x, z, coeff in zip(x_out.tolist(), z_out.tolist(), coeff_out.tolist()):
-            f.write(json.dumps({"x": x, "z": z, "re": coeff.real, "im": coeff.imag}) + "\n")
-
+    _append_checkpoint_frame(
+        checkpoint_path, next_chunk - 1, x_out, z_out, coeff_out, idx_dtype
+    )
     progress_path = _checkpoint_progress_path(checkpoint_path)
     with open(progress_path, "w") as f:
         json.dump({"next_chunk": next_chunk}, f)
@@ -615,17 +558,15 @@ def _iter_chunked_coefficients(
     sorted_q_nz = q_nz[order]
 
     chunk_starts = list(range(0, n_active, chunk_size))
-    resume_from, checkpoint = _load_checkpoint(checkpoint_path)
-    if checkpoint is not None and resume_from > 0:
-        # Replay already-completed chunks' triples from the checkpoint
-        # file rather than recomputing them - the actual resume
-        # behavior (see fwht_pauli_coefficients's checkpoint_path
-        # docstring). Replayed as one combined "chunk" up front; a
-        # caller streaming this (fwht_pauli_terms_iter) sees it as a
-        # single larger tile rather than per-original-chunk history,
-        # which is fine since the checkpoint file itself does not
-        # preserve original chunk boundaries.
-        yield checkpoint
+    resume_from, checkpoint_frames = _load_checkpoint(checkpoint_path)
+    idx_dtype = _index_dtype_for_dim(dim)
+    if checkpoint_frames is not None and resume_from > 0:
+        # Replay already-completed chunks from the checkpoint rather
+        # than recomputing them. Frames record their own chunk index,
+        # so this replays per original chunk - the JSONL format could
+        # not preserve boundaries and had to yield one combined tile.
+        for frame in checkpoint_frames:
+            yield frame
 
     for chunk_index in range(resume_from, len(chunk_starts)):
         chunk_start = chunk_starts[chunk_index]
@@ -661,7 +602,8 @@ def _iter_chunked_coefficients(
 
         if checkpoint_path is not None:
             _append_checkpoint_chunk(
-                checkpoint_path, chunk_index + 1, chunk_x_out, z_idx, chunk_coeff_out
+                checkpoint_path, chunk_index + 1,
+                chunk_x_out, z_idx, chunk_coeff_out, idx_dtype,
             )
 
         yield chunk_x_out, z_idx, chunk_coeff_out

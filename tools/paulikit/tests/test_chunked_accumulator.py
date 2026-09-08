@@ -81,7 +81,7 @@ def test_checkpoint_resume_produces_same_result_as_uninterrupted_run(tmp_path):
     uninterrupted run - the actual resumability claim."""
     fixture = ALL_FIXTURES[-1]  # largest available fixture
     padded = fixture.padded_hamiltonian()
-    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    checkpoint_path = tmp_path / "checkpoint.bin"
 
     reference = fwht_pauli_terms(padded, chunk_size=2)
 
@@ -104,8 +104,8 @@ def test_checkpoint_resume_from_partial_progress_file(tmp_path):
     right final answer (not just that a complete checkpoint round-trips)."""
     fixture = ALL_FIXTURES[-1]
     padded = fixture.padded_hamiltonian()
-    checkpoint_path = tmp_path / "checkpoint.jsonl"
-    progress_path = tmp_path / "checkpoint.jsonl.progress.json"
+    checkpoint_path = tmp_path / "checkpoint.bin"
+    progress_path = tmp_path / "checkpoint.bin.progress.json"
 
     reference = fwht_pauli_terms(padded, chunk_size=2)
 
