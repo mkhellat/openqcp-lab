@@ -133,15 +133,35 @@ def test_parallel_decompose_checkpoint_uses_distinct_file_suffix(tmp_path):
 def test_parallel_decompose_already_complete_checkpoint_yields_nothing_new(tmp_path):
     fixture = ALL_FIXTURES[0]
     padded = fixture.padded_hamiltonian()
-    ckpt = tmp_path / "ckpt.jsonl"
+    ckpt = tmp_path / "ckpt.bin"
 
-    list(parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt)))
-    # Second call with the same (now-complete) checkpoint should yield
-    # exactly one replay chunk (the checkpoint) and submit no new work.
+    first_chunks = list(
+        parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt))
+    )
+    first = {}
+    for chunk in first_chunks:
+        first.update(chunk)
+
+    # Second call with the same (now-complete) checkpoint must replay
+    # the recorded terms and submit no new work. The assertion is on
+    # the union of terms, not the chunk count: the binary frame format
+    # records a chunk index per frame, so replay is per *original*
+    # chunk, whereas the old line-oriented format could not preserve
+    # chunk boundaries and collapsed replay into one combined tile.
+    # Pinning the chunk count would pin a format detail, not behaviour.
     results = list(
         parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt))
     )
-    assert len(results) == 1
+    replayed = {}
+    for chunk in results:
+        replayed.update(chunk)
+
+    assert replayed == first
+    assert replayed == fwht_pauli_terms(padded)
+    # No new work was submitted: every yielded chunk came from the
+    # replay, so the replay cannot produce more chunks than the
+    # original run recorded.
+    assert 0 < len(results) <= len(first_chunks)
 
 
 def test_recommended_parallel_chunk_size_respects_per_worker_memory_budget(monkeypatch):
