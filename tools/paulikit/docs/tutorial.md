@@ -210,7 +210,10 @@ numerical routine that never looks at the Pauli string itself —
 `parallel_decompose_arrays` skips that serial labeling step entirely.
 It shares `parallel_decompose`'s pool, chunking, auto-tuning, and
 checkpoint machinery exactly (checkpoints are even interchangeable
-between the two functions), but its drain loop yields each chunk's raw
+between the two functions — both write the same binary, chunk-framed
+format through one shared writer, so a checkpoint started under one
+function resumes cleanly under the other), but its drain loop yields
+each chunk's raw
 `(x, z, coeff)` NumPy arrays — symplectic `x`/`z` bitmasks and
 `complex128` coefficients — instead of building labels and a dict from
 them:

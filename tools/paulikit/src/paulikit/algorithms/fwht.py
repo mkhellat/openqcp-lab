@@ -730,16 +730,21 @@ def fwht_pauli_coefficients(
             unaffected and keep returning unthresholded output.
         checkpoint_path: Only used when ``chunk_size`` is set. If
             given, each completed chunk's surviving triples are
-            appended to ``checkpoint_path`` (newline-delimited JSON)
+            appended to ``checkpoint_path`` as one binary chunk-framed
+            record - a small fixed-width header (magic, format
+            version, index dtype, chunk index, term count) followed by
+            the raw ``x``/``z``/``coeff`` arrays' bytes, with no
+            per-term Python object construction on the write path -
             and a sibling ``<checkpoint_path>.progress.json`` file
             records the index of the next chunk to process. If a
             checkpoint already exists at this path when called, chunks
-            already recorded there are skipped and their triples are
-            read back rather than recomputed - resuming a crashed or
-            interrupted run rather than restarting from chunk 0. This
-            costs one small file append per chunk (negligible next to
-            each chunk's O(chunk_size * dim * log dim) transform cost -
-            see PLAN.md Phase 9), so it is opt-in but effectively free
+            already recorded there are skipped and replayed frame by
+            frame, one original chunk at a time, rather than
+            recomputed - resuming a crashed or interrupted run rather
+            than restarting from chunk 0. This costs one small file
+            append per chunk (negligible next to each chunk's
+            O(chunk_size * dim * log dim) transform cost - see
+            PLAN.md Phase 9), so it is opt-in but effectively free
             when enabled; ``None`` (default) does no I/O at all.
 
     Returns:
@@ -1122,15 +1127,20 @@ def fwht_pauli_terms_iter(
             ``fwht_pauli_terms`` (non-streaming) instead.
         checkpoint_path: Same as ``fwht_pauli_terms`` - passed through
             to ``fwht_pauli_coefficients``'s chunked accumulation
-            internals for crash/resume (PLAN.md Phase 9). Note this
-            checkpoints the underlying coefficient computation, not
-            this generator's own iteration state - resuming a
-            streaming consumer that was itself interrupted partway
-            through consuming chunks means simply calling this
-            function again with the same ``checkpoint_path``; already
-            checkpointed chunks are replayed as one combined tile (see
-            ``_iter_chunked_coefficients``), not re-yielded
-            chunk-by-chunk in their original grouping.
+            internals for crash/resume (PLAN.md Phase 9). Checkpoints
+            are stored as a binary chunk-framed format (one
+            self-describing frame per completed chunk - see
+            ``_append_checkpoint_frame``/``_iter_checkpoint_frames``),
+            not a per-term text log. Note this checkpoints the
+            underlying coefficient computation, not this generator's
+            own iteration state - resuming a streaming consumer that
+            was itself interrupted partway through consuming chunks
+            means simply calling this function again with the same
+            ``checkpoint_path``; already checkpointed chunks are
+            replayed one frame at a time, per original chunk (see
+            ``_iter_chunked_coefficients``), so a consumer sees the
+            same chunk boundaries a resumed run would have produced
+            on a first pass, not one merged replay tile.
         parallel_labels: If ``True``, uses the oneTBB-parallel label
             kernel (``pauli_label_batch_parallel``) per chunk instead
             of the serial kernel. Measured **in isolation**
@@ -1749,13 +1759,21 @@ def parallel_decompose(
             per-chunk, same all-or-nothing-per-chunk (not
             all-or-nothing-per-operator) contract; see that function's
             own docstring for the difference from ``fwht_pauli_terms``.
-        checkpoint_path: If given, uses a *different* checkpoint format
-            from ``fwht_pauli_terms``/``fwht_pauli_terms_iter``'s
-            sequential one (a distinct file suffix, so the two never
-            collide) - records the *set* of completed chunk indices
-            rather than one monotonic marker, since parallel workers
-            complete chunks out of order; resume re-submits every
-            chunk not already in that set, regardless of position.
+        checkpoint_path: If given, checkpoints are written as the same
+            binary chunk-framed format ``fwht_pauli_terms``/
+            ``fwht_pauli_terms_iter`` use - one shared writer
+            (``_append_checkpoint_frame``) and one shared reader
+            (``_iter_checkpoint_frames``) on both paths, so a
+            checkpoint written by either is resumable by the other
+            (see ``docs/tutorial.md``). What differs is only the
+            *progress marker* that records which chunks are complete:
+            the sequential path's is a single monotonic ``next_chunk``
+            index, valid because chunks finish strictly in order,
+            while this function's is the *set* of completed chunk
+            indices, because parallel workers finish out of order.
+            The two progress markers use distinct file suffixes so
+            they never collide; resume here re-submits every chunk
+            index not already in that set, regardless of position.
 
     Yields:
         One ``dict`` per completed chunk, same value-type contract as

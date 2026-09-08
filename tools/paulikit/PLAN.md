@@ -2604,6 +2604,60 @@ project's measurement protocol) is scoped as a follow-up task and has
 not run yet, so no end-to-end speedup claim is made for the shipped
 function here.
 
+**13d IMPLEMENTED 2026-09-08** - the checkpoint writer put the same
+per-term GIL-held Python object construction that 13c removed from the
+drain loop right back onto the hot path, on both the sequential and
+parallel paths. `checkpoint_cost_attribution.py` falsified each
+candidate cause independently: removing the disk entirely (writing to
+`/dev/null` instead) leaves **94.8%** of the writer's cost, removing
+only the per-term formatting (pre-serialized bytes to real disk)
+leaves **1.1%** - the cost was `.tolist()` + a dict literal +
+`json.dumps` per term, GIL-held, not disk I/O. Resume had a second,
+independent defect: the JSONL reader's `f.readlines()` plus three
+materialized Python lists plus a `last_by_key` dedup dict peaked at
+over 20 GB at N=150 on a 15 GB machine - checkpointing was not merely
+expensive there, it was non-functional.
+
+The fix, detailed in
+`docs/superpowers/specs/2026-09-08-binary-chunk-framed-checkpoint-design.md`:
+a binary chunk-framed format. Each completed chunk appends one
+self-describing frame - a 24-byte header (magic, version, index
+dtype, chunk index, term count) followed by three raw
+`ndarray.tobytes()` blocks - through one shared writer
+(`_append_checkpoint_frame`) and one shared reader
+(`_iter_checkpoint_frames`) called by both the sequential and parallel
+paths, which is what keeps the two paths' checkpoints structurally
+interchangeable rather than incidentally so. The reader streams one
+frame at a time and truncates cleanly at the first incomplete or
+unmarked frame, which made the old `last_by_key` dedup dict
+unnecessary and let it be deleted outright. Progress markers keep
+their existing shapes - the sequential path's single monotonic
+`next_chunk`, the parallel path's *set* of completed chunk indices,
+since workers finish out of order - so only the payload format
+changed. One user-visible behavior change: because frames preserve
+chunk boundaries where JSONL could not, sequential resume now replays
+each original chunk as its own frame instead of one merged replay
+tile.
+
+Re-running `checkpoint_cost_attribution.py` with the new writer as a
+fifth variant confirmed the fix: **the binary writer is 511x cheaper
+than JSONL at 500K terms (0.004s vs 2.043s) and 481x cheaper at 2M
+terms (0.018s vs 8.651s)**, landing below even the pre-serialized
+`no_format` lower bound because it also moves 3.5x fewer bytes (24
+B/term vs JSONL's measured 83.4). A new regression guard,
+`tests/test_checkpoint_format.py::test_resume_memory_is_bounded_by_chunk_not_file`,
+pins resume memory to the largest single chunk rather than the whole
+file. Full details and the measured table are in
+`profiling/phase13/arrays_vs_dict_findings.md`'s "The redesign,
+measured" section.
+
+**Deferred, not closed:** whether per-chunk remains the right
+checkpoint granularity now that per-chunk cost has fallen roughly
+500x is an open question this phase deliberately does not answer -
+it was only worth asking once that cost fell, and revisiting it now
+would be guessing ahead of any data collected under the new cost
+structure.
+
 
 ## 6. Explicitly out of scope
 
