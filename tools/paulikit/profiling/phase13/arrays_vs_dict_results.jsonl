@@ -26,3 +26,4 @@
 {"variant": "arrays_with_checkpoint", "condition": "w8_c4", "rep": 0, "elapsed": 301.2127, "total_terms": 91652096, "peak_rss_mib": 588.1, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 98.0}
 {"variant": "arrays_with_checkpoint", "condition": "w8_c4", "rep": 1, "elapsed": 308.3634, "total_terms": 91652096, "peak_rss_mib": 589.9, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 98.0}
 {"variant": "arrays_with_checkpoint", "condition": "w8_c4", "rep": 2, "elapsed": 306.4999, "total_terms": 91652096, "peak_rss_mib": 585.5, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 98.0}
+{"variant": "arrays_with_checkpoint", "condition": "w8_c4", "rep": 3, "elapsed": 309.1938, "total_terms": 91652096, "peak_rss_mib": 585.4, "settled_temp": 55.0, "temp_before": 55.0, "temp_after": 98.0}
