@@ -457,9 +457,7 @@ def _load_parallel_checkpoint(
     if not checkpoint_path.exists() or not progress_path.exists():
         return set(), None
 
-    with open(progress_path) as f:
-        progress = json.load(f)
-    completed = set(progress["completed_chunk_indices"])
+    completed = _read_completed_indices(progress_path)
     if not completed:
         return completed, None
 
@@ -500,8 +498,7 @@ def _append_parallel_checkpoint_chunk(
     )
     completed_chunk_indices.add(chunk_index)
     progress_path = _parallel_checkpoint_progress_path(checkpoint_path)
-    with open(progress_path, "w") as f:
-        json.dump({"completed_chunk_indices": sorted(completed_chunk_indices)}, f)
+    _append_progress_record(progress_path, chunk_index)
 
 
 def _load_checkpoint(
