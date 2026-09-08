@@ -95,21 +95,58 @@ This also settles **inherited vs introduced without running the
 shared, unmodified writer that both paths call, so it is
 **pre-existing**, not introduced by the array path.
 
+## The redesign, measured
+
+Recorded 2026-09-08, after JSONL was replaced by the binary
+chunk-framed format (24-byte header + three `tobytes()` blocks per
+completed chunk; see
+`docs/superpowers/specs/2026-09-08-binary-chunk-framed-checkpoint-design.md`).
+Same script, same machine, same `~/.paulikit_ckpt_bench` real-disk
+directory, with a fifth `frames` variant added.
+
+| variant | 500K terms (5 reps) | 2M terms (3 reps) |
+|---|---|---|
+| `full` (original JSONL writer, real disk) | 2.043s (sd 0.071) | 8.651s (sd 0.199) |
+| `no_io` (same serialization -> `/dev/null`) | 2.035s (sd 0.082) | 8.553s (sd 0.203) |
+| `no_format` (pre-serialized bytes -> disk) | 0.025s (sd 0.012) | 0.053s (sd 0.002) |
+| `raw_bytes` (both removed) | 0.008s (sd 0.001) | 0.028s (sd 0.001) |
+| **`frames` (binary writer, real disk)** | **0.004s (sd 0.001)** | **0.018s (sd 0.002)** |
+
+**The binary writer is 511x cheaper than JSONL at 500K terms and 481x
+cheaper at 2M terms.** It lands *below* `no_format`, the pre-serialized
+lower bound for the JSONL byte volume, which is expected: it writes
+24 bytes/term against JSONL's measured 83.4, so it moves 3.5x fewer
+bytes as well as doing no per-term Python work at all. Per-term cost is
+0.0080 us at 500K and 0.0090 us at 2M - flat enough that the cost is
+linear in term count, so the per-term figure may be extrapolated. The
+control row is the *original* JSONL body, inlined into the script,
+because the shared writer it used to call is the thing that changed;
+inlining is what keeps `full` a control rather than a second copy of
+the treatment.
+
+The `full` control reproduced its earlier attribution unchanged:
+removing the disk still leaves 98.9-99.6% of the cost, removing the
+formatting still leaves 0.6-1.2%. The mechanism diagnosis above stands;
+this section only records what removing that mechanism bought.
+
+*Extrapolation, labelled as such:* at the measured 0.0090 us/term, the
+N=150 checkpoint write would be **~0.8s** of parent CPU against the
+JSONL format's ~392s extrapolated from the same run. That figure has
+not been measured at N=150 and item 2 below still applies - no
+checkpoint path has been exercised above n_qubits=4 in the test suite.
+
+**Regression guard:**
+`tests/test_checkpoint_format.py::test_resume_memory_is_bounded_by_chunk_not_file`
+writes 200 frames and asserts the reader's `tracemalloc` peak stays
+under 25% of the file size, which fails loudly for any reader that
+materializes more than one frame at a time - the defect the JSONL
+`readlines()` reader had.
+
 ## What is still open
 
-1. **The checkpoint format needs redesign (Phase 14 candidate).** At
-   N=150 it costs ~386s of single-threaded parent CPU and 7.6 GB to
-   protect a 17.9s computation, and it re-caps parallel scaling to
-   ~1.0x by refilling the drain loop with GIL-held work. The data is
-   already contiguous NumPy; a binary append (`.tobytes()` per chunk)
-   removes the per-term Python entirely - the `no_format` row above is
-   effectively that measurement, ~100x cheaper - and at
-   `intp+intp+complex128` = 32 bytes/term it is also 2.6x smaller,
-   less again with the `_index_dtype_for_dim` narrowing. Open design
-   questions: break the JSONL format or add a second one (there is
-   precedent - `_parallel_checkpoint_progress_path` deliberately
-   coexists with the sequential format), and whether per-chunk
-   granularity is right when a chunk is ~2s of work.
+1. ~~The checkpoint format needs redesign.~~ **Done - the format was
+   replaced and the redesign measured.** See "The redesign, measured"
+   below.
 2. **Checkpointing has never been exercised above n_qubits=4.** All 14
    checkpoint tests across `test_parallel_decompose.py`,
    `test_streaming.py`, `test_chunked_accumulator.py` and

@@ -29,6 +29,13 @@ cost that survives removal did not come from the removed cause.
                   region, then written to a real file. REMOVES C2,
                   keeps C1 (identical byte volume). The mirror test.
   raw_bytes     - as no_format but to /dev/null: both removed. Floor.
+  frames        - the binary chunk-framed writer that REPLACED the
+                  JSONL one, to a real file on real disk. Not a
+                  falsification arm: it is the treatment, measured
+                  against `full`'s control to show the redesign
+                  actually removed C2. Deliberately exempt from the
+                  equal-byte-volume assertion, since writing ~3.5x
+                  fewer bytes is part of what it changed.
 
 Timing the writer directly (not through a full decomposition) keeps the
 measurement about the writer and avoids a multi-minute run per rep.
@@ -52,7 +59,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
 
 from paulikit.algorithms.fwht import (  # noqa: E402
-    _append_parallel_checkpoint_chunk,
+    _append_checkpoint_frame,
 )
 
 # Real disk, never /tmp: /tmp is a RAM-backed tmpfs here and writing
@@ -81,9 +88,35 @@ def serialize(x, z, coeff):
 
 
 def time_full(x, z, coeff, path):
+    """The ORIGINAL JSONL writer - the control this script was built
+    to attribute.
+
+    Its body is inlined here rather than called through
+    ``_append_parallel_checkpoint_chunk`` because that function has
+    since been ported to binary frames (the `frames` variant below).
+    Keeping the control as the historical code is what makes the two
+    rows comparable; calling the ported writer would silently turn the
+    control into a second copy of the treatment. This is byte-for-byte
+    the JSONL body the shared writer used to have.
+    """
     completed = set()
     t0 = time.perf_counter()
-    _append_parallel_checkpoint_chunk(path, completed, 0, x, z, coeff)
+    with open(path, "a") as f:
+        for xv, zv, cv in zip(x.tolist(), z.tolist(), coeff.tolist()):
+            f.write(json.dumps(
+                {"x": xv, "z": zv, "re": cv.real, "im": cv.imag}) + "\n")
+    completed.add(0)
+    prog = path + ".parallel_progress.json"
+    with open(prog, "w") as f:
+        json.dump({"completed_chunk_indices": sorted(completed)}, f)
+    return time.perf_counter() - t0
+
+
+def time_frames(x, z, coeff, path):
+    """The new binary frame writer - the format that replaced JSONL."""
+    idx_dtype = np.dtype(np.uint32)
+    t0 = time.perf_counter()
+    _append_checkpoint_frame(path, 0, x, z, coeff, idx_dtype)
     return time.perf_counter() - t0
 
 
@@ -129,6 +162,10 @@ def main():
         ("no_io", time_no_io, False),
         ("no_format", lambda *a: time_no_format(*a, payload=payload), True),
         ("raw_bytes", lambda *a: time_raw_bytes(*a, payload=payload), False),
+        # Not volume-checked: the binary format is deliberately ~3.5x
+        # smaller than JSONL, so it cannot satisfy the equal-bytes
+        # invariant the other four share.
+        ("frames", time_frames, False),
     ]
 
     results = {}
