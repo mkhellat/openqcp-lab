@@ -65,12 +65,19 @@ VARIANTS = (
     "arrays_no_checkpoint",
     "arrays_with_checkpoint",
     # Added after the first sweep measured arrays_with_checkpoint at
-    # ~298s versus ~18s without - a ~280s (50ms/chunk) penalty. That
-    # number alone cannot say whether the cost is INHERITED from the
-    # shared, unmodified _append_parallel_checkpoint_chunk (one JSON
-    # line per surviving term, ~91.6M lines at N=150) or INTRODUCED by
-    # the array path. Both call the same writer, so this control
-    # settles it: a similar magnitude here means pre-existing.
+    # ~298s versus ~18s without, to ask whether that cost is INHERITED
+    # from the shared, unmodified _append_parallel_checkpoint_chunk or
+    # INTRODUCED by the array path.
+    #
+    # SUPERSEDED 2026-09-08 - this cell is no longer needed and is kept
+    # only so the sweep can still reproduce it on request.
+    # checkpoint_cost_attribution.py answered the question far more
+    # cheaply by falsifying each candidate cause directly at small N:
+    # 94.8% of the writer's cost is GIL-held per-term serialization
+    # (.tolist() + dict literal + json.dumps), only 1.1% is disk I/O.
+    # That cost lives entirely inside the shared writer both paths
+    # call, so it is PRE-EXISTING. Running this 10-rep, ~50-minute cell
+    # at N=150 would only re-confirm that at much greater expense.
     "dict_with_checkpoint",
 )
 CONDITIONS = ("w2_c1", "w8_c4")
