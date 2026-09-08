@@ -394,6 +394,21 @@ git commit -m "feat(paulikit): port the sequential progress marker to append-onl
 
 ## Task 4: Fix the JSON-writing test fixture and clear the full suite
 
+> **COMPLETED DURING TASKS 2-3, no separate commit.** This task was
+> under-scoped: it named only `test_chunked_accumulator.py`, but FOUR
+> fixtures were coupled to the marker's on-disk format. Each was fixed
+> in the task whose change broke it, so the suite stayed green at every
+> boundary:
+> - `test_parallel_decompose.py::test_parallel_decompose_checkpoint_resume` (Task 2)
+> - `test_array_yielding.py::test_resume_replay_still_checks_hermiticity` (Task 2) - had failed SILENTLY: hand-written JSON parsed as zero valid records, so the code path under test never ran and it reported "DID NOT RAISE" rather than a parse error
+> - `test_chunked_accumulator.py::test_checkpoint_resume_from_partial_progress_file` (Task 3)
+> - `test_checkpoint_format.py::test_sequential_resume_replays_per_chunk_not_one_combined_tile` (Task 3)
+>
+> Verified after Task 3: no `json.dump`/`json.load`/hand-written
+> progress file remains anywhere in `tests/`, no `import json` remains
+> in any test file, and the suite is green at 212.
+
+
 **Files:**
 - Modify: `tests/test_chunked_accumulator.py:107-128`
 - Test: full suite
