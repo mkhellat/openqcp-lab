@@ -16,7 +16,9 @@ from paulikit.algorithms.fwht import (
     _CHECKPOINT_HEADER_STRUCT,
     _CHECKPOINT_MAGIC,
     _CHECKPOINT_VERSION,
+    _append_checkpoint_frame,
     _checkpoint_frame_header,
+    _iter_checkpoint_frames,
     _parse_checkpoint_frame_header,
 )
 
@@ -82,3 +84,90 @@ def test_header_rejects_unsupported_dtype():
 def test_parse_rejects_short_buffer():
     with pytest.raises(ValueError, match="truncated"):
         _parse_checkpoint_frame_header(b"PKCP")
+
+
+def _write_frames(path, frames, idx_dtype=np.dtype(np.uint32)):
+    for chunk_index, x, z, coeff in frames:
+        _append_checkpoint_frame(
+            path, chunk_index,
+            np.asarray(x, dtype=idx_dtype),
+            np.asarray(z, dtype=idx_dtype),
+            np.asarray(coeff, dtype=complex),
+            idx_dtype,
+        )
+
+
+def test_frame_round_trip_preserves_values_and_dtypes(tmp_path):
+    path = tmp_path / "ckpt.bin"
+    _write_frames(path, [
+        (0, [1, 2, 3], [4, 5, 6], [1 + 2j, 3 + 0j, -1j]),
+        (1, [7], [8], [0.5 + 0j]),
+    ])
+    got = list(_iter_checkpoint_frames(path))
+    assert [g[0] for g in got] == [0, 1]
+    np.testing.assert_array_equal(got[0][1], [1, 2, 3])
+    np.testing.assert_array_equal(got[0][2], [4, 5, 6])
+    np.testing.assert_allclose(got[0][3], [1 + 2j, 3 + 0j, -1j])
+    assert got[0][3].dtype == np.dtype(complex)
+    np.testing.assert_array_equal(got[1][1], [7])
+
+
+def test_frame_round_trip_empty_chunk(tmp_path):
+    # A chunk where every coefficient fell below atol survives with
+    # zero terms; it must still be recorded so its index is replayable.
+    path = tmp_path / "ckpt.bin"
+    _write_frames(path, [(0, [], [], [])])
+    got = list(_iter_checkpoint_frames(path))
+    assert len(got) == 1
+    assert got[0][0] == 0
+    assert len(got[0][1]) == 0
+
+
+@pytest.mark.parametrize("dtype", [np.uint16, np.uint32, np.intp])
+def test_frame_round_trip_every_index_dtype(tmp_path, dtype):
+    path = tmp_path / "ckpt.bin"
+    _write_frames(path, [(0, [1, 2], [3, 4], [1j, 2j])],
+                  idx_dtype=np.dtype(dtype))
+    got = list(_iter_checkpoint_frames(path))
+    np.testing.assert_array_equal(got[0][1], [1, 2])
+    assert got[0][1].dtype == np.dtype(dtype)
+
+
+@pytest.mark.parametrize("cut", [1, 10, 24, 30, 40])
+def test_truncated_tail_recovers_every_complete_frame(tmp_path, cut):
+    # Truncation mid-header, exactly at a boundary, and mid-payload
+    # must all recover frame 0 intact and simply drop the partial.
+    path = tmp_path / "ckpt.bin"
+    _write_frames(path, [(0, [1, 2], [3, 4], [1j, 2j])])
+    complete = path.read_bytes()
+    _write_frames(path, [(1, [9], [9], [9j])])
+    full = path.read_bytes()
+    path.write_bytes(full[: len(complete) + cut])
+
+    got = list(_iter_checkpoint_frames(path))
+    assert got[0][0] == 0
+    np.testing.assert_array_equal(got[0][1], [1, 2])
+    assert all(g[0] == 0 for g in got), "partial frame must not be yielded"
+
+
+def test_corruption_in_an_early_frame_is_detected(tmp_path):
+    # JSONL could only detect a truncated FINAL line; frame magic makes
+    # corruption anywhere detectable.
+    path = tmp_path / "ckpt.bin"
+    _write_frames(path, [(0, [1], [1], [1j]), (1, [2], [2], [2j])])
+    raw = bytearray(path.read_bytes())
+    raw[0:4] = b"XXXX"
+    path.write_bytes(bytes(raw))
+    with pytest.raises(ValueError, match="magic"):
+        list(_iter_checkpoint_frames(path))
+
+
+def test_frames_absent_from_valid_indices_are_dropped(tmp_path):
+    path = tmp_path / "ckpt.bin"
+    _write_frames(path, [(0, [1], [1], [1j]), (1, [2], [2], [2j])])
+    got = list(_iter_checkpoint_frames(path, valid_indices={0}))
+    assert [g[0] for g in got] == [0]
+
+
+def test_missing_file_yields_nothing(tmp_path):
+    assert list(_iter_checkpoint_frames(tmp_path / "absent.bin")) == []

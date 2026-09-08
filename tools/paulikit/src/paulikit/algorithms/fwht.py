@@ -295,6 +295,94 @@ def _parse_checkpoint_frame_header(raw: bytes) -> tuple[int, int, np.dtype]:
     return chunk_index, n_terms, idx_dtype
 
 
+def _append_checkpoint_frame(
+    checkpoint_path: str | Path,
+    chunk_index: int,
+    x_out: NDArray[np.integer],
+    z_out: NDArray[np.integer],
+    coeff_out: NDArray[np.complexfloating],
+    idx_dtype: np.dtype,
+) -> None:
+    """Append one chunk as a single self-describing frame.
+
+    Deliberately free of any per-term Python work. The JSONL format
+    this replaces cost ~4.2 us per term in ``.tolist()`` + a dict
+    literal + ``json.dumps``, GIL-held in the parent's drain loop -
+    measured at 94.8% of the writer's total cost, versus 1.1% for the
+    disk I/O itself (profiling/phase13/checkpoint_cost_attribution.py).
+    Three ``tobytes()`` calls move the same information with no object
+    churn, which is what keeps the drain loop empty enough for the
+    parallel path to scale.
+    """
+    x_arr = np.ascontiguousarray(x_out, dtype=idx_dtype)
+    z_arr = np.ascontiguousarray(z_out, dtype=idx_dtype)
+    coeff_arr = np.ascontiguousarray(coeff_out, dtype=complex)
+    if not (len(x_arr) == len(z_arr) == len(coeff_arr)):
+        raise ValueError(
+            f"checkpoint frame arrays must be equal length, got "
+            f"{len(x_arr)}, {len(z_arr)}, {len(coeff_arr)}"
+        )
+    header = _checkpoint_frame_header(chunk_index, len(x_arr), idx_dtype)
+    with open(checkpoint_path, "ab") as f:
+        f.write(header)
+        f.write(x_arr.tobytes())
+        f.write(z_arr.tobytes())
+        f.write(coeff_arr.tobytes())
+
+
+def _iter_checkpoint_frames(
+    checkpoint_path: str | Path,
+    valid_indices: set[int] | None = None,
+) -> Iterator[tuple[int, NDArray, NDArray, NDArray]]:
+    """Yield ``(chunk_index, x, z, coeff)`` per complete frame.
+
+    One frame is live at a time, so replay memory is bounded by the
+    largest chunk rather than by the file - the property the JSONL
+    reader lacked. That reader called ``f.readlines()`` and built three
+    full Python lists plus a dedup dict, which at N=150 is >20 GB and
+    simply could not run.
+
+    Stops cleanly at the first frame that is incomplete (a crash
+    mid-write) or absent from ``valid_indices`` (recorded but never
+    marked complete). Because a reader stops at the first such frame,
+    a duplicate can never survive to be read, which is what removes
+    the need for the old ``last_by_key`` deduplication entirely.
+    Corruption that is not a clean truncation - a bad magic in an
+    earlier frame - still raises, since that is real damage rather
+    than an interrupted append.
+    """
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        return
+
+    header_size = _CHECKPOINT_HEADER_STRUCT.size
+    with open(checkpoint_path, "rb") as f:
+        while True:
+            raw_header = f.read(header_size)
+            if not raw_header:
+                return  # clean end of file
+            if len(raw_header) < header_size:
+                return  # torn header from an interrupted append
+            chunk_index, n_terms, idx_dtype = _parse_checkpoint_frame_header(
+                raw_header
+            )
+            idx_nbytes = n_terms * idx_dtype.itemsize
+            coeff_nbytes = n_terms * np.dtype(complex).itemsize
+            payload = f.read(2 * idx_nbytes + coeff_nbytes)
+            if len(payload) < 2 * idx_nbytes + coeff_nbytes:
+                return  # torn payload from an interrupted append
+            if valid_indices is not None and chunk_index not in valid_indices:
+                return
+            x = np.frombuffer(payload, dtype=idx_dtype, count=n_terms)
+            z = np.frombuffer(
+                payload, dtype=idx_dtype, count=n_terms, offset=idx_nbytes
+            )
+            coeff = np.frombuffer(
+                payload, dtype=complex, count=n_terms, offset=2 * idx_nbytes
+            )
+            yield chunk_index, x, z, coeff
+
+
 def _read_checkpoint_triples(
     checkpoint_path: Path,
 ) -> tuple[list[int], list[int], list[complex]]:
