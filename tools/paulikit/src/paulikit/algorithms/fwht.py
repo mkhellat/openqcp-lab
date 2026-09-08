@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -214,6 +215,84 @@ def _parallel_checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
     ``fwht_pauli_terms_iter`` and ``parallel_decompose``.
     """
     return Path(str(checkpoint_path) + ".parallel_progress.json")
+
+
+_CHECKPOINT_MAGIC = b"PKCP"
+_CHECKPOINT_VERSION = 1
+
+# magic, version, index-dtype code, reserved, chunk index, term count.
+# chunk_index and n_terms are u64 deliberately: N=150 alone has
+# 91,652,096 terms across thousands of chunks, and a u32 term count
+# would cap a single frame at 4.29e9 - close enough to real workloads
+# to be a latent bug rather than a safe assumption.
+_CHECKPOINT_HEADER_STRUCT = struct.Struct("<4sHBBQQ")
+
+# Persisted on disk: these codes are part of the format and must never
+# be renumbered. _index_dtype_for_dim picks the width from `dim`, so a
+# file can legitimately contain any of the three.
+_INDEX_DTYPE_CODES: dict[int, np.dtype] = {
+    0: np.dtype(np.uint16),
+    1: np.dtype(np.uint32),
+    2: np.dtype(np.intp),
+}
+_INDEX_DTYPE_TO_CODE = {v: k for k, v in _INDEX_DTYPE_CODES.items()}
+
+
+def _checkpoint_frame_header(
+    chunk_index: int, n_terms: int, idx_dtype: np.dtype
+) -> bytes:
+    """Pack one frame's fixed-width header.
+
+    The index dtype is recorded per frame rather than assumed, which is
+    a correctness requirement and not a size optimization:
+    ``_index_dtype_for_dim`` returns ``uint16`` only while
+    ``dim <= 65536``, so a reader that assumed a width would silently
+    WRAP a 17-qubit-or-larger operator's indices and produce wrong
+    Pauli labels instead of an error.
+    """
+    code = _INDEX_DTYPE_TO_CODE.get(np.dtype(idx_dtype))
+    if code is None:
+        raise ValueError(
+            f"unsupported checkpoint index dtype {idx_dtype!r} - "
+            f"expected one of {sorted(str(d) for d in _INDEX_DTYPE_CODES.values())}"
+        )
+    return _CHECKPOINT_HEADER_STRUCT.pack(
+        _CHECKPOINT_MAGIC, _CHECKPOINT_VERSION, code, 0, chunk_index, n_terms
+    )
+
+
+def _parse_checkpoint_frame_header(raw: bytes) -> tuple[int, int, np.dtype]:
+    """Unpack a frame header, validating every field.
+
+    Returns ``(chunk_index, n_terms, idx_dtype)``. Raises ``ValueError``
+    on a short buffer, wrong magic, unknown version, or unknown index
+    dtype - all of which mean the file is not a frame boundary this
+    reader understands, and guessing would corrupt the replay.
+    """
+    if len(raw) < _CHECKPOINT_HEADER_STRUCT.size:
+        raise ValueError(
+            f"truncated checkpoint frame header: got {len(raw)} bytes, "
+            f"need {_CHECKPOINT_HEADER_STRUCT.size}"
+        )
+    magic, version, code, _reserved, chunk_index, n_terms = (
+        _CHECKPOINT_HEADER_STRUCT.unpack(raw[: _CHECKPOINT_HEADER_STRUCT.size])
+    )
+    if magic != _CHECKPOINT_MAGIC:
+        raise ValueError(
+            f"bad checkpoint frame magic {magic!r} - expected "
+            f"{_CHECKPOINT_MAGIC!r}"
+        )
+    if version != _CHECKPOINT_VERSION:
+        raise ValueError(
+            f"unsupported checkpoint format version {version} - this "
+            f"build writes and reads version {_CHECKPOINT_VERSION}"
+        )
+    idx_dtype = _INDEX_DTYPE_CODES.get(code)
+    if idx_dtype is None:
+        raise ValueError(
+            f"unknown checkpoint index dtype code {code}"
+        )
+    return chunk_index, n_terms, idx_dtype
 
 
 def _read_checkpoint_triples(
