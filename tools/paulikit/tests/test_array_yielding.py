@@ -244,12 +244,25 @@ def test_checkpoint_written_by_array_path_resumes_under_dict_path(tmp_path):
 def test_resume_replay_still_checks_hermiticity(tmp_path):
     # The replay path is separate code from the drain loop; it is easy
     # to add the check to one and forget the other.
-    from paulikit.algorithms.fwht import parallel_decompose_arrays
+    from paulikit.algorithms.fwht import (
+        _append_checkpoint_frame,
+        parallel_decompose_arrays,
+    )
 
-    checkpoint = tmp_path / "ckpt.jsonl"
-    progress = tmp_path / "ckpt.jsonl.parallel_progress.json"
-    # A hand-written checkpoint holding one non-Hermitian term.
-    checkpoint.write_text('{"x": 0, "z": 0, "re": 1.0, "im": 0.5}\n')
+    checkpoint = tmp_path / "ckpt.bin"
+    progress = tmp_path / "ckpt.bin.parallel_progress.json"
+    # A checkpoint holding one non-Hermitian term. Written as a binary
+    # frame rather than a hand-written JSON line because the checkpoint
+    # payload is now the chunk-framed binary format; the index dtype is
+    # uint16 because _index_dtype_for_dim(4) returns uint16 for this
+    # 4x4 operator, and the frame header records that width.
+    _append_checkpoint_frame(
+        checkpoint, 0,
+        np.array([0], dtype=np.uint16),
+        np.array([0], dtype=np.uint16),
+        np.array([1.0 + 0.5j], dtype=complex),
+        np.dtype(np.uint16),
+    )
     progress.write_text('{"completed_chunk_indices": [0]}')
 
     operator = np.eye(4, dtype=complex)

@@ -441,21 +441,21 @@ def _read_checkpoint_triples(
 
 def _load_parallel_checkpoint(
     checkpoint_path: str | Path | None,
-) -> tuple[set[int], tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
+) -> tuple[set[int], Iterator[tuple[NDArray, NDArray, NDArray]] | None]:
     """Read an existing *parallel* checkpoint, if any.
 
     Unlike the sequential format's single monotonic ``next_chunk``
     index (correct only when chunks complete strictly in order),
     parallel workers complete chunks in whatever order the pool
-    schedules them - the progress file here records the *set* of
-    chunk indices already completed, so resume can skip exactly those
-    chunks regardless of completion order, and re-submit every other
-    chunk (including ones "in the middle" that never got started).
+    schedules them - the progress file records the *set* of chunk
+    indices already completed, so resume can skip exactly those and
+    re-submit every other chunk regardless of completion order.
 
-    Returns ``(completed_chunk_indices, (x, z, coeff) | None)``: the
-    set of chunk indices to skip re-submitting, and the previously
-    recorded triples to fold into the result, or ``None`` if there is
-    nothing to replay.
+    Returns ``(completed_chunk_indices, frames | None)``, where
+    ``frames`` is a lazy iterator of ``(x, z, coeff)`` triples, one per
+    recorded frame. It is an iterator rather than one combined tuple so
+    that replay holds one chunk at a time; materializing the whole
+    checkpoint is what made resume unusable at N=150.
     """
     if checkpoint_path is None:
         return set(), None
@@ -467,44 +467,44 @@ def _load_parallel_checkpoint(
     with open(progress_path) as f:
         progress = json.load(f)
     completed = set(progress["completed_chunk_indices"])
-
-    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
-
-    if not x_vals:
+    if not completed:
         return completed, None
-    return completed, (
-        np.array(x_vals, dtype=np.intp),
-        np.array(z_vals, dtype=np.intp),
-        np.array(coeff_vals, dtype=complex),
-    )
+
+    def _frames() -> Iterator[tuple[NDArray, NDArray, NDArray]]:
+        for _index, x, z, coeff in _iter_checkpoint_frames(
+            checkpoint_path, valid_indices=completed
+        ):
+            yield x, z, coeff
+
+    return completed, _frames()
 
 
 def _append_parallel_checkpoint_chunk(
     checkpoint_path: str | Path,
     completed_chunk_indices: set[int],
     chunk_index: int,
-    x_out: NDArray[np.intp],
-    z_out: NDArray[np.intp],
+    x_out: NDArray[np.integer],
+    z_out: NDArray[np.integer],
     coeff_out: NDArray[np.complexfloating],
+    idx_dtype: np.dtype,
 ) -> None:
-    """Append one completed chunk's surviving triples to the parallel
-    checkpoint file, then record its index in the completed set.
+    """Append one completed chunk's frame, then record its index.
 
     Called from the main process only (after collecting a worker's
-    result via ``as_completed``), so this file/set update itself is
-    never concurrently written by multiple processes - workers return
-    their chunk's triples to the main process; they do not write the
-    checkpoint file directly. As with the sequential format, the
-    triples are appended before the progress marker is updated, so a
-    crash mid-write leaves the progress file not yet listing this
-    chunk as completed - it is simply resubmitted on resume rather
-    than silently corrupted.
-    """
-    checkpoint_path = Path(checkpoint_path)
-    with open(checkpoint_path, "a") as f:
-        for x, z, coeff in zip(x_out.tolist(), z_out.tolist(), coeff_out.tolist()):
-            f.write(json.dumps({"x": x, "z": z, "re": coeff.real, "im": coeff.imag}) + "\n")
+    result), so this file/set update is never concurrently written by
+    multiple processes - workers return their chunk's triples to the
+    main process; they do not write the checkpoint file directly.
 
+    The frame is written before the progress marker is updated, so a
+    crash mid-write leaves the progress file not yet listing this
+    chunk: the frame is then either torn (and stops the reader) or
+    complete-but-unmarked (and is dropped by ``valid_indices``). Either
+    way the chunk is simply resubmitted on resume, and no duplicate can
+    reach a reader - which is why this format needs no deduplication.
+    """
+    _append_checkpoint_frame(
+        checkpoint_path, chunk_index, x_out, z_out, coeff_out, idx_dtype
+    )
     completed_chunk_indices.add(chunk_index)
     progress_path = _parallel_checkpoint_progress_path(checkpoint_path)
     with open(progress_path, "w") as f:
@@ -1883,15 +1883,18 @@ def parallel_decompose(
     sorted_q_nz = q_nz[order]
 
     chunk_starts = list(range(0, n_active, chunk_size))
-    completed_indices, checkpoint = _load_parallel_checkpoint(checkpoint_path)
-    if checkpoint is not None:
-        labels = _pauli_label_batch(checkpoint[0], checkpoint[1], n_qubits)
-        if assume_hermitian:
-            yield _build_real_terms(labels, checkpoint[2], atol)
-        else:
-            yield {
-                label: complex(c) for label, c in zip(labels, checkpoint[2].tolist())
-            }
+    completed_indices, checkpoint_frames = _load_parallel_checkpoint(checkpoint_path)
+    idx_dtype = _index_dtype_for_dim(dim)
+    if checkpoint_frames is not None:
+        for ck_x, ck_z, ck_coeff in checkpoint_frames:
+            labels = _pauli_label_batch(ck_x, ck_z, n_qubits)
+            if assume_hermitian:
+                yield _build_real_terms(labels, ck_coeff, atol)
+            else:
+                yield {
+                    label: complex(c)
+                    for label, c in zip(labels, ck_coeff.tolist())
+                }
 
     pending = [
         (i, start, min(start + chunk_size, n_active))
@@ -1969,7 +1972,7 @@ def parallel_decompose(
                 if checkpoint_path is not None:
                     _append_parallel_checkpoint_chunk(
                         checkpoint_path, completed_indices, chunk_index,
-                        chunk_x_out, z_idx, chunk_coeff_out,
+                        chunk_x_out, z_idx, chunk_coeff_out, idx_dtype,
                     )
 
                 labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)
@@ -2074,13 +2077,15 @@ def parallel_decompose_arrays(
     sorted_q_nz = q_nz[order]
 
     chunk_starts = list(range(0, n_active, chunk_size))
-    completed_indices, checkpoint = _load_parallel_checkpoint(checkpoint_path)
-    if checkpoint is not None:
-        if assume_hermitian:
-            _check_hermitian_violation(
-                checkpoint[2], atol, checkpoint[0], checkpoint[1], n_qubits
-            )
-        yield checkpoint
+    completed_indices, checkpoint_frames = _load_parallel_checkpoint(checkpoint_path)
+    idx_dtype = _index_dtype_for_dim(dim)
+    if checkpoint_frames is not None:
+        for ck_x, ck_z, ck_coeff in checkpoint_frames:
+            if assume_hermitian:
+                _check_hermitian_violation(
+                    ck_coeff, atol, ck_x, ck_z, n_qubits
+                )
+            yield ck_x, ck_z, ck_coeff
 
     pending = [
         (i, start, min(start + chunk_size, n_active))
@@ -2158,7 +2163,7 @@ def parallel_decompose_arrays(
                 if checkpoint_path is not None:
                     _append_parallel_checkpoint_chunk(
                         checkpoint_path, completed_indices, chunk_index,
-                        chunk_x_out, z_idx, chunk_coeff_out,
+                        chunk_x_out, z_idx, chunk_coeff_out, idx_dtype,
                     )
 
                 if assume_hermitian:
