@@ -217,6 +217,55 @@ def _parallel_checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
     return Path(str(checkpoint_path) + ".parallel_progress.json")
 
 
+# Persisted on disk: one record per completed chunk. u64 matches the
+# width the frame header already uses for chunk_index, so the two
+# cannot disagree about range. Never change the width or endianness.
+_PROGRESS_RECORD = struct.Struct("<Q")
+
+
+def _append_progress_record(
+    progress_path: str | Path, chunk_index: int
+) -> None:
+    """Record one completed chunk by appending a fixed-width record.
+
+    This replaced a ``json.dump`` of the whole completed set on every
+    chunk, which was O(n) per chunk and so O(n^2) across a run. At
+    N=150's 5,595 chunks that marker cost 15.13x the payload frame
+    write by the final chunk and ~91% of the per-chunk checkpoint
+    total (profiling/phase13/progress_marker_findings.md). An 8-byte
+    append is O(1) - measured flat at ~13-21us across a 20,000x range
+    of completed counts.
+    """
+    with open(progress_path, "ab") as f:
+        f.write(_PROGRESS_RECORD.pack(chunk_index))
+
+
+def _read_completed_indices(progress_path: str | Path) -> set[int]:
+    """Recover the set of completed chunk indices.
+
+    Reads whole records only: a trailing partial record is DISCARDED
+    rather than treated as corruption. Appends are 8 bytes written in
+    one call and never rewritten, so only the final record can ever be
+    torn, and a torn tail means exactly "that chunk was not recorded" -
+    the chunk is resubmitted and recomputed, which is the pre-existing
+    contract.
+
+    Returns a set, not a sequence: records are not sorted (parallel
+    workers complete out of order) and may be duplicated (a
+    rollback-resume re-records chunks it recomputes).
+    """
+    progress_path = Path(progress_path)
+    if not progress_path.exists():
+        return set()
+    data = progress_path.read_bytes()
+    size = _PROGRESS_RECORD.size
+    n_whole = len(data) // size
+    return {
+        _PROGRESS_RECORD.unpack_from(data, i * size)[0]
+        for i in range(n_whole)
+    }
+
+
 _CHECKPOINT_MAGIC = b"PKCP"
 _CHECKPOINT_VERSION = 1
 
