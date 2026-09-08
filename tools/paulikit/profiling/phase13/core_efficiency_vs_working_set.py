@@ -45,11 +45,19 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYTHON = os.path.expanduser("~/.venvs/paulikit/bin/python")
 TARGET = os.path.join(HERE, "arrays_vs_dict_target.py")
 
-COOLDOWN_TARGET_C = 55.0
+# 65C, not 55C: this machine idles around 69-75C after sustained
+# multi-core work and does not reach 55C at all, so every cooldown ran
+# the full 240s timeout without ever hitting its target - 32 minutes of
+# waiting for 2 minutes of compute, and the runs were NOT actually
+# matched at 55C despite the setting claiming so. 65C is reachable, so
+# runs are genuinely matched at it.
+COOLDOWN_TARGET_C = float(os.environ.get("PAULIKIT_COOLDOWN_C", "65.0"))
 COOLDOWN_TIMEOUT_S = 240
 TEMP_PATH = "/sys/class/thermal/thermal_zone7/temp"
 L3_BYTES = 8 * 1024 * 1024
@@ -74,8 +82,39 @@ def cooldown():
         time.sleep(2)
 
 
+def _dim_for(n_osc):
+    """The padded operator's dimension for this N, from the library."""
+    from paulikit.cli import _default_masses, _default_spring_constants
+    from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
+
+    unpadded = build_hamiltonian(
+        n_osc, _default_spring_constants(n_osc),
+        _default_masses(n_osc), sparse=True,
+    )
+    padded, _n_qubits = pad_to_power_of_two(unpadded, sparse=True)
+    return padded.shape[0]
+
+
+def _log(msg):
+    """Timestamped and FLUSHED.
+
+    Without flush=True, Python buffers stdout whenever it is not a
+    TTY, so a redirected or captured run emits nothing until it
+    finishes - a live run and a hung one look identical. That
+    ambiguity cost real time once in this phase; every progress line
+    here is flushed so a run is always visibly making progress.
+    """
+    print(f"    [{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
 def run(n_osc, condition, chunk_size):
+    before = read_temp()
+    _log(f"cooling from {before:.0f}C to {COOLDOWN_TARGET_C:.0f}C ...")
+    c0 = time.perf_counter()
     cooldown()
+    _log(f"cooled in {time.perf_counter() - c0:.0f}s; "
+         f"running {condition} chunk_size={chunk_size} ...")
+    t0 = time.perf_counter()
     env = dict(os.environ, OPENBLAS_NUM_THREADS="1",
                PAULIKIT_N_OSCILLATORS=str(n_osc))
     proc = subprocess.run(
@@ -83,8 +122,9 @@ def run(n_osc, condition, chunk_size):
         capture_output=True, text=True, env=env,
     )
     if proc.returncode != 0:
-        print(f"    FAILED: {proc.stderr.strip()[-200:]}")
+        _log(f"FAILED: {proc.stderr.strip()[-200:]}")
         return None
+    _log(f"{condition} done in {time.perf_counter() - t0:.1f}s")
     out = dict(
         tok.split("=", 1) for tok in proc.stdout.split() if "=" in tok
     )
@@ -93,7 +133,11 @@ def run(n_osc, condition, chunk_size):
 
 def main():
     n_osc = int(sys.argv[1]) if len(sys.argv) > 1 else 180
-    dim = 32768 if n_osc == 180 else 16384
+    # Measured directly from the real padded operator rather than from
+    # a guessed formula: an earlier attempt at 2**ceil(log2(2N)) gave
+    # 512 where the true dim is 16384. N=150/160 are 14 qubits,
+    # N=180/200/240 are 15 - the boundary this script probes.
+    dim = _dim_for(n_osc)
     # Which chunk sizes to run this invocation. The full sweep exceeds
     # a single foreground window once cooldowns are counted, so it is
     # run in pieces rather than backgrounded - background timing jobs
@@ -101,10 +145,12 @@ def main():
     only = sys.argv[2].split(",") if len(sys.argv) > 2 else None
     sizes = [int(c) for c in only] if only else [1, 2, 4, 8]
 
-    print(f"N={n_osc} (dim={dim}), one worker per PHYSICAL core")
-    print(f"L2 1 MiB/core, L3 {L3_BYTES // 1024 // 1024} MiB shared\n")
+    print(f"N={n_osc} (dim={dim}), one worker per PHYSICAL core",
+          flush=True)
+    print(f"L2 1 MiB/core, L3 {L3_BYTES // 1024 // 1024} MiB shared\n",
+          flush=True)
     print(f"{'chunk':>6} {'buf/worker':>11} {'4x buf':>9} {'w1_c1':>9} "
-          f"{'w4_c4':>9} {'speedup':>8} {'efficiency':>11}")
+          f"{'w4_c4':>9} {'speedup':>8} {'efficiency':>11}", flush=True)
 
     terms_seen = set()
     for cs in sizes:
@@ -119,7 +165,8 @@ def main():
         sp = t1 / t4
         print(f"{cs:>6} {buf / 1024:>8.0f} KiB {4 * buf / 1024:>6.0f} KiB "
               f"{t1:>8.2f}s {t4:>8.2f}s {sp:>7.3f}x {sp / 4 * 100:>10.1f}%"
-              + ("  <- 4x buf exceeds L3" if 4 * buf > L3_BYTES else ""))
+              + ("  <- 4x buf exceeds L3" if 4 * buf > L3_BYTES else ""),
+              flush=True)
 
     print(f"\nterm counts across all runs: {terms_seen}")
     if len(terms_seen) > 1:
