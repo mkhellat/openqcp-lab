@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -216,79 +217,189 @@ def _parallel_checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
     return Path(str(checkpoint_path) + ".parallel_progress.json")
 
 
-def _read_checkpoint_triples(
-    checkpoint_path: Path,
-) -> tuple[list[int], list[int], list[complex]]:
-    """Read ``(x, z, coeff)`` triples from a checkpoint JSONL file,
-    tolerating a truncated final line and deduplicating by ``(x, z)``.
+_CHECKPOINT_MAGIC = b"PKCP"
+_CHECKPOINT_VERSION = 1
 
-    Both checkpoint formats append one JSON object per line and only
-    update their progress-marker file *after* a chunk's lines are
-    fully written (see ``_append_checkpoint_chunk``/
-    ``_append_parallel_checkpoint_chunk``) - so a crash mid-write can
-    leave the checkpoint file's LAST line truncated while every
-    earlier line is a complete, already-flushed write. Only the last
-    line is treated as possibly-truncated: a ``json.loads`` failure on
-    any earlier line is a real corruption, not a resumable crash
-    artifact, and is left to raise.
+# magic, version, index-dtype code, reserved, chunk index, term count.
+# chunk_index and n_terms are u64 deliberately: N=150 alone has
+# 91,652,096 terms across thousands of chunks, and a u32 term count
+# would cap a single frame at 4.29e9 - close enough to real workloads
+# to be a latent bug rather than a safe assumption.
+_CHECKPOINT_HEADER_STRUCT = struct.Struct("<4sHBBQQ")
 
-    A crash between finishing a chunk's triple-line writes and its
-    progress-marker update means that chunk gets recomputed and
-    re-appended on resume (correct - the marker still says it is not
-    done), leaving TWO sets of lines for the same ``(x, z)`` pairs in
-    the file (a real bug found via review, REVIEW_NOTES.md 2026-09-04
-    "over-record resume"). Both sets hold the same recomputed value
-    for a given ``(x, z)``, so keeping only the LAST occurrence (the
-    resumed run's fresh append, which is always later in the file than
-    any stale earlier attempt) is correct and removes the duplicate.
+# Persisted on disk: these codes are part of the format and must never
+# be renumbered. _index_dtype_for_dim picks the width from `dim`, so a
+# file can legitimately contain any of the three.
+_INDEX_DTYPE_CODES: dict[int, np.dtype] = {
+    0: np.dtype(np.uint16),
+    1: np.dtype(np.uint32),
+    2: np.dtype(np.intp),
+}
+_INDEX_DTYPE_TO_CODE = {v: k for k, v in _INDEX_DTYPE_CODES.items()}
+
+
+def _checkpoint_frame_header(
+    chunk_index: int, n_terms: int, idx_dtype: np.dtype
+) -> bytes:
+    """Pack one frame's fixed-width header.
+
+    The index dtype is recorded per frame rather than assumed, which is
+    a correctness requirement and not a size optimization:
+    ``_index_dtype_for_dim`` returns ``uint16`` only while
+    ``dim <= 65536``, so a reader that assumed a width would silently
+    WRAP a 17-qubit-or-larger operator's indices and produce wrong
+    Pauli labels instead of an error.
     """
-    x_vals: list[int] = []
-    z_vals: list[int] = []
-    coeff_vals: list[complex] = []
-    with open(checkpoint_path) as f:
-        lines = f.readlines()
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            if i == len(lines) - 1:
-                continue  # truncated final line from a mid-write crash
-            raise
-        x_vals.append(record["x"])
-        z_vals.append(record["z"])
-        coeff_vals.append(complex(record["re"], record["im"]))
+    code = _INDEX_DTYPE_TO_CODE.get(np.dtype(idx_dtype))
+    if code is None:
+        raise ValueError(
+            f"unsupported checkpoint index dtype {idx_dtype!r} - "
+            f"expected one of {sorted(str(d) for d in _INDEX_DTYPE_CODES.values())}"
+        )
+    return _CHECKPOINT_HEADER_STRUCT.pack(
+        _CHECKPOINT_MAGIC, _CHECKPOINT_VERSION, code, 0, chunk_index, n_terms
+    )
 
-    last_by_key: dict[tuple[int, int], int] = {}
-    for idx, (x, z) in enumerate(zip(x_vals, z_vals)):
-        last_by_key[(x, z)] = idx
-    if len(last_by_key) != len(x_vals):
-        keep = sorted(last_by_key.values())
-        x_vals = [x_vals[i] for i in keep]
-        z_vals = [z_vals[i] for i in keep]
-        coeff_vals = [coeff_vals[i] for i in keep]
-    return x_vals, z_vals, coeff_vals
+
+def _parse_checkpoint_frame_header(raw: bytes) -> tuple[int, int, np.dtype]:
+    """Unpack a frame header, validating every field.
+
+    Returns ``(chunk_index, n_terms, idx_dtype)``. Raises ``ValueError``
+    on a short buffer, wrong magic, unknown version, or unknown index
+    dtype - all of which mean the file is not a frame boundary this
+    reader understands, and guessing would corrupt the replay.
+    """
+    if len(raw) < _CHECKPOINT_HEADER_STRUCT.size:
+        raise ValueError(
+            f"truncated checkpoint frame header: got {len(raw)} bytes, "
+            f"need {_CHECKPOINT_HEADER_STRUCT.size}"
+        )
+    magic, version, code, _reserved, chunk_index, n_terms = (
+        _CHECKPOINT_HEADER_STRUCT.unpack(raw[: _CHECKPOINT_HEADER_STRUCT.size])
+    )
+    if magic != _CHECKPOINT_MAGIC:
+        raise ValueError(
+            f"bad checkpoint frame magic {magic!r} - expected "
+            f"{_CHECKPOINT_MAGIC!r}"
+        )
+    if version != _CHECKPOINT_VERSION:
+        raise ValueError(
+            f"unsupported checkpoint format version {version} - this "
+            f"build writes and reads version {_CHECKPOINT_VERSION}"
+        )
+    idx_dtype = _INDEX_DTYPE_CODES.get(code)
+    if idx_dtype is None:
+        raise ValueError(
+            f"unknown checkpoint index dtype code {code}"
+        )
+    return chunk_index, n_terms, idx_dtype
+
+
+def _append_checkpoint_frame(
+    checkpoint_path: str | Path,
+    chunk_index: int,
+    x_out: NDArray[np.integer],
+    z_out: NDArray[np.integer],
+    coeff_out: NDArray[np.complexfloating],
+    idx_dtype: np.dtype,
+) -> None:
+    """Append one chunk as a single self-describing frame.
+
+    Deliberately free of any per-term Python work. The JSONL format
+    this replaces cost ~4.2 us per term in ``.tolist()`` + a dict
+    literal + ``json.dumps``, GIL-held in the parent's drain loop -
+    measured at 94.8% of the writer's total cost, versus 1.1% for the
+    disk I/O itself (profiling/phase13/checkpoint_cost_attribution.py).
+    Three ``tobytes()`` calls move the same information with no object
+    churn, which is what keeps the drain loop empty enough for the
+    parallel path to scale.
+    """
+    x_arr = np.ascontiguousarray(x_out, dtype=idx_dtype)
+    z_arr = np.ascontiguousarray(z_out, dtype=idx_dtype)
+    coeff_arr = np.ascontiguousarray(coeff_out, dtype=complex)
+    if not (len(x_arr) == len(z_arr) == len(coeff_arr)):
+        raise ValueError(
+            f"checkpoint frame arrays must be equal length, got "
+            f"{len(x_arr)}, {len(z_arr)}, {len(coeff_arr)}"
+        )
+    header = _checkpoint_frame_header(chunk_index, len(x_arr), idx_dtype)
+    with open(checkpoint_path, "ab") as f:
+        f.write(header)
+        f.write(x_arr.tobytes())
+        f.write(z_arr.tobytes())
+        f.write(coeff_arr.tobytes())
+
+
+def _iter_checkpoint_frames(
+    checkpoint_path: str | Path,
+    valid_indices: set[int] | None = None,
+) -> Iterator[tuple[int, NDArray, NDArray, NDArray]]:
+    """Yield ``(chunk_index, x, z, coeff)`` per complete frame.
+
+    One frame is live at a time, so replay memory is bounded by the
+    largest chunk rather than by the file - the property the JSONL
+    reader lacked. That reader called ``f.readlines()`` and built three
+    full Python lists plus a dedup dict, which at N=150 is >20 GB and
+    simply could not run.
+
+    Stops cleanly at the first frame that is incomplete (a crash
+    mid-write) or absent from ``valid_indices`` (recorded but never
+    marked complete). Because a reader stops at the first such frame,
+    a duplicate can never survive to be read, which is what removes
+    the need for the old ``last_by_key`` deduplication entirely.
+    Corruption that is not a clean truncation - a bad magic in an
+    earlier frame - still raises, since that is real damage rather
+    than an interrupted append.
+    """
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        return
+
+    header_size = _CHECKPOINT_HEADER_STRUCT.size
+    with open(checkpoint_path, "rb") as f:
+        while True:
+            raw_header = f.read(header_size)
+            if not raw_header:
+                return  # clean end of file
+            if len(raw_header) < header_size:
+                return  # torn header from an interrupted append
+            chunk_index, n_terms, idx_dtype = _parse_checkpoint_frame_header(
+                raw_header
+            )
+            idx_nbytes = n_terms * idx_dtype.itemsize
+            coeff_nbytes = n_terms * np.dtype(complex).itemsize
+            payload = f.read(2 * idx_nbytes + coeff_nbytes)
+            if len(payload) < 2 * idx_nbytes + coeff_nbytes:
+                return  # torn payload from an interrupted append
+            if valid_indices is not None and chunk_index not in valid_indices:
+                return
+            x = np.frombuffer(payload, dtype=idx_dtype, count=n_terms)
+            z = np.frombuffer(
+                payload, dtype=idx_dtype, count=n_terms, offset=idx_nbytes
+            )
+            coeff = np.frombuffer(
+                payload, dtype=complex, count=n_terms, offset=2 * idx_nbytes
+            )
+            yield chunk_index, x, z, coeff
 
 
 def _load_parallel_checkpoint(
     checkpoint_path: str | Path | None,
-) -> tuple[set[int], tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
+) -> tuple[set[int], Iterator[tuple[NDArray, NDArray, NDArray]] | None]:
     """Read an existing *parallel* checkpoint, if any.
 
     Unlike the sequential format's single monotonic ``next_chunk``
     index (correct only when chunks complete strictly in order),
     parallel workers complete chunks in whatever order the pool
-    schedules them - the progress file here records the *set* of
-    chunk indices already completed, so resume can skip exactly those
-    chunks regardless of completion order, and re-submit every other
-    chunk (including ones "in the middle" that never got started).
+    schedules them - the progress file records the *set* of chunk
+    indices already completed, so resume can skip exactly those and
+    re-submit every other chunk regardless of completion order.
 
-    Returns ``(completed_chunk_indices, (x, z, coeff) | None)``: the
-    set of chunk indices to skip re-submitting, and the previously
-    recorded triples to fold into the result, or ``None`` if there is
-    nothing to replay.
+    Returns ``(completed_chunk_indices, frames | None)``, where
+    ``frames`` is a lazy iterator of ``(x, z, coeff)`` triples, one per
+    recorded frame. It is an iterator rather than one combined tuple so
+    that replay holds one chunk at a time; materializing the whole
+    checkpoint is what made resume unusable at N=150.
     """
     if checkpoint_path is None:
         return set(), None
@@ -300,44 +411,44 @@ def _load_parallel_checkpoint(
     with open(progress_path) as f:
         progress = json.load(f)
     completed = set(progress["completed_chunk_indices"])
-
-    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
-
-    if not x_vals:
+    if not completed:
         return completed, None
-    return completed, (
-        np.array(x_vals, dtype=np.intp),
-        np.array(z_vals, dtype=np.intp),
-        np.array(coeff_vals, dtype=complex),
-    )
+
+    def _frames() -> Iterator[tuple[NDArray, NDArray, NDArray]]:
+        for _index, x, z, coeff in _iter_checkpoint_frames(
+            checkpoint_path, valid_indices=completed
+        ):
+            yield x, z, coeff
+
+    return completed, _frames()
 
 
 def _append_parallel_checkpoint_chunk(
     checkpoint_path: str | Path,
     completed_chunk_indices: set[int],
     chunk_index: int,
-    x_out: NDArray[np.intp],
-    z_out: NDArray[np.intp],
+    x_out: NDArray[np.integer],
+    z_out: NDArray[np.integer],
     coeff_out: NDArray[np.complexfloating],
+    idx_dtype: np.dtype,
 ) -> None:
-    """Append one completed chunk's surviving triples to the parallel
-    checkpoint file, then record its index in the completed set.
+    """Append one completed chunk's frame, then record its index.
 
     Called from the main process only (after collecting a worker's
-    result via ``as_completed``), so this file/set update itself is
-    never concurrently written by multiple processes - workers return
-    their chunk's triples to the main process; they do not write the
-    checkpoint file directly. As with the sequential format, the
-    triples are appended before the progress marker is updated, so a
-    crash mid-write leaves the progress file not yet listing this
-    chunk as completed - it is simply resubmitted on resume rather
-    than silently corrupted.
-    """
-    checkpoint_path = Path(checkpoint_path)
-    with open(checkpoint_path, "a") as f:
-        for x, z, coeff in zip(x_out.tolist(), z_out.tolist(), coeff_out.tolist()):
-            f.write(json.dumps({"x": x, "z": z, "re": coeff.real, "im": coeff.imag}) + "\n")
+    result), so this file/set update is never concurrently written by
+    multiple processes - workers return their chunk's triples to the
+    main process; they do not write the checkpoint file directly.
 
+    The frame is written before the progress marker is updated, so a
+    crash mid-write leaves the progress file not yet listing this
+    chunk: the frame is then either torn (and stops the reader) or
+    complete-but-unmarked (and is dropped by ``valid_indices``). Either
+    way the chunk is simply resubmitted on resume, and no duplicate can
+    reach a reader - which is why this format needs no deduplication.
+    """
+    _append_checkpoint_frame(
+        checkpoint_path, chunk_index, x_out, z_out, coeff_out, idx_dtype
+    )
     completed_chunk_indices.add(chunk_index)
     progress_path = _parallel_checkpoint_progress_path(checkpoint_path)
     with open(progress_path, "w") as f:
@@ -346,14 +457,17 @@ def _append_parallel_checkpoint_chunk(
 
 def _load_checkpoint(
     checkpoint_path: str | Path | None,
-) -> tuple[int, tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.complexfloating]] | None]:
-    """Read an existing checkpoint, if any.
+) -> tuple[int, Iterator[tuple[NDArray, NDArray, NDArray]] | None]:
+    """Read an existing *sequential* checkpoint, if any.
 
-    Returns ``(resume_from_chunk_index, (x, z, coeff) | None)``: the
-    chunk index to resume from (0 if no checkpoint, or the checkpoint
-    is absent/incomplete) and the previously-recorded triples to
-    replay into the fresh accumulator, or ``None`` if there is nothing
-    to replay.
+    Returns ``(resume_from_chunk_index, frames | None)``: the chunk
+    index to resume from (0 if absent or incomplete) and a lazy
+    iterator of previously-recorded ``(x, z, coeff)`` triples, one per
+    frame, or ``None`` if there is nothing to replay.
+
+    Sequential chunks complete strictly in order, so a single monotonic
+    marker is sufficient here - every frame before ``next_chunk`` is
+    valid, and any frame at or beyond it was written but never marked.
     """
     if checkpoint_path is None:
         return 0, None
@@ -365,41 +479,37 @@ def _load_checkpoint(
     with open(progress_path) as f:
         progress = json.load(f)
     next_chunk = progress["next_chunk"]
+    if next_chunk <= 0:
+        return 0, None
 
-    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
+    def _frames() -> Iterator[tuple[NDArray, NDArray, NDArray]]:
+        for _index, x, z, coeff in _iter_checkpoint_frames(
+            checkpoint_path, valid_indices=set(range(next_chunk))
+        ):
+            yield x, z, coeff
 
-    return next_chunk, (
-        np.array(x_vals, dtype=np.intp),
-        np.array(z_vals, dtype=np.intp),
-        np.array(coeff_vals, dtype=complex),
-    )
+    return next_chunk, _frames()
 
 
 def _append_checkpoint_chunk(
     checkpoint_path: str | Path,
     next_chunk: int,
-    x_out: NDArray[np.intp],
-    z_out: NDArray[np.intp],
+    x_out: NDArray[np.integer],
+    z_out: NDArray[np.integer],
     coeff_out: NDArray[np.complexfloating],
+    idx_dtype: np.dtype,
 ) -> None:
-    """Append one completed chunk's surviving triples to the
-    checkpoint file, then update the progress marker.
+    """Append one completed chunk's frame, then advance the marker.
 
-    The triples are appended before the progress marker is updated,
-    so a crash mid-write leaves the progress marker pointing at a
-    chunk whose triples may be incompletely written - ``_load_checkpoint``
-    is only ever consulted for chunks strictly before ``next_chunk``
-    once this function has returned for the resumability guarantee to
-    hold; a crash during this function itself simply loses that one
-    in-flight chunk's checkpoint, which is then recomputed on resume
-    (not silently corrupted), since ``next_chunk`` is only advanced
-    (in the progress file) after this file's write succeeds.
+    ``next_chunk`` is the count of completed chunks, so the frame being
+    written carries index ``next_chunk - 1``. The frame is written
+    before the marker advances, so a crash mid-write leaves a torn or
+    unmarked frame that the reader drops, and that chunk is recomputed
+    on resume rather than silently corrupted.
     """
-    checkpoint_path = Path(checkpoint_path)
-    with open(checkpoint_path, "a") as f:
-        for x, z, coeff in zip(x_out.tolist(), z_out.tolist(), coeff_out.tolist()):
-            f.write(json.dumps({"x": x, "z": z, "re": coeff.real, "im": coeff.imag}) + "\n")
-
+    _append_checkpoint_frame(
+        checkpoint_path, next_chunk - 1, x_out, z_out, coeff_out, idx_dtype
+    )
     progress_path = _checkpoint_progress_path(checkpoint_path)
     with open(progress_path, "w") as f:
         json.dump({"next_chunk": next_chunk}, f)
@@ -448,17 +558,15 @@ def _iter_chunked_coefficients(
     sorted_q_nz = q_nz[order]
 
     chunk_starts = list(range(0, n_active, chunk_size))
-    resume_from, checkpoint = _load_checkpoint(checkpoint_path)
-    if checkpoint is not None and resume_from > 0:
-        # Replay already-completed chunks' triples from the checkpoint
-        # file rather than recomputing them - the actual resume
-        # behavior (see fwht_pauli_coefficients's checkpoint_path
-        # docstring). Replayed as one combined "chunk" up front; a
-        # caller streaming this (fwht_pauli_terms_iter) sees it as a
-        # single larger tile rather than per-original-chunk history,
-        # which is fine since the checkpoint file itself does not
-        # preserve original chunk boundaries.
-        yield checkpoint
+    resume_from, checkpoint_frames = _load_checkpoint(checkpoint_path)
+    idx_dtype = _index_dtype_for_dim(dim)
+    if checkpoint_frames is not None and resume_from > 0:
+        # Replay already-completed chunks from the checkpoint rather
+        # than recomputing them. Frames record their own chunk index,
+        # so this replays per original chunk - the JSONL format could
+        # not preserve boundaries and had to yield one combined tile.
+        for frame in checkpoint_frames:
+            yield frame
 
     for chunk_index in range(resume_from, len(chunk_starts)):
         chunk_start = chunk_starts[chunk_index]
@@ -494,7 +602,8 @@ def _iter_chunked_coefficients(
 
         if checkpoint_path is not None:
             _append_checkpoint_chunk(
-                checkpoint_path, chunk_index + 1, chunk_x_out, z_idx, chunk_coeff_out
+                checkpoint_path, chunk_index + 1,
+                chunk_x_out, z_idx, chunk_coeff_out, idx_dtype,
             )
 
         yield chunk_x_out, z_idx, chunk_coeff_out
@@ -621,16 +730,21 @@ def fwht_pauli_coefficients(
             unaffected and keep returning unthresholded output.
         checkpoint_path: Only used when ``chunk_size`` is set. If
             given, each completed chunk's surviving triples are
-            appended to ``checkpoint_path`` (newline-delimited JSON)
+            appended to ``checkpoint_path`` as one binary chunk-framed
+            record - a small fixed-width header (magic, format
+            version, index dtype, chunk index, term count) followed by
+            the raw ``x``/``z``/``coeff`` arrays' bytes, with no
+            per-term Python object construction on the write path -
             and a sibling ``<checkpoint_path>.progress.json`` file
             records the index of the next chunk to process. If a
             checkpoint already exists at this path when called, chunks
-            already recorded there are skipped and their triples are
-            read back rather than recomputed - resuming a crashed or
-            interrupted run rather than restarting from chunk 0. This
-            costs one small file append per chunk (negligible next to
-            each chunk's O(chunk_size * dim * log dim) transform cost -
-            see PLAN.md Phase 9), so it is opt-in but effectively free
+            already recorded there are skipped and replayed frame by
+            frame, one original chunk at a time, rather than
+            recomputed - resuming a crashed or interrupted run rather
+            than restarting from chunk 0. This costs one small file
+            append per chunk (negligible next to each chunk's
+            O(chunk_size * dim * log dim) transform cost - see
+            PLAN.md Phase 9), so it is opt-in but effectively free
             when enabled; ``None`` (default) does no I/O at all.
 
     Returns:
@@ -783,6 +897,88 @@ def _build_real_terms(
     return dict(zip(labels, coefficient_values.real.tolist()))
 
 
+def _check_hermitian_violation(
+    coefficient_values: NDArray[np.complexfloating],
+    atol: float,
+    x: NDArray[np.integer],
+    z: NDArray[np.integer],
+    n_qubits: int,
+) -> None:
+    """Raise if any coefficient has a non-negligible imaginary part.
+
+    The array-yielding path's counterpart to the check inside
+    ``_build_real_terms`` - same tolerance rule, same error message,
+    but without building a label for every term first. On violation it
+    labels ONLY the single offending term, so the diagnostic is
+    byte-identical at O(1) cost rather than O(t_i).
+
+    The tolerance floor must match ``_build_real_terms`` exactly:
+    ``abs(c)`` is the *full complex magnitude*, not ``abs(c.real)``
+    (they only agree when the imaginary part is already negligible,
+    which is exactly the case this check exists to catch).
+    """
+    c_abs = np.abs(coefficient_values)
+    imag_abs = np.abs(coefficient_values.imag)
+    violation = imag_abs > np.maximum(atol, 1e-6 * c_abs)
+    if not violation.any():
+        return
+    first = int(np.nonzero(violation)[0][0])
+    label = _pauli_label_batch(x[first:first + 1], z[first:first + 1], n_qubits)[0]
+    c = coefficient_values[first]
+    raise ValueError(
+        f"term {label!r} has non-negligible "
+        f"imaginary part {c.imag!r} - operator may not be Hermitian; "
+        "pass assume_hermitian=False to decompose it anyway"
+    )
+
+
+def terms_from_arrays(
+    x: NDArray[np.integer],
+    z: NDArray[np.integer],
+    coeff: NDArray[np.complexfloating],
+    n_qubits: int,
+    assume_hermitian: bool = True,
+    atol: float = 1e-10,
+) -> dict[str, complex] | dict[str, float]:
+    """Render one chunk's ``(x, z, coeff)`` arrays to a label -> coefficient dict.
+
+    The opt-in counterpart to ``parallel_decompose_arrays`` (PLAN.md
+    Phase 13): that function yields raw arrays so the ~91.6M Python
+    ``str`` objects and dict insertions a full decomposition would
+    otherwise need are never built in the parent process - which is
+    what lifts the multi-core speedup ceiling from ~1.21x to a measured
+    ~2.19x. This function is where a caller opts back IN to labels,
+    for as many terms as they actually want.
+
+    Building labels for every term of a large decomposition costs the
+    same here as it does inside ``parallel_decompose``; the saving
+    comes from calling this on a *subset* (filter by coefficient
+    magnitude, take the largest terms, render one chunk) rather than
+    on all of them.
+
+    Args:
+        x: Per-term x bitmasks, any integer dtype (``uint16`` from a
+            fresh run, ``intp`` from a legacy checkpoint - both work).
+        z: Per-term z bitmasks, same length and dtype rules as ``x``.
+        coeff: Per-term complex coefficients.
+        n_qubits: Number of qubits, i.e. ``int(log2(dim))``.
+        assume_hermitian: If ``True`` (default), raises ``ValueError``
+            when any coefficient has a non-negligible imaginary part
+            and returns real coefficients - identical contract and
+            identical error message to ``fwht_pauli_terms``. If
+            ``False``, returns complex coefficients unchecked.
+        atol: Tolerance floor for the Hermiticity check.
+
+    Returns:
+        ``dict[str, float]`` when ``assume_hermitian=True``, else
+        ``dict[str, complex]``.
+    """
+    labels = _pauli_label_batch(x, z, n_qubits)
+    if assume_hermitian:
+        return _build_real_terms(labels, coeff, atol)
+    return {label: complex(c) for label, c in zip(labels, coeff.tolist())}
+
+
 def fwht_pauli_terms(
     operator: NDArray[np.complexfloating] | NDArray[np.floating],
     atol: float = 1e-10,
@@ -931,15 +1127,20 @@ def fwht_pauli_terms_iter(
             ``fwht_pauli_terms`` (non-streaming) instead.
         checkpoint_path: Same as ``fwht_pauli_terms`` - passed through
             to ``fwht_pauli_coefficients``'s chunked accumulation
-            internals for crash/resume (PLAN.md Phase 9). Note this
-            checkpoints the underlying coefficient computation, not
-            this generator's own iteration state - resuming a
-            streaming consumer that was itself interrupted partway
-            through consuming chunks means simply calling this
-            function again with the same ``checkpoint_path``; already
-            checkpointed chunks are replayed as one combined tile (see
-            ``_iter_chunked_coefficients``), not re-yielded
-            chunk-by-chunk in their original grouping.
+            internals for crash/resume (PLAN.md Phase 9). Checkpoints
+            are stored as a binary chunk-framed format (one
+            self-describing frame per completed chunk - see
+            ``_append_checkpoint_frame``/``_iter_checkpoint_frames``),
+            not a per-term text log. Note this checkpoints the
+            underlying coefficient computation, not this generator's
+            own iteration state - resuming a streaming consumer that
+            was itself interrupted partway through consuming chunks
+            means simply calling this function again with the same
+            ``checkpoint_path``; already checkpointed chunks are
+            replayed one frame at a time, per original chunk (see
+            ``_iter_chunked_coefficients``), so a consumer sees the
+            same chunk boundaries a resumed run would have produced
+            on a first pass, not one merged replay tile.
         parallel_labels: If ``True``, uses the oneTBB-parallel label
             kernel (``pauli_label_batch_parallel``) per chunk instead
             of the serial kernel. Measured **in isolation**
@@ -1558,13 +1759,21 @@ def parallel_decompose(
             per-chunk, same all-or-nothing-per-chunk (not
             all-or-nothing-per-operator) contract; see that function's
             own docstring for the difference from ``fwht_pauli_terms``.
-        checkpoint_path: If given, uses a *different* checkpoint format
-            from ``fwht_pauli_terms``/``fwht_pauli_terms_iter``'s
-            sequential one (a distinct file suffix, so the two never
-            collide) - records the *set* of completed chunk indices
-            rather than one monotonic marker, since parallel workers
-            complete chunks out of order; resume re-submits every
-            chunk not already in that set, regardless of position.
+        checkpoint_path: If given, checkpoints are written as the same
+            binary chunk-framed format ``fwht_pauli_terms``/
+            ``fwht_pauli_terms_iter`` use - one shared writer
+            (``_append_checkpoint_frame``) and one shared reader
+            (``_iter_checkpoint_frames``) on both paths, so a
+            checkpoint written by either is resumable by the other
+            (see ``docs/tutorial.md``). What differs is only the
+            *progress marker* that records which chunks are complete:
+            the sequential path's is a single monotonic ``next_chunk``
+            index, valid because chunks finish strictly in order,
+            while this function's is the *set* of completed chunk
+            indices, because parallel workers finish out of order.
+            The two progress markers use distinct file suffixes so
+            they never collide; resume here re-submits every chunk
+            index not already in that set, regardless of position.
 
     Yields:
         One ``dict`` per completed chunk, same value-type contract as
@@ -1634,15 +1843,18 @@ def parallel_decompose(
     sorted_q_nz = q_nz[order]
 
     chunk_starts = list(range(0, n_active, chunk_size))
-    completed_indices, checkpoint = _load_parallel_checkpoint(checkpoint_path)
-    if checkpoint is not None:
-        labels = _pauli_label_batch(checkpoint[0], checkpoint[1], n_qubits)
-        if assume_hermitian:
-            yield _build_real_terms(labels, checkpoint[2], atol)
-        else:
-            yield {
-                label: complex(c) for label, c in zip(labels, checkpoint[2].tolist())
-            }
+    completed_indices, checkpoint_frames = _load_parallel_checkpoint(checkpoint_path)
+    idx_dtype = _index_dtype_for_dim(dim)
+    if checkpoint_frames is not None:
+        for ck_x, ck_z, ck_coeff in checkpoint_frames:
+            labels = _pauli_label_batch(ck_x, ck_z, n_qubits)
+            if assume_hermitian:
+                yield _build_real_terms(labels, ck_coeff, atol)
+            else:
+                yield {
+                    label: complex(c)
+                    for label, c in zip(labels, ck_coeff.tolist())
+                }
 
     pending = [
         (i, start, min(start + chunk_size, n_active))
@@ -1720,7 +1932,7 @@ def parallel_decompose(
                 if checkpoint_path is not None:
                     _append_parallel_checkpoint_chunk(
                         checkpoint_path, completed_indices, chunk_index,
-                        chunk_x_out, z_idx, chunk_coeff_out,
+                        chunk_x_out, z_idx, chunk_coeff_out, idx_dtype,
                     )
 
                 labels = _pauli_label_batch(chunk_x_out, z_idx, n_qubits)
@@ -1730,6 +1942,195 @@ def parallel_decompose(
                     yield {
                         label: complex(c) for label, c in zip(labels, chunk_coeff_out.tolist())
                     }
+
+
+def parallel_decompose_arrays(
+    operator: NDArray[np.complexfloating] | NDArray[np.floating],
+    chunk_size: int | None = None,
+    n_workers: int | None = None,
+    atol: float = 1e-10,
+    assume_hermitian: bool = True,
+    checkpoint_path: str | Path | None = None,
+) -> Iterator[tuple[NDArray, NDArray, NDArray]]:
+    """Multi-core decomposition yielding raw ``(x, z, coeff)`` arrays -
+    PLAN.md Phase 13.
+
+    Identical machinery to ``parallel_decompose`` (same chunking, same
+    auto-tuning, same bounded submission, same CPU pinning, same
+    checkpoint format) with one difference: it yields each chunk's raw
+    arrays instead of building a ``dict[str, complex]`` from them.
+
+    That difference is the whole point. Building ~91.6M Python ``str``
+    objects and dict entries at N=150 is ~82% of ``parallel_decompose``'s
+    total runtime, all of it in the single parent process, which caps
+    its speedup at ~1.21x no matter how many cores are available
+    (measured: best-ever 1.284x, and 8 workers gives 1.100x). Removing
+    that work from the drain loop was measured to restore real
+    multi-core scaling - 2.191x, statistically indistinguishable from a
+    control doing no drain-side work at all. See
+    ``profiling/phase13/drain_gil_backpressure_results.jsonl``.
+
+    Use ``terms_from_arrays`` to render any chunk (or a filtered subset
+    of one) to the usual label -> coefficient dict.
+
+    Yields:
+        ``(x, z, coeff)`` per completed chunk: two integer arrays of
+        symplectic bitmasks and one ``complex128`` coefficient array,
+        all the same length. **Order is not guaranteed to match chunk
+        order** - same contract as ``parallel_decompose``. A chunk with
+        no surviving terms yields three empty arrays rather than being
+        skipped, so chunk count is stable.
+
+    Raises:
+        ValueError: If ``assume_hermitian=True`` and any coefficient
+            has a non-negligible imaginary part. Checked per chunk, so
+            this can raise *after* earlier chunks have been yielded -
+            the same partial-yield-then-error contract
+            ``fwht_pauli_terms_iter`` documents. Coefficients are kept
+            ``complex128`` across the process boundary precisely so
+            this check remains possible.
+    """
+    import multiprocessing
+    from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+
+    from paulikit.algorithms import autotune
+
+    operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz = _prepare_operator_for_fwht(
+        operator
+    )
+    active_x, inverse = np.unique(x_nz, return_inverse=True)
+    n_active = len(active_x)
+    z_indices = np.arange(dim)[np.newaxis, :]
+
+    if n_workers is None:
+        # _detect_available_worker_count() counts logical CPUs -
+        # correct for cgroup/cpuset restrictions, but on a
+        # hyperthreaded machine that over-counts real parallel
+        # capacity for this CPU-bound workload. Real measurement
+        # (profiling/phase13/n_workers_placement_and_cache_findings.md)
+        # found n_workers=2 beats both 4 (physical core count on the
+        # 4-core/8-thread dev machine) and 8 (logical CPU count) on
+        # wall-clock, and that neither n_workers=4 nor n_workers=8
+        # achieves meaningful isolation without explicit pinning
+        # (added below) - capping the auto-detected default to the
+        # number of distinct PHYSICAL cores (not logical CPUs) is the
+        # evidence-based choice here, not a guess. Falls back to the
+        # logical-CPU count if the physical-core probe itself is
+        # unavailable (non-Linux).
+        logical_default = _detect_available_worker_count()
+        physical_cpus = _physical_core_representative_cpus()
+        n_workers = len(physical_cpus) if physical_cpus else logical_default
+
+    if chunk_size is None:
+        fixed_resident_bytes = _per_worker_resident_bytes(
+            operator, is_sparse_input, len(p_nz)
+        )
+        chunk_size = _recommended_parallel_chunk_size(
+            dim, n_workers, fixed_resident_bytes
+        )
+
+    n_workers = max(1, min(n_workers, max(1, (n_active + chunk_size - 1) // chunk_size)))
+
+    order = np.argsort(inverse, kind="stable")
+    sorted_inverse = inverse[order]
+    sorted_p_nz = p_nz[order]
+    sorted_q_nz = q_nz[order]
+
+    chunk_starts = list(range(0, n_active, chunk_size))
+    completed_indices, checkpoint_frames = _load_parallel_checkpoint(checkpoint_path)
+    idx_dtype = _index_dtype_for_dim(dim)
+    if checkpoint_frames is not None:
+        for ck_x, ck_z, ck_coeff in checkpoint_frames:
+            if assume_hermitian:
+                _check_hermitian_violation(
+                    ck_coeff, atol, ck_x, ck_z, n_qubits
+                )
+            yield ck_x, ck_z, ck_coeff
+
+    pending = [
+        (i, start, min(start + chunk_size, n_active))
+        for i, start in enumerate(chunk_starts)
+        if i not in completed_indices
+    ]
+    if not pending:
+        return
+
+    # Bounded submission - a REAL bug found by direct measurement
+    # (profiling/phase13/n150_worker_count_sweep.py, 2026-09-02):
+    # submitting every chunk as a task up front (pool.submit for all
+    # of `pending`, often thousands of tasks at real N) lets completed
+    # workers' results pile up in the pool's IPC/result queue faster
+    # than this single-threaded as_completed loop drains them - the
+    # backlog of already-computed-but-not-yet-consumed (x, z, coeff)
+    # arrays is NOT bounded by chunk_size or per_worker_memory_budget_
+    # bytes at all, and grows with n_workers (more workers finish
+    # chunks faster, the drain rate here does not increase to match) -
+    # measured real RSS scaling from ~5 GiB (n_workers=1) to ~25 GiB
+    # (n_workers=8) at N=150, confirming this, not the chunk_size
+    # working set, was the dominant memory cost. Keeping at most
+    # roughly one in-flight task per worker (plus a small pipelining
+    # margin) bounds the backlog to O(n_workers), matching the
+    # O(chunk_size * dim) per-task footprint the memory-budget
+    # division above was already designed to control.
+    max_in_flight = max(1, 2 * n_workers)
+
+    # CPU-pinning fix (PLAN.md Phase 13a, found necessary by direct
+    # measurement - profiling/phase13/n_workers_placement_and_cache_
+    # findings.md): without this, ProcessPoolExecutor workers are
+    # freely migrated by the Linux scheduler across ALL logical CPUs,
+    # confirmed via direct ps -o psr sampling to cause hyperthread-
+    # sibling collisions (two workers on the same physical core at
+    # once) at every n_workers value tested, not just when n_workers
+    # exceeds the physical core count. pin_cpus is one representative
+    # logical CPU per physical core (None if unavailable - non-Linux,
+    # or the physical-core probe itself failed); next_pin_index is a
+    # cross-process shared counter each worker atomically increments
+    # on startup to claim a distinct entry (ProcessPoolExecutor's
+    # initializer gives every worker identical initargs, with no
+    # built-in per-worker ordinal of its own).
+    pin_cpus = _physical_core_representative_cpus()
+    next_pin_index = multiprocessing.Value("i", 0)
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_parallel_worker_init,
+        initargs=(
+            operator, is_sparse_input, sorted_inverse, sorted_p_nz, sorted_q_nz,
+            active_x, dim, n_qubits, z_indices, atol, pin_cpus, next_pin_index,
+        ),
+    ) as pool:
+        pending_iter = iter(pending)
+        in_flight: set = set()
+
+        def _submit_next() -> bool:
+            item = next(pending_iter, None)
+            if item is None:
+                return False
+            chunk_index, chunk_start, chunk_end = item
+            in_flight.add(pool.submit(_parallel_worker_chunk, chunk_index, chunk_start, chunk_end))
+            return True
+
+        for _ in range(max_in_flight):
+            if not _submit_next():
+                break
+
+        while in_flight:
+            done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                chunk_index, chunk_x_out, z_idx, chunk_coeff_out = future.result()
+                _submit_next()
+
+                if checkpoint_path is not None:
+                    _append_parallel_checkpoint_chunk(
+                        checkpoint_path, completed_indices, chunk_index,
+                        chunk_x_out, z_idx, chunk_coeff_out, idx_dtype,
+                    )
+
+                if assume_hermitian:
+                    _check_hermitian_violation(
+                        chunk_coeff_out, atol, chunk_x_out, z_idx, n_qubits
+                    )
+                yield chunk_x_out, z_idx, chunk_coeff_out
 
 
 _WARNED_NO_NATIVE = False
