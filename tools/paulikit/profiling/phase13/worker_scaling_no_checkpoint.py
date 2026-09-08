@@ -62,7 +62,13 @@ CHUNK_SIZE = os.environ.get("PAULIKIT_CHUNK_SIZE", "2")
 USE_CHECKPOINT = os.environ.get("PAULIKIT_CHECKPOINT") == "1"
 VARIANT = "arrays_with_checkpoint" if USE_CHECKPOINT else "arrays_no_checkpoint"
 CKPT_DIR = os.path.expanduser("~/.paulikit_ckpt_runs")
-COOLDOWN_TARGET_C = 55.0
+# 65C, not 55C: this machine idles around 69-75C after sustained
+# multi-core work and does not reach 55C at all, so every cooldown ran
+# the full 240s timeout without ever hitting its target - 32 minutes of
+# waiting for 2 minutes of compute, and the runs were NOT actually
+# matched at 55C despite the setting claiming so. 65C is reachable, so
+# runs are genuinely matched at it.
+COOLDOWN_TARGET_C = float(os.environ.get("PAULIKIT_COOLDOWN_C", "65.0"))
 COOLDOWN_TIMEOUT_S = 240
 TEMP_PATH = "/sys/class/thermal/thermal_zone7/temp"
 # Only known for N=150; for any other N the count is simply reported
