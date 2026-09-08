@@ -10,7 +10,6 @@ verify the divide-and-conquer decomposition is right.
 
 import builtins
 import io
-import json
 import os
 
 import pytest
@@ -22,6 +21,7 @@ from paulikit.algorithms.fwht import (
     _detect_available_worker_count,
     _per_worker_resident_bytes,
     _physical_core_representative_cpus,
+    _read_completed_indices,
     _recommended_parallel_chunk_size,
     fwht_pauli_terms,
     parallel_decompose,
@@ -104,9 +104,7 @@ def test_parallel_decompose_checkpoint_resume(tmp_path):
     gen.close()
 
     assert progress.exists()
-    with open(progress) as f:
-        first_progress = json.load(f)
-    assert len(first_progress["completed_chunk_indices"]) == 1
+    assert _read_completed_indices(progress) == {0}
 
     combined = _combine(
         parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt))

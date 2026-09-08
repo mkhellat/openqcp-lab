@@ -246,6 +246,7 @@ def test_resume_replay_still_checks_hermiticity(tmp_path):
     # to add the check to one and forget the other.
     from paulikit.algorithms.fwht import (
         _append_checkpoint_frame,
+        _append_progress_record,
         parallel_decompose_arrays,
     )
 
@@ -263,7 +264,9 @@ def test_resume_replay_still_checks_hermiticity(tmp_path):
         np.array([1.0 + 0.5j], dtype=complex),
         np.dtype(np.uint16),
     )
-    progress.write_text('{"completed_chunk_indices": [0]}')
+    # The progress marker is now append-only fixed-width records (one
+    # 8-byte u64 chunk index per completed chunk), not JSON.
+    _append_progress_record(progress, 0)
 
     operator = np.eye(4, dtype=complex)
     with pytest.raises(ValueError, match="imaginary part"):
