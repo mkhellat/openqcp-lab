@@ -34,7 +34,7 @@ DOCDIR       = @DOCDIR@
 CC           ?= cc
 CXX          ?= c++
 
-.PHONY: all help build install install-docs install-strip installcheck \
+.PHONY: all help build install install-docs install-html install-strip installcheck \
         installdirs uninstall test check test-native docs clean \
         mostlyclean distclean maintainer-clean dist TAGS report
 
@@ -56,7 +56,8 @@ help:
 	@echo "  make test-native   - build and run the standalone C/C++ kernel checks (no Python binding)"
 	@echo "  make installcheck  - run the test suite against the installed package, not the source tree"
 	@echo "  make uninstall     - pip uninstall paulikit from the venv"
-	@echo "  make docs          - build Sphinx HTML docs into \$$(DOCDIR) (delegates to docs/Makefile)"
+	@echo "  make docs          - build Sphinx HTML docs into docs/_build/html (delegates to docs/Makefile)"
+	@echo "  make install-html  - copy the built HTML docs into \$$(DOCDIR) (may need root)"
 	@echo "  make dist          - build an sdist + wheel into dist/ (python -m build)"
 	@echo "  make TAGS          - generate a TAGS file for src/ (requires ctags or etags)"
 	@echo "  make clean         - remove build/test artifacts (including docs/_build)"
@@ -105,8 +106,15 @@ install: build
 # (a real GNU package's `install-strip` target is expected to exist).
 install-strip: install
 
-install-docs:
-	$(PIP) install -e ".[docs]"
+# --no-build-isolation and the venv PATH prefix for the same reasons
+# `build` needs them: a bare `pip install -e .` resolves NumPy from an
+# ephemeral build-isolation environment and bakes that (now-deleted)
+# include path into the meson-python editable rebuild hook, so the
+# next rebuild fails with "numpy/arrayobject.h: No such file or
+# directory". Depending on `build` first also guarantees the compiled
+# extension exists before Sphinx imports the package to autodoc it.
+install-docs: build
+	PATH="$(VENV_PATH)/bin:$$PATH" $(PIP) install --no-build-isolation -e ".[docs]"
 
 installdirs:
 	mkdir -p "$(PREFIX)"
@@ -143,8 +151,16 @@ test-native:
 		src/paulikit/_native/test_pauli_label_parallel.cpp -ltbb
 	/tmp/paulikit_test_pauli_label_parallel
 
-docs: install-docs installdirs
+# Builds the HTML into docs/_build/html and stops there. Copying into
+# DOCDIR is deliberately NOT done here: DOCDIR defaults under PREFIX
+# (/usr/local), so depending on `installdirs` made a plain `make docs`
+# fail with a permission error for any non-root user - a build target
+# must not require root. `make install-html` does the copy, following
+# the GNU Coding Standards' own separation of build from install.
+docs: install-docs
 	$(MAKE) -C docs html SPHINXBUILD="$(PYTHON) -m sphinx"
+
+install-html: docs installdirs
 	mkdir -p "$(DOCDIR)"
 	cp -r docs/_build/html/. "$(DOCDIR)/"
 
