@@ -522,11 +522,12 @@ def _load_checkpoint(
     if not checkpoint_path.exists() or not progress_path.exists():
         return 0, None
 
-    with open(progress_path) as f:
-        progress = json.load(f)
-    next_chunk = progress["next_chunk"]
-    if next_chunk <= 0:
+    completed = _read_completed_indices(progress_path)
+    if not completed:
         return 0, None
+    # Sequential chunks complete strictly in order, so the recovered
+    # set is contiguous and the resume point is one past its maximum.
+    next_chunk = max(completed) + 1
 
     def _frames() -> Iterator[tuple[NDArray, NDArray, NDArray]]:
         for _index, x, z, coeff in _iter_checkpoint_frames(
@@ -557,8 +558,10 @@ def _append_checkpoint_chunk(
         checkpoint_path, next_chunk - 1, x_out, z_out, coeff_out, idx_dtype
     )
     progress_path = _checkpoint_progress_path(checkpoint_path)
-    with open(progress_path, "w") as f:
-        json.dump({"next_chunk": next_chunk}, f)
+    # next_chunk is the COUNT of completed chunks, so the chunk just
+    # written carries index next_chunk - 1 - matching the index passed
+    # to _append_checkpoint_frame immediately above.
+    _append_progress_record(progress_path, next_chunk - 1)
 
 
 def _iter_chunked_coefficients(
