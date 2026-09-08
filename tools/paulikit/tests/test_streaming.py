@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from paulikit.algorithms.fwht import (
-    _read_checkpoint_triples,
+    _append_checkpoint_frame,
     fwht_pauli_terms,
     fwht_pauli_terms_iter,
 )
@@ -96,7 +96,7 @@ def test_streaming_checkpoint_resume(tmp_path):
     through the generator interface."""
     fixture = ALL_FIXTURES[-1]
     padded = fixture.padded_hamiltonian()
-    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    checkpoint_path = tmp_path / "checkpoint.bin"
     reference = fwht_pauli_terms(padded, chunk_size=2)
 
     gen = fwht_pauli_terms_iter(padded, chunk_size=2, checkpoint_path=checkpoint_path)
@@ -114,32 +114,44 @@ def test_streaming_checkpoint_resume(tmp_path):
         assert combined[label] == pytest.approx(reference[label], abs=1e-9)
 
 
-def test_streaming_checkpoint_resume_survives_truncated_inflight_line(tmp_path):
+def test_streaming_checkpoint_resume_survives_truncated_inflight_frame(tmp_path):
     """Regression test for a real bug (REVIEW_NOTES.md, found
-    2026-09-04): ``_append_checkpoint_chunk`` writes a chunk's triple
-    lines before advancing the progress marker's ``next_chunk`` (see
-    its own docstring) - so a crash mid-write can leave the checkpoint
-    file with a truncated trailing line for a chunk the progress
-    marker still considers NOT YET completed (that chunk gets
-    resubmitted on resume, exactly as designed). Loading must not
-    raise json.JSONDecodeError on that stale partial line - it will be
-    superseded by the resubmitted chunk's own fresh append and must
-    simply be skipped while reading the earlier, real chunks' data."""
+    2026-09-04): ``_append_checkpoint_chunk`` writes a chunk's frame
+    before advancing the progress marker's ``next_chunk`` (see its own
+    docstring) - so a crash mid-write can leave the checkpoint file
+    with a torn trailing frame for a chunk the progress marker still
+    considers NOT YET completed (that chunk gets resubmitted on
+    resume, exactly as designed). Loading must not raise on that stale
+    partial frame - it is superseded by the resubmitted chunk's own
+    fresh append and must simply be dropped while every complete
+    earlier frame stays recoverable."""
     fixture = ALL_FIXTURES[-1]
     padded = fixture.padded_hamiltonian()
-    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    checkpoint_path = tmp_path / "checkpoint.bin"
     reference = fwht_pauli_terms(padded, chunk_size=2)
 
     gen = fwht_pauli_terms_iter(padded, chunk_size=2, checkpoint_path=checkpoint_path)
     next(gen)  # consume exactly one full, flushed chunk
     del gen
+    complete_size = checkpoint_path.stat().st_size
 
     # Simulate a crash mid-write of the NEXT (not-yet-progress-marked)
-    # chunk: append a truncated trailing line without ever writing a
-    # progress-marker update for it - progress.json still correctly
-    # points at the chunk before this partial line.
-    with open(checkpoint_path, "a") as f:
-        f.write('{"x": 1, "z": 2, "re": 0.5')  # deliberately unterminated
+    # chunk: append a frame, then truncate it mid-payload so only part
+    # of it reached disk, without ever writing a progress-marker
+    # update for it - progress.json still correctly points at the
+    # chunk before this torn frame.
+    _append_checkpoint_frame(
+        checkpoint_path,
+        1,
+        np.array([1, 2, 3], dtype=np.uint32),
+        np.array([4, 5, 6], dtype=np.uint32),
+        np.array([0.5 + 0j, 1j, 2j], dtype=complex),
+        np.dtype(np.uint32),
+    )
+    torn_size = checkpoint_path.stat().st_size
+    assert torn_size > complete_size
+    with open(checkpoint_path, "r+b") as f:
+        f.truncate(complete_size + (torn_size - complete_size) // 2)
 
     combined = {}
     for chunk_dict in fwht_pauli_terms_iter(
@@ -152,32 +164,33 @@ def test_streaming_checkpoint_resume_survives_truncated_inflight_line(tmp_path):
         assert combined[label] == pytest.approx(reference[label], abs=1e-9)
 
 
-def test_streaming_checkpoint_resume_dedupes_over_recorded_chunk(tmp_path):
+def test_streaming_checkpoint_resume_tolerates_over_recorded_chunk(tmp_path):
     """Regression test for a real bug (REVIEW_NOTES.md, found
     2026-09-04, "over-record resume"): _append_checkpoint_chunk writes
-    a chunk's triple lines, THEN advances the progress marker - a
-    crash landing between those two writes leaves the triples flushed
-    but the marker still pointing at that same chunk, so resume
-    recomputes and re-appends it, leaving two sets of lines for the
-    same (x, z) pairs in the checkpoint file. Loading must dedupe by
-    (x, z) rather than double-counting those terms."""
+    a chunk's frame, THEN advances the progress marker - a crash
+    landing between those two writes leaves the frame flushed but the
+    marker still pointing at that same chunk, so resume recomputes and
+    re-appends it, leaving two frames carrying the same chunk index in
+    the checkpoint file. Replaying both must still reach the exact
+    uninterrupted result: each frame holds the same deterministically
+    recomputed values, so the repeat is idempotent rather than
+    double-counted."""
     fixture = ALL_FIXTURES[-1]
     padded = fixture.padded_hamiltonian()
-    checkpoint_path = tmp_path / "checkpoint.jsonl"
+    checkpoint_path = tmp_path / "checkpoint.bin"
     reference = fwht_pauli_terms(padded, chunk_size=2)
 
     gen = fwht_pauli_terms_iter(padded, chunk_size=2, checkpoint_path=checkpoint_path)
-    next(gen)  # chunk 0's triples + progress marker are now fully flushed
+    next(gen)  # chunk 0's frame + progress marker are now fully flushed
     del gen
 
-    # Simulate the crash-between-triples-and-marker window: duplicate
-    # chunk 0's already-written lines, but leave the progress marker
+    # Simulate the crash-between-frame-and-marker window: duplicate
+    # chunk 0's already-written frame, but leave the progress marker
     # untouched (still says chunk 0 is not yet done, matching what a
     # real crash there would leave behind).
-    with open(checkpoint_path) as f:
-        original_lines = f.readlines()
-    with open(checkpoint_path, "a") as f:
-        f.writelines(original_lines)
+    original_bytes = checkpoint_path.read_bytes()
+    with open(checkpoint_path, "ab") as f:
+        f.write(original_bytes)
 
     combined = {}
     for chunk_dict in fwht_pauli_terms_iter(
@@ -188,24 +201,6 @@ def test_streaming_checkpoint_resume_dedupes_over_recorded_chunk(tmp_path):
     assert set(combined) == set(reference)
     for label in reference:
         assert combined[label] == pytest.approx(reference[label], abs=1e-9)
-
-
-def test_read_checkpoint_triples_dedupes_by_x_z_keeping_last(tmp_path):
-    """Direct unit test on the shared reader: duplicate (x, z) lines
-    (the "over-record resume" scenario) must collapse to one entry,
-    keeping the value from the LAST occurrence in the file."""
-    checkpoint_path = tmp_path / "checkpoint.jsonl"
-    with open(checkpoint_path, "w") as f:
-        f.write('{"x": 1, "z": 2, "re": 0.5, "im": 0.0}\n')
-        f.write('{"x": 3, "z": 4, "re": 1.5, "im": -0.5}\n')
-        # A stale re-append of the first line's (x, z), same value
-        # (as a real resume-recompute would produce - deterministic
-        # math, not a differing value):
-        f.write('{"x": 1, "z": 2, "re": 0.5, "im": 0.0}\n')
-
-    x_vals, z_vals, coeff_vals = _read_checkpoint_triples(checkpoint_path)
-    assert len(x_vals) == 2, "duplicate (x, z) pair must collapse to one entry"
-    assert set(zip(x_vals, z_vals)) == {(1, 2), (3, 4)}
 
 
 def test_streaming_assume_hermitian_true_raises_mid_stream_on_non_hermitian_input():

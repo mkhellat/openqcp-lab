@@ -171,3 +171,25 @@ def test_frames_absent_from_valid_indices_are_dropped(tmp_path):
 
 def test_missing_file_yields_nothing(tmp_path):
     assert list(_iter_checkpoint_frames(tmp_path / "absent.bin")) == []
+
+
+def test_sequential_resume_replays_per_chunk_not_one_combined_tile(tmp_path):
+    # The JSONL format could not preserve chunk boundaries, so resume
+    # yielded one combined tile. Frames record chunk_index per frame,
+    # so replay is per original chunk - which is what keeps replay
+    # memory bounded by the largest chunk rather than by the file.
+    from paulikit.algorithms.fwht import _load_checkpoint
+
+    path = tmp_path / "seq.bin"
+    _write_frames(path, [
+        (0, [1, 2], [3, 4], [1j, 2j]),
+        (1, [5], [6], [3j]),
+    ])
+    (tmp_path / "seq.bin.progress.json").write_text('{"next_chunk": 2}')
+
+    next_chunk, frames = _load_checkpoint(path)
+    assert next_chunk == 2
+    replayed = list(frames)
+    assert len(replayed) == 2, "replay must be per chunk, not combined"
+    np.testing.assert_array_equal(replayed[0][0], [1, 2])
+    np.testing.assert_array_equal(replayed[1][0], [5])
