@@ -69,7 +69,6 @@ total.
 
 from __future__ import annotations
 
-import json
 import os
 import struct
 import warnings
@@ -215,6 +214,55 @@ def _parallel_checkpoint_progress_path(checkpoint_path: str | Path) -> Path:
     ``fwht_pauli_terms_iter`` and ``parallel_decompose``.
     """
     return Path(str(checkpoint_path) + ".parallel_progress.json")
+
+
+# Persisted on disk: one record per completed chunk. u64 matches the
+# width the frame header already uses for chunk_index, so the two
+# cannot disagree about range. Never change the width or endianness.
+_PROGRESS_RECORD = struct.Struct("<Q")
+
+
+def _append_progress_record(
+    progress_path: str | Path, chunk_index: int
+) -> None:
+    """Record one completed chunk by appending a fixed-width record.
+
+    This replaced a ``json.dump`` of the whole completed set on every
+    chunk, which was O(n) per chunk and so O(n^2) across a run. At
+    N=150's 5,595 chunks that marker cost 15.13x the payload frame
+    write by the final chunk and ~91% of the per-chunk checkpoint
+    total (profiling/phase13/progress_marker_findings.md). An 8-byte
+    append is O(1) - measured flat at ~13-21us across a 20,000x range
+    of completed counts.
+    """
+    with open(progress_path, "ab") as f:
+        f.write(_PROGRESS_RECORD.pack(chunk_index))
+
+
+def _read_completed_indices(progress_path: str | Path) -> set[int]:
+    """Recover the set of completed chunk indices.
+
+    Reads whole records only: a trailing partial record is DISCARDED
+    rather than treated as corruption. Appends are 8 bytes written in
+    one call and never rewritten, so only the final record can ever be
+    torn, and a torn tail means exactly "that chunk was not recorded" -
+    the chunk is resubmitted and recomputed, which is the pre-existing
+    contract.
+
+    Returns a set, not a sequence: records are not sorted (parallel
+    workers complete out of order) and may be duplicated (a
+    rollback-resume re-records chunks it recomputes).
+    """
+    progress_path = Path(progress_path)
+    if not progress_path.exists():
+        return set()
+    data = progress_path.read_bytes()
+    size = _PROGRESS_RECORD.size
+    n_whole = len(data) // size
+    return {
+        _PROGRESS_RECORD.unpack_from(data, i * size)[0]
+        for i in range(n_whole)
+    }
 
 
 _CHECKPOINT_MAGIC = b"PKCP"
@@ -388,12 +436,16 @@ def _load_parallel_checkpoint(
 ) -> tuple[set[int], Iterator[tuple[NDArray, NDArray, NDArray]] | None]:
     """Read an existing *parallel* checkpoint, if any.
 
-    Unlike the sequential format's single monotonic ``next_chunk``
-    index (correct only when chunks complete strictly in order),
-    parallel workers complete chunks in whatever order the pool
-    schedules them - the progress file records the *set* of chunk
-    indices already completed, so resume can skip exactly those and
-    re-submit every other chunk regardless of completion order.
+    The progress file is append-only: one 8-byte little-endian
+    ``u64`` record per completed chunk, in whatever order workers
+    finished it (see ``_read_completed_indices``, which reads whole
+    records into a set and discards a torn trailing record). Unlike
+    the sequential path, which derives a single monotonic
+    ``next_chunk`` from the same kind of file (correct only when
+    chunks complete strictly in order), parallel workers complete
+    chunks in whatever order the pool schedules them - so resume uses
+    the recovered set directly, skipping exactly those indices and
+    re-submitting every other chunk regardless of completion order.
 
     Returns ``(completed_chunk_indices, frames | None)``, where
     ``frames`` is a lazy iterator of ``(x, z, coeff)`` triples, one per
@@ -408,9 +460,7 @@ def _load_parallel_checkpoint(
     if not checkpoint_path.exists() or not progress_path.exists():
         return set(), None
 
-    with open(progress_path) as f:
-        progress = json.load(f)
-    completed = set(progress["completed_chunk_indices"])
+    completed = _read_completed_indices(progress_path)
     if not completed:
         return completed, None
 
@@ -439,7 +489,12 @@ def _append_parallel_checkpoint_chunk(
     multiple processes - workers return their chunk's triples to the
     main process; they do not write the checkpoint file directly.
 
-    The frame is written before the progress marker is updated, so a
+    The progress record is a single 8-byte little-endian ``u64``
+    holding ``chunk_index``, appended to the progress file
+    (``_append_progress_record``) - an O(1) write, unlike the earlier
+    rewrite-the-whole-set-as-JSON marker it replaced.
+
+    The frame is written before the progress marker is appended, so a
     crash mid-write leaves the progress file not yet listing this
     chunk: the frame is then either torn (and stops the reader) or
     complete-but-unmarked (and is dropped by ``valid_indices``). Either
@@ -451,8 +506,7 @@ def _append_parallel_checkpoint_chunk(
     )
     completed_chunk_indices.add(chunk_index)
     progress_path = _parallel_checkpoint_progress_path(checkpoint_path)
-    with open(progress_path, "w") as f:
-        json.dump({"completed_chunk_indices": sorted(completed_chunk_indices)}, f)
+    _append_progress_record(progress_path, chunk_index)
 
 
 def _load_checkpoint(
@@ -465,9 +519,14 @@ def _load_checkpoint(
     iterator of previously-recorded ``(x, z, coeff)`` triples, one per
     frame, or ``None`` if there is nothing to replay.
 
-    Sequential chunks complete strictly in order, so a single monotonic
-    marker is sufficient here - every frame before ``next_chunk`` is
-    valid, and any frame at or beyond it was written but never marked.
+    The progress file uses the same append-only record format as the
+    parallel path - one 8-byte little-endian ``u64`` per completed
+    chunk (see ``_read_completed_indices``, which reads whole records
+    into a set and discards a torn trailing record). Sequential chunks
+    complete strictly in order, so the recovered set is contiguous and
+    ``next_chunk`` is derived as ``max(recovered) + 1`` rather than
+    stored directly - every frame before ``next_chunk`` is valid, and
+    any frame at or beyond it was written but never marked.
     """
     if checkpoint_path is None:
         return 0, None
@@ -476,11 +535,12 @@ def _load_checkpoint(
     if not checkpoint_path.exists() or not progress_path.exists():
         return 0, None
 
-    with open(progress_path) as f:
-        progress = json.load(f)
-    next_chunk = progress["next_chunk"]
-    if next_chunk <= 0:
+    completed = _read_completed_indices(progress_path)
+    if not completed:
         return 0, None
+    # Sequential chunks complete strictly in order, so the recovered
+    # set is contiguous and the resume point is one past its maximum.
+    next_chunk = max(completed) + 1
 
     def _frames() -> Iterator[tuple[NDArray, NDArray, NDArray]]:
         for _index, x, z, coeff in _iter_checkpoint_frames(
@@ -502,17 +562,23 @@ def _append_checkpoint_chunk(
     """Append one completed chunk's frame, then advance the marker.
 
     ``next_chunk`` is the count of completed chunks, so the frame being
-    written carries index ``next_chunk - 1``. The frame is written
-    before the marker advances, so a crash mid-write leaves a torn or
-    unmarked frame that the reader drops, and that chunk is recomputed
-    on resume rather than silently corrupted.
+    written carries index ``next_chunk - 1``. The marker advance is a
+    single 8-byte little-endian ``u64`` record holding that index,
+    appended to the progress file (``_append_progress_record``) - an
+    O(1) write, unlike the earlier rewrite-the-whole-marker-as-JSON
+    approach it replaced. The frame is written before the marker
+    advances, so a crash mid-write leaves a torn or unmarked frame
+    that the reader drops, and that chunk is recomputed on resume
+    rather than silently corrupted.
     """
     _append_checkpoint_frame(
         checkpoint_path, next_chunk - 1, x_out, z_out, coeff_out, idx_dtype
     )
     progress_path = _checkpoint_progress_path(checkpoint_path)
-    with open(progress_path, "w") as f:
-        json.dump({"next_chunk": next_chunk}, f)
+    # next_chunk is the COUNT of completed chunks, so the chunk just
+    # written carries index next_chunk - 1 - matching the index passed
+    # to _append_checkpoint_frame immediately above.
+    _append_progress_record(progress_path, next_chunk - 1)
 
 
 def _iter_chunked_coefficients(
@@ -736,7 +802,10 @@ def fwht_pauli_coefficients(
             the raw ``x``/``z``/``coeff`` arrays' bytes, with no
             per-term Python object construction on the write path -
             and a sibling ``<checkpoint_path>.progress.json`` file
-            records the index of the next chunk to process. If a
+            records progress as one 8-byte little-endian ``u64``
+            record per completed chunk, appended in order; the next
+            chunk to process is one past the highest recorded index.
+            If a
             checkpoint already exists at this path when called, chunks
             already recorded there are skipped and replayed frame by
             frame, one original chunk at a time, rather than
@@ -1765,14 +1834,21 @@ def parallel_decompose(
             (``_append_checkpoint_frame``) and one shared reader
             (``_iter_checkpoint_frames``) on both paths, so a
             checkpoint written by either is resumable by the other
-            (see ``docs/tutorial.md``). What differs is only the
-            *progress marker* that records which chunks are complete:
-            the sequential path's is a single monotonic ``next_chunk``
-            index, valid because chunks finish strictly in order,
-            while this function's is the *set* of completed chunk
-            indices, because parallel workers finish out of order.
-            The two progress markers use distinct file suffixes so
-            they never collide; resume here re-submits every chunk
+            (see ``docs/tutorial.md``). Both paths use the same
+            append-only progress marker: one 8-byte little-endian
+            ``u64`` record per completed chunk, appended to a sibling
+            ``<checkpoint_path>.progress.json``/
+            ``.parallel_progress.json`` file
+            (``_append_progress_record``), and recovered by reading
+            whole records into a set and discarding any torn trailing
+            record (``_read_completed_indices``). What differs is only
+            how each path turns that set into a resume point: the
+            sequential path derives its single ``next_chunk`` index as
+            ``max(recovered) + 1``, valid because chunks finish
+            strictly in order, while this function uses the recovered
+            set directly, because parallel workers finish out of
+            order. The two progress markers use distinct file suffixes
+            so they never collide; resume here re-submits every chunk
             index not already in that set, regardless of position.
 
     Yields:

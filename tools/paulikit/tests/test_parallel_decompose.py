@@ -10,7 +10,6 @@ verify the divide-and-conquer decomposition is right.
 
 import builtins
 import io
-import json
 import os
 
 import pytest
@@ -22,6 +21,7 @@ from paulikit.algorithms.fwht import (
     _detect_available_worker_count,
     _per_worker_resident_bytes,
     _physical_core_representative_cpus,
+    _read_completed_indices,
     _recommended_parallel_chunk_size,
     fwht_pauli_terms,
     parallel_decompose,
@@ -104,9 +104,16 @@ def test_parallel_decompose_checkpoint_resume(tmp_path):
     gen.close()
 
     assert progress.exists()
-    with open(progress) as f:
-        first_progress = json.load(f)
-    assert len(first_progress["completed_chunk_indices"]) == 1
+    # Exactly one chunk recorded - but NOT necessarily chunk 0, and
+    # not even necessarily one of the first few: the pool keeps
+    # several chunks in flight, so whichever finishes first is the one
+    # recorded. That is precisely what parallel_decompose's docstring
+    # means by "order is not guaranteed to match chunk order"
+    # (observed 0, 1 and 2 across repeated runs). The invariant is the
+    # COUNT plus validity of the index - never its identity.
+    completed = _read_completed_indices(progress)
+    assert len(completed) == 1
+    assert all(i >= 0 for i in completed)
 
     combined = _combine(
         parallel_decompose(padded, chunk_size=2, n_workers=2, checkpoint_path=str(ckpt))

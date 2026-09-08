@@ -26,10 +26,18 @@ frame's does not):
 
   frame_only   - _append_checkpoint_frame alone.
   marker_only  - the sorted() + json.dump of a completed-set of size k.
-  both         - what _append_parallel_checkpoint_chunk actually does.
+  append       - the append-only 8-byte record that replaced the
+                 rewrite (the fourth arm, added after the change).
 
 Sweeping k reveals the growth: a flat marker cost would mean the O(n^2)
 concern is theoretical, a rising one confirms it.
+
+MEASUREMENT INTEGRITY. The append arm's record file is built ONCE per
+k, outside the timed region, and each rep times a single 8-byte append
+onto it. Rebuilding the k-record file per rep dirties page cache in
+proportion to k immediately before the timed write, and that harness
+artifact alone produced a false "rising, O(1) falsified" verdict during
+design. Keep every per-rep setup out of the timer.
 
 Writes to real disk under $HOME, never /tmp (a RAM-backed tmpfs here;
 writing into it measures memory exhaustion, not I/O).
@@ -50,7 +58,9 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
 
 from paulikit.algorithms.fwht import (  # noqa: E402
+    _PROGRESS_RECORD,
     _append_checkpoint_frame,
+    _append_progress_record,
     _parallel_checkpoint_progress_path,
 )
 
@@ -76,6 +86,18 @@ def time_marker(path, _x, _z, _coeff, _idx_dtype, completed):
     return time.perf_counter() - t0
 
 
+def time_marker_append(path, _x, _z, _coeff, _idx_dtype, completed):
+    """The append-only marker that replaced the rewrite.
+
+    The record file it appends onto is built by the caller ONCE per k,
+    outside this function and outside the timed region.
+    """
+    progress_path = _parallel_checkpoint_progress_path(path)
+    t0 = time.perf_counter()
+    _append_progress_record(progress_path, len(completed))
+    return time.perf_counter() - t0
+
+
 def main():
     reps = int(sys.argv[1]) if len(sys.argv) > 1 else 7
     os.makedirs(DISK_DIR, exist_ok=True)
@@ -92,31 +114,49 @@ def main():
     print(f"reps={reps}  disk={DISK_DIR}\n")
 
     print(f"{'completed set size':>19} {'frame':>10} {'marker':>10} "
-          f"{'marker/frame':>13} {'marker bytes':>13}")
+          f"{'append':>10} {'marker/frame':>13} {'marker/append':>14} "
+          f"{'marker bytes':>13}")
 
     frame_times = []
+    append_times = []
     rows = []
     for k in (1, 100, 1000, N150_CHUNKS // 2, N150_CHUNKS):
         completed = set(range(k))
         path = os.path.join(DISK_DIR, f"c{k}.bin")
-        for p in (path, str(_parallel_checkpoint_progress_path(path))):
+        # The append arm gets its own checkpoint path so the rewrite
+        # arm's JSON never lands on the record file being appended to.
+        apath = os.path.join(DISK_DIR, f"a{k}.bin")
+        paths = (path, str(_parallel_checkpoint_progress_path(path)),
+                 apath, str(_parallel_checkpoint_progress_path(apath)))
+        for p in paths:
             if os.path.exists(p):
                 os.unlink(p)
 
-        ft, mt = [], []
+        # SETUP, OUTSIDE THE TIMED REGION: build the k-record file once.
+        # Rebuilding it per rep would dirty page cache in proportion to
+        # k right before the timed write and fake an O(k) append.
+        with open(_parallel_checkpoint_progress_path(apath), "wb") as f:
+            f.write(b"".join(_PROGRESS_RECORD.pack(i) for i in range(k)))
+
+        ft, mt, at = [], [], []
         for _ in range(reps):
             if os.path.exists(path):
                 os.unlink(path)
             ft.append(time_frame(path, x, z, coeff, idx_dtype, completed))
             mt.append(time_marker(path, x, z, coeff, idx_dtype, completed))
+            at.append(time_marker_append(
+                apath, x, z, coeff, idx_dtype, completed))
         mf, mm = statistics.mean(ft), statistics.mean(mt)
+        ma = statistics.mean(at)
         marker_bytes = os.path.getsize(_parallel_checkpoint_progress_path(path))
         frame_times.append(mf)
-        rows.append((k, mf, mm, marker_bytes))
+        append_times.append(ma)
+        rows.append((k, mf, mm, marker_bytes, ma))
         print(f"{k:>19,} {mf * 1e3:>9.3f}ms {mm * 1e3:>9.3f}ms "
-              f"{mm / mf:>12.2f}x {marker_bytes:>12,}")
+              f"{ma * 1e3:>9.3f}ms {mm / mf:>12.2f}x {mm / ma:>13.1f}x "
+              f"{marker_bytes:>12,}")
 
-        for p in (path, str(_parallel_checkpoint_progress_path(path))):
+        for p in paths:
             if os.path.exists(p):
                 os.unlink(p)
 
@@ -127,21 +167,38 @@ def main():
     # The marker is rewritten once per chunk with a set that grows
     # 1..N, so the run's total is the integral, not N * the final cost.
     # Trapezoid over the measured points, in chunk-index space.
-    pts = sorted((k, m) for k, _f, m, _b in rows)
+    pts = sorted((k, m) for k, _f, m, _b, _a in rows)
     marker_total = 0.0
     for (k0, m0), (k1, m1) in zip(pts, pts[1:]):
         marker_total += (m0 + m1) / 2 * (k1 - k0)
+    # The append is flat in k, so one mean covers every chunk.
+    append_total = statistics.mean(append_times) * N150_CHUNKS
     print(f"  frames : {frame_total:8.2f}s  "
           f"({statistics.mean(frame_times) * 1e3:.3f}ms x {N150_CHUNKS:,})")
     print(f"  markers: {marker_total:8.2f}s  (trapezoid over growing set)")
+    print(f"  appends: {append_total:8.2f}s  "
+          f"({statistics.mean(append_times) * 1e6:.1f}us x {N150_CHUNKS:,})")
     total = frame_total + marker_total
     if total > 0:
-        print(f"  marker share of checkpoint cost: "
+        print(f"  marker share of OLD checkpoint cost: "
               f"{marker_total / total * 100:.1f}%")
+    new_total = frame_total + append_total
+    print(f"  checkpoint total: {total:.2f}s -> {new_total:.2f}s "
+          f"({(1 - new_total / total) * 100:.1f}% cheaper)")
+
+    lo, hi = min(append_times), max(append_times)
+    print(f"\n  append flatness over k=1..{N150_CHUNKS:,}: "
+          f"{lo * 1e6:.1f}us..{hi * 1e6:.1f}us, spread {hi / lo:.2f}x")
+    if hi / lo > 3.0:
+        print("  WARNING: append is NOT flat - suspect the harness "
+              "before the design.")
+
     final_bytes = rows[-1][3]
     print(f"\n  marker bytes rewritten across the run "
           f"(~n^2/2): {final_bytes * N150_CHUNKS / 2 / 1e9:.2f} GB")
     print(f"  final marker file size: {final_bytes / 1e6:.2f} MB")
+    print(f"  append-only file size after {N150_CHUNKS:,} chunks: "
+          f"{_PROGRESS_RECORD.size * N150_CHUNKS / 1e3:.1f} kB")
 
     try:
         os.rmdir(DISK_DIR)
