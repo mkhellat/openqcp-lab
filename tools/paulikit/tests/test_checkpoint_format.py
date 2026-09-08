@@ -193,3 +193,39 @@ def test_sequential_resume_replays_per_chunk_not_one_combined_tile(tmp_path):
     assert len(replayed) == 2, "replay must be per chunk, not combined"
     np.testing.assert_array_equal(replayed[0][0], [1, 2])
     np.testing.assert_array_equal(replayed[1][0], [5])
+
+
+def test_resume_memory_is_bounded_by_chunk_not_file(tmp_path):
+    # The JSONL reader called f.readlines() and built three full Python
+    # lists plus a dedup dict, so resume memory scaled with FILE size -
+    # >20 GB at N=150 on a 15 GB machine. Frames must scale with the
+    # largest CHUNK instead. Many small frames, one peak measurement.
+    import tracemalloc
+
+    path = tmp_path / "many.bin"
+    n_frames, per_frame = 200, 500
+    rng = np.random.default_rng(0)
+    for i in range(n_frames):
+        _append_checkpoint_frame(
+            path, i,
+            rng.integers(0, 1000, per_frame).astype(np.uint32),
+            rng.integers(0, 1000, per_frame).astype(np.uint32),
+            rng.standard_normal(per_frame).astype(complex),
+            np.dtype(np.uint32),
+        )
+    file_bytes = path.stat().st_size
+
+    tracemalloc.start()
+    total = 0
+    for _index, x, _z, _coeff in _iter_checkpoint_frames(path):
+        total += len(x)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    assert total == n_frames * per_frame, "every frame must be read"
+    # Bounded means the peak tracks one frame, not the whole file. A
+    # generous 25% bound still fails loudly for a readlines()-style
+    # reader, which would peak at several times the file size.
+    assert peak < file_bytes * 0.25, (
+        f"resume peak {peak} should be well below file size {file_bytes}"
+    )
