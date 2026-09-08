@@ -2658,6 +2658,44 @@ it was only worth asking once that cost fell, and revisiting it now
 would be guessing ahead of any data collected under the new cost
 structure.
 
+**13e IMPLEMENTED 2026-09-08** - 13d's binary chunk-framed format fixed
+the checkpoint *payload*, but the *progress marker* paired with it was
+still a `json.dump` of the whole completed set on every chunk: O(n)
+per chunk, O(n^2) across a run. Measured at N=150's real shape (5,595
+chunks, `progress_marker_findings.md`), the marker cost 15.13x the
+frame write by the final chunk and **~91% of the per-chunk checkpoint
+total** - it, not the payload, was now the bottleneck.
+
+The fix, detailed in
+`docs/superpowers/specs/2026-09-08-append-only-progress-marker-design.md`:
+replace the rewrite with a fixed-width append-only record, one 8-byte
+little-endian `u64` per completed chunk index. Recovery
+(`_read_completed_indices`) reads whole records into a set and
+discards any torn trailing record - the expected shape of a crash,
+not corruption, since an 8-byte append is written in one call and
+never rewritten. Both paths now share one writer
+(`_append_progress_record`) and one reader; the sequential path
+derives its `next_chunk` as `max(recovered) + 1` since its chunks
+complete in order, while the parallel path uses the recovered set
+directly since workers finish out of order.
+
+Measured after the change (`progress_marker_findings.md`'s "Measured
+after the change" section): the append is flat at ~13-21 us across a
+5,595x range of completed-set sizes (median spread 1.03x, isolated
+from the sweep's own interleaving artifact), against the old marker's
+rising 0.09-3.0 ms - **49.9x cheaper than the old marker at the final
+chunk**. *Extrapolated* (no end-to-end checkpointed N=150 run has
+been executed) over a full N=150 run, checkpoint overhead against the
+8.729s run it protects falls from **94.5% to 12.4%** - the first
+point at which checkpointing costs less than the work it protects.
+
+This closes the granularity question 13d left open: checkpointing
+every K chunks would have divided the marker cost by K while losing
+up to K chunks of work on a crash. Making the marker O(1) removes the
+cost outright without weakening the per-chunk crash-safety guarantee,
+so there is no longer a tradeoff to make - per-chunk checkpointing is
+correct as the default with no reason to batch it.
+
 
 ## 6. Explicitly out of scope
 

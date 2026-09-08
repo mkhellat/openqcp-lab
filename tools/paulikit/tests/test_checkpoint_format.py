@@ -17,6 +17,7 @@ from paulikit.algorithms.fwht import (
     _CHECKPOINT_MAGIC,
     _CHECKPOINT_VERSION,
     _append_checkpoint_frame,
+    _append_progress_record,
     _checkpoint_frame_header,
     _iter_checkpoint_frames,
     _parse_checkpoint_frame_header,
@@ -185,7 +186,9 @@ def test_sequential_resume_replays_per_chunk_not_one_combined_tile(tmp_path):
         (0, [1, 2], [3, 4], [1j, 2j]),
         (1, [5], [6], [3j]),
     ])
-    (tmp_path / "seq.bin.progress.json").write_text('{"next_chunk": 2}')
+    progress_path = tmp_path / "seq.bin.progress.json"
+    _append_progress_record(progress_path, 0)
+    _append_progress_record(progress_path, 1)
 
     next_chunk, frames = _load_checkpoint(path)
     assert next_chunk == 2
