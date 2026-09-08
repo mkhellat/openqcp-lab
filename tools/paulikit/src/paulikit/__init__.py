@@ -22,6 +22,9 @@ Public API
     paulikit.algorithms.fwht.fwht_pauli_terms
     paulikit.algorithms.fwht.fwht_pauli_terms_iter
     paulikit.algorithms.fwht.auto_decompose
+    paulikit.algorithms.fwht.parallel_decompose
+    paulikit.algorithms.fwht.parallel_decompose_arrays
+    paulikit.algorithms.fwht.terms_from_arrays
     paulikit.testing.fixtures.ALL_FIXTURES
 """
 

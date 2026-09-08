@@ -176,3 +176,79 @@ rather than just using the library.
 
 Run `paulikit --help` or `paulikit <subcommand> --help` for full
 argument details on any of these.
+
+## 6. Multi-core decomposition and the array-yielding API
+
+For a large Hamiltonian, `paulikit.algorithms.fwht.parallel_decompose`
+spreads the FWHT coefficient math for each chunk across a
+`ProcessPoolExecutor`, then streams back `dict[str, complex]` chunks
+just like `fwht_pauli_terms_iter`:
+
+```python
+from paulikit.algorithms.fwht import parallel_decompose
+
+for chunk in parallel_decompose(H_padded):
+    ...
+```
+
+This is the right tool when you actually want every term's Pauli
+label. But it comes with a caveat worth knowing about before you reach
+for it purely for speed: building the label string and dict entry for
+every term happens in the single parent process, not in the worker
+pool, and at large problem sizes that step dominates the function's
+own runtime. Measured directly at $N=150$ (91.6 million terms), it is
+about 82% of total runtime — a serial fraction that, by Amdahl's law,
+caps the achievable speedup at roughly 1.21x no matter how many cores
+are thrown at the problem. This isn't a defect to be fixed later; it's
+an inherent cost of returning fully-labeled Python dicts at that
+scale, and `parallel_decompose` remains the correct, supported choice
+whenever you need those labels.
+
+When you don't need every label — for instance, filtering to the
+largest-magnitude terms, or feeding coefficients straight into a
+numerical routine that never looks at the Pauli string itself —
+`parallel_decompose_arrays` skips that serial labeling step entirely.
+It shares `parallel_decompose`'s pool, chunking, auto-tuning, and
+checkpoint machinery exactly (checkpoints are even interchangeable
+between the two functions — both write the same binary, chunk-framed
+format through one shared writer, so a checkpoint started under one
+function resumes cleanly under the other), but its drain loop yields
+each chunk's raw
+`(x, z, coeff)` NumPy arrays — symplectic `x`/`z` bitmasks and
+`complex128` coefficients — instead of building labels and a dict from
+them:
+
+```python
+import numpy as np
+from paulikit.algorithms.fwht import parallel_decompose_arrays, terms_from_arrays
+
+n_qubits = int(np.log2(H_padded.shape[0]))
+for x, z, coeff in parallel_decompose_arrays(H_padded):
+    big = np.abs(coeff) > 1e-3          # keep only what you need
+    terms = terms_from_arrays(x[big], z[big], coeff[big], n_qubits)
+```
+
+`terms_from_arrays` is the opt-in rendering step: pass it whichever
+arrays (or filtered subset of them) you actually want labels for, and
+it returns the same `dict[str, float]` (or `dict[str, complex]` if
+`assume_hermitian=False`) that `fwht_pauli_terms` and
+`parallel_decompose` produce. Because labeling a handful of surviving
+terms is cheap regardless of how large the original decomposition was,
+this pattern — decompose with `parallel_decompose_arrays`, filter, then
+label only the survivors — sidesteps the serial bottleneck rather than
+paying it and discarding most of the result.
+
+How much does this actually buy you? A controlled experiment isolating
+the drain loop's per-chunk work — comparing full label-and-dict
+construction against yielding arrays only, against a control doing no
+per-chunk work at all — measured the arrays-only path at 2.191x,
+statistically indistinguishable from the no-op control; the
+label-and-dict path measured 0.865x, consistent with the ~1.21x ceiling
+once the rest of the pipeline is accounted for. That 2.191x is the
+controlled experiment's result for the drain loop in isolation, not
+yet an end-to-end, thermal-controlled measurement of
+`parallel_decompose_arrays` itself with checkpointing enabled — that
+sweep is tracked as follow-up work in `PLAN.md`'s Phase 13 section
+and `profiling/phase13/README.md`. Treat the array API as the
+principled fix for a well-understood serial bottleneck, not (yet) as a
+number to quote for your own workload without measuring it.
