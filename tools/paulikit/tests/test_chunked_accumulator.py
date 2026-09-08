@@ -7,12 +7,15 @@ See ``fwht_pauli_coefficients``'s ``chunk_size``/``atol``/
 ``checkpoint_path`` docstring for the contract being tested here.
 """
 
-import json
-
 import numpy as np
 import pytest
 
-from paulikit.algorithms.fwht import fwht_pauli_coefficients, fwht_pauli_terms
+from paulikit.algorithms.fwht import (
+    _PROGRESS_RECORD,
+    _read_completed_indices,
+    fwht_pauli_coefficients,
+    fwht_pauli_terms,
+)
 from paulikit.hamiltonian import pad_to_power_of_two
 from paulikit.testing.fixtures import ALL_FIXTURES
 
@@ -110,9 +113,7 @@ def test_checkpoint_resume_from_partial_progress_file(tmp_path):
     reference = fwht_pauli_terms(padded, chunk_size=2)
 
     fwht_pauli_terms(padded, chunk_size=2, checkpoint_path=checkpoint_path)
-    with open(progress_path) as f:
-        full_progress = json.load(f)
-    total_chunks = full_progress["next_chunk"]
+    total_chunks = len(_read_completed_indices(progress_path))
     assert total_chunks > 1, "fixture too small to exercise partial resume meaningfully"
 
     # Roll the progress marker back, simulating a crash after only the
@@ -121,8 +122,7 @@ def test_checkpoint_resume_from_partial_progress_file(tmp_path):
     # simply recompute/re-append the "already there" chunks' triples
     # again on top, matching the module's documented on-crash behavior
     # of losing at most the one in-flight chunk, never corrupting state).
-    with open(progress_path, "w") as f:
-        json.dump({"next_chunk": 1}, f)
+    progress_path.write_bytes(_PROGRESS_RECORD.pack(0))
 
     resumed = fwht_pauli_terms(padded, chunk_size=2, checkpoint_path=checkpoint_path)
     assert set(resumed) == set(reference)
