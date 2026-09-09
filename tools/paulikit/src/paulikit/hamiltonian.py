@@ -1,10 +1,8 @@
 """Numeric construction of the coupled-oscillator Hamiltonian.
 
-This is an independent NumPy reimplementation of the Hamiltonian
-construction in the parent ``openqcp-lab`` repository's
-``coupled_harmonic_oscillators/N_coupled_harmonic_oscillators_1_D_N_2.ipynb``
-notebook (which builds the matrix symbolically with SymPy, in a
-function there named ``prepare_hmatrix(N)``). It exists so that
+This is a NumPy implementation of the coupled-oscillator Hamiltonian,
+validated against an independent symbolic (SymPy) construction of the
+same matrix. It exists so that
 paulikit's correctness fixtures and benchmarks do not depend on
 importing a notebook, and so the matrix can be built directly in
 floating point for large N without symbolic overhead.
