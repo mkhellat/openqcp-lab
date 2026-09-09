@@ -9,6 +9,13 @@ description = "Performance-engineering tools for Pauli decomposition of Hermitia
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
+# Without this the built sdist/wheel carried the licence CLAIM above but
+# no licence TEXT: the repository's GPLv3 file sits one directory up, at
+# the monorepo root, which is outside what meson packages for this
+# subproject. Verified by building the sdist - 335 entries, zero files
+# matching *license*. A PyPI or Zenodo consumer would have received
+# source with no licence.
+license-files = ["LICENSE"]
 authors = [
     { name = "Mohammadreza Khellat", email = "mkhellat@beavernets.com" },
 ]

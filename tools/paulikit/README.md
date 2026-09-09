@@ -253,20 +253,35 @@ were run on the *exact same* `build_hamiltonian()` output at each N
 (see `tests/test_benchmark_reference.py`, marked `slow` and excluded
 from the default test run):
 
+> **These numbers predate this project's own measurement protocol and
+> do not meet it.** Each cell is a single run (n=1) with no warm-up, no
+> interleaving, no repetition and no recorded temperature, and no raw
+> data file was committed for them. `profiling/phase13/MEASUREMENT_METHODOLOGY.md`
+> documents why n=1 timings on this machine are unreliable at the
+> tens-of-percent level - four rounds of this project's own figures
+> were retracted for exactly that reason. Treat the table as an
+> order-of-magnitude indication only; it is scheduled for
+> re-measurement under the protocol before any of it is published.
+
 | N (oscillators) | qubits | Pauli terms | paulikit time | PennyLane time    | speedup |
 |------------------|--------|-------------|----------------|--------------------|---------|
-| 16               | 8      | 15360       | 0.0124s        | 5.6914s            | 459x    |
-| 30               | 9      | 112384      | 0.0937s        | 45.9782s           | 491x    |
-| 50               | 11     | 1261568     | 1.2371s        | 749.9998s          | 606x    |
+| 16               | 8      | 15360       | 0.0124s        | 5.6914s            | ~459x   |
+| 30               | 9      | 112384      | 0.0937s        | 45.9782s           | ~491x   |
+| 50               | 11     | 1261568     | 1.2371s        | 749.9998s (see below) | >=606x |
 | 100              | 13     | 20299776    | 24.6979s       | not attempted      | —       |
 
 Both implementations agree exactly on term count at every N where
 PennyLane finished (a correctness check, not just a performance one).
-Unlike the original 2026-08-04 measurement, the N=50 PennyLane run
-here completed rather than aborting on a timeout - both this test and
-the reference implementation have since improved, and the machine load
-at measurement time affects wall-clock numbers, so treat the exact
-seconds as illustrative, not as a tight guarantee. N=100 still was not
+**The N=50 PennyLane figure should be read as a lower bound, not a
+completion time.** It is reported as 749.9998s - four nines short of
+750s, which is the signature of a wall-clock read against a 750-second
+deadline rather than a natural finish. `PLAN.md` Section 3.4 records
+the same cell from an earlier run as `>590s (aborted)`, i.e. a
+timeout. No log or result artifact was committed for the run reported
+here, so the claim that it completed cannot currently be substantiated
+from the repository. Until it is re-run with its output retained, the
+N=50 speedup is a lower bound (`>=606x`), and the machine load at
+measurement time affects wall-clock numbers regardless. N=100 still was not
 attempted against PennyLane: a direct attempt (2026-08-26) ran for
 over 26 minutes without finishing and was deliberately killed rather
 than left running, both to avoid an indefinite wait and because the
@@ -277,11 +292,20 @@ the full discussion, including why an earlier draft of this table
 (using a synthetic proxy matrix rather than the real Hamiltonian)
 understated PennyLane's actual cost on this problem.
 
-`paulikit`'s own numbers above reflect the current, Phase 6-complete
-implementation (native label kernel plus the sparse
+**Why this table and `PLAN.md` Section 3.4 disagree.** Section 3.4
+reports N=16 as 0.0586s / 6.7369s / 115x where this table reports
+0.0124s / 5.6914s / ~459x - a factor of ~4 in the same quantity. The
+paulikit side is explained: these numbers reflect the current,
+Phase 6-complete implementation (native label kernel plus the sparse
 `fwht_pauli_coefficients` output added in Phase 6 - see
 `profiling/cache_locality/README.md`), not the Phase 1 pure-Python
-baseline this table originally reported. That baseline densely
+baseline Section 3.4 recorded. **The PennyLane side is not explained**:
+the same library on the same input got 18% faster between the two
+measurements, which no change on our side accounts for. Both readings
+are n=1, so the difference is within the run-to-run variation this
+machine is now known to exhibit - which is itself the argument for
+re-measuring rather than reconciling. Section 3.4 is left as the
+historical record and is not being edited to match. That baseline densely
 computed the full $2^n \times 2^n$ coefficient array regardless of
 input sparsity, and generated Pauli-string labels with a per-term,
 per-qubit Python loop. Both of those were identified as the actual
@@ -355,7 +379,7 @@ one dense `(n_active, dim)` block regardless of `chunk_size` - plus an
 opt-in `checkpoint_path` for crash/resume. Confirmed via real,
 memory-capped N=150 runs (see `profiling/phase9/phase9_findings.md`):
 the fix works exactly as designed, but the genuine result size at
-N=150 (`atol=1e-10`) is ~92-134M terms (varies slightly by exact run
+N=150 (`atol=1e-09`, the value every committed verification run in `verification/results/` actually used) is ~92-134M terms (varies slightly by exact run
 parameters), which exceeds this machine's available RAM once
 label-string generation and dict construction are added on top -
 `fwht_pauli_terms`'s fully-materialized `dict` contract has an
