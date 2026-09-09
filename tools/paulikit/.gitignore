@@ -35,3 +35,10 @@ profiling/phase13/sched_*.data
 # *.symbol_histogram.txt (much smaller, and where the actual finding
 # lives) are committed.
 profiling/phase13/*.annotate.full.txt
+
+# uv-generated lockfile. This project builds through its own
+# configure/Makefile (meson-python underneath), not uv, so the lock
+# is a local convenience artifact rather than part of the build
+# contract - and pinning it would conflict with the prebuilt-wheel
+# model PLAN.md targets.
+uv.lock
