@@ -1,0 +1,12 @@
+{"n_osc": 150, "cpu": 0, "rep": 0, "elapsed": 30.817, "wall": 31.242, "cpu_time": 37.311, "vol_cs": 80863, "invol_cs": 2206, "terms": 91652096, "start_temp": 53.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 1, "rep": 0, "elapsed": 26.8672, "wall": 27.264, "cpu_time": 32.915, "vol_cs": 81158, "invol_cs": 936, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 2, "rep": 0, "elapsed": 25.0462, "wall": 25.482, "cpu_time": 30.24, "vol_cs": 80486, "invol_cs": 657, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 3, "rep": 0, "elapsed": 24.0847, "wall": 24.504, "cpu_time": 28.928, "vol_cs": 78755, "invol_cs": 378, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 0, "rep": 1, "elapsed": 24.2474, "wall": 24.693, "cpu_time": 28.887, "vol_cs": 81264, "invol_cs": 1220, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 1, "rep": 1, "elapsed": 23.5561, "wall": 23.935, "cpu_time": 28.386, "vol_cs": 82319, "invol_cs": 621, "terms": 91652096, "start_temp": 54.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 2, "rep": 1, "elapsed": 24.2031, "wall": 24.578, "cpu_time": 29.079, "vol_cs": 82574, "invol_cs": 472, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 3, "rep": 1, "elapsed": 24.1959, "wall": 24.585, "cpu_time": 29.073, "vol_cs": 78731, "invol_cs": 3431, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 0, "rep": 2, "elapsed": 24.3149, "wall": 24.705, "cpu_time": 29.084, "vol_cs": 82372, "invol_cs": 1124, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 1, "rep": 2, "elapsed": 24.6347, "wall": 25.032, "cpu_time": 29.714, "vol_cs": 78913, "invol_cs": 860, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 2, "rep": 2, "elapsed": 24.2964, "wall": 24.782, "cpu_time": 29.457, "vol_cs": 76633, "invol_cs": 566, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}
+{"n_osc": 150, "cpu": 3, "rep": 2, "elapsed": 25.5242, "wall": 26.001, "cpu_time": 30.616, "vol_cs": 84098, "invol_cs": 7169, "terms": 91652096, "start_temp": 55.0, "cooldown_reached": true}

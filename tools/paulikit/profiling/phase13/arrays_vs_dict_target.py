@@ -136,6 +136,16 @@ unpadded = build_hamiltonian(N_OSCILLATORS, spring_constants, masses, sparse=Tru
 padded, n_qubits = pad_to_power_of_two(unpadded, sparse=True)
 
 n_workers, cpu_list = _CONDITIONS[condition]
+# PAULIKIT_FORCE_CPU overrides the condition's CPU list with a single
+# explicit CPU, so a one-worker run can be placed on any core rather
+# than always cpu0. cpu0 is not interchangeable with the others on
+# Linux - it carries the bulk of interrupt handling - and every
+# earlier w1_c1 measurement pinned there, so "which core" was a
+# constant that could not be seen. Only meaningful for single-worker
+# conditions; it deliberately does not touch n_workers.
+_forced = os.environ.get("PAULIKIT_FORCE_CPU")
+if _forced is not None:
+    cpu_list = [int(_forced)]
 fwht._physical_core_representative_cpus = (
     (lambda cpus=cpu_list: cpus) if cpu_list is not None else (lambda: None)
 )
