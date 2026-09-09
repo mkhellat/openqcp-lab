@@ -51,13 +51,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PYTHON = os.path.expanduser("~/.venvs/paulikit/bin/python")
 TARGET = os.path.join(HERE, "arrays_vs_dict_target.py")
 
-# 65C, not 55C: this machine idles around 69-75C after sustained
-# multi-core work and does not reach 55C at all, so every cooldown ran
-# the full 240s timeout without ever hitting its target - 32 minutes of
-# waiting for 2 minutes of compute, and the runs were NOT actually
-# matched at 55C despite the setting claiming so. 65C is reachable, so
-# runs are genuinely matched at it.
-COOLDOWN_TARGET_C = float(os.environ.get("PAULIKIT_COOLDOWN_C", "65.0"))
+# 55C is the phase-13 protocol and IS reachable on this machine - it
+# idles in the mid-40s. An earlier claim that it was unreachable was
+# wrong: cooldowns only hit their ceiling inside a DENSE measurement
+# session, where the next run starts before the machine has shed the
+# previous run's heat. That is sustained load, not a hardware floor.
+# The timeout is generous so a genuinely-hot machine still settles
+# rather than silently running hot, and every run logs the temperature
+# it actually STARTED at, which is the number to check.
+COOLDOWN_TARGET_C = float(os.environ.get("PAULIKIT_COOLDOWN_C", "55.0"))
 COOLDOWN_TIMEOUT_S = 240
 TEMP_PATH = "/sys/class/thermal/thermal_zone7/temp"
 L3_BYTES = 8 * 1024 * 1024
