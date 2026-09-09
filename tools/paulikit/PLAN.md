@@ -2824,38 +2824,51 @@ Parallelism is a net loss for this workload. The work that made it
 possible is not wasted — chunk independence is what makes every
 option below available — but the transport has to change.
 
-**Direction.** Both C kernels already release the GIL, so a threaded
-drain would run them genuinely concurrently and pay no pickling at
-all. A feasibility probe (64 pre-built blocks, `ThreadPoolExecutor`)
-measured 3.04x on 2 threads and 5.42x on 4. **The magnitude is not
-trustworthy** — speedup above thread count is unphysical for
-compute-bound work, and reusing the same blocks leaves them
-cache-warm in a way real gathered chunks would not be. What it
-establishes is the mechanism, not the number.
+**The work queue — five distinct items, in dependency order.** Items
+1 and 2 gate item 3: do not pick a threading technology before the
+premise is re-measured honestly and the serial fraction is known.
 
-**Options to evaluate, in no fixed order.** A Python
-`ThreadPoolExecutor` drain; pthreads directly inside a C-level driver;
-OpenMP (already a build dependency pattern this project knows from
-oneTBB); OpenCilk. The choice interacts with packaging — oneTBB is
-already an optional dependency and its absence must stay survivable.
+1. **Re-measure the threading premise.** Both C kernels already
+   release the GIL, so a threaded drain would run them genuinely
+   concurrently and pay no pickling at all. A feasibility probe (64
+   pre-built blocks, `ThreadPoolExecutor`) measured 3.04x on 2
+   threads and 5.42x on 4 — but **the magnitude is not trustworthy**:
+   speedup above thread count is unphysical for compute-bound work,
+   and reusing the same blocks leaves them cache-warm in a way real
+   gathered chunks would not be. It establishes the mechanism, not
+   the number. Redo it with real gathers, real memory traffic and
+   thermal control before anything is built on it.
 
-**Known obstacle.** The sparse gather is still Python/scipy and holds
-the GIL, so under threads it becomes the new serial fraction. It is
-~3-9% of a chunk today; Amdahl's law on that fraction caps a threaded
-design's ceiling, and it should be measured before, not after,
-choosing a threading approach.
+2. **Measure the serial fraction first.** The sparse gather is still
+   Python/scipy and holds the GIL, so under threads it becomes the
+   new serial fraction. It is ~3-9% of a chunk today; Amdahl's law on
+   that fraction caps any threaded design's ceiling. Measure it
+   before, not after, choosing an approach — if the ceiling is low
+   enough, the right answer may be to move the gather to C first, or
+   not to thread at all.
+
+3. **Evaluate the threading technologies.** A Python
+   `ThreadPoolExecutor` drain; pthreads directly inside a C-level
+   driver; OpenMP; OpenCilk. Section 3's MIT 6.172 notes already
+   cover deep dives on pthread, OpenMP, Intel TBB and Cilk — start
+   there rather than from scratch. The choice interacts with
+   packaging: oneTBB is already an optional dependency and its
+   absence must stay survivable, so whatever is chosen has to degrade
+   gracefully the way the existing kernels do.
+
+4. **Scrutinize pauli_lcu's paper on parallelism**
+   (arXiv:2408.06206) against their shipped code, which is verified
+   strictly single-threaded here (CPU-time/wall = 0.99, no OpenMP
+   symbols, no SIMD-parallel runtime). If the paper claims or
+   discusses parallelism the release does not implement, that matters
+   for any published comparison.
+
+5. **Correct `docs/tutorial.md`**, which still presents
+   `parallel_decompose_arrays` as the fast path. That advice is now
+   wrong and must be fixed before release.
 
 **Also open.**
 
-- Read pauli_lcu's paper (arXiv:2408.06206) on what it says about
-  parallelism, and scrutinize that against the shipped code, which is
-  verified strictly single-threaded here (CPU-time/wall = 0.99, no
-  OpenMP symbols, no SIMD-parallel runtime). If the paper discusses
-  parallelism the release does not implement, that matters for any
-  published comparison.
-- `docs/tutorial.md` still presents `parallel_decompose_arrays` as
-  the fast path. That advice is now wrong and must be corrected
-  before release.
 - Push N past pauli_lcu's dense-input ceiling (n=15 needs 16 GiB,
   above this machine's RAM), where the memory advantage becomes a
   capability difference rather than an efficiency one.
