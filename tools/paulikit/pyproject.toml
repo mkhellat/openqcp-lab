@@ -18,6 +18,9 @@ license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [
     { name = "Mohammadreza Khellat", email = "mkhellat@beavernets.com" },
+    { name = "Mohammad Masoumi" },
+    { name = "Saman Nasouri" },
+    { name = "Soroush Nasouri" },
 ]
 keywords = [
     "quantum-computing",
@@ -69,6 +72,11 @@ docs = [
 ]
 
 [project.urls]
+# TODO before first PyPI release: all three point at the research
+# monorepo this package is being extracted from. They must name the
+# dedicated paulikit repository instead - a PyPI consumer following
+# "Repository" currently lands somewhere paulikit is one tool among
+# several unrelated ones.
 Homepage = "https://codeberg.org/mkhellat/openqcp-lab"
 Repository = "https://codeberg.org/mkhellat/openqcp-lab"
 "Plan / research notes" = "https://codeberg.org/mkhellat/openqcp-lab/src/branch/main/tools/paulikit/PLAN.md"

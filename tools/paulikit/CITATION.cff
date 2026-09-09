@@ -6,11 +6,28 @@ message: >-
   If you use this software, please cite it using the metadata in this
   file.
 type: software
+# Order is the intended citation order, with the corresponding author
+# first. These are the people credited when the SOFTWARE is cited,
+# which need not be identical to the author list of any paper about
+# it - keep the two in step deliberately rather than by accident.
 authors:
   - given-names: Mohammadreza
     family-names: Khellat
     email: mkhellat@beavernets.com
     affiliation: Beavernets Technologies
+  - given-names: Mohammad
+    family-names: Masoumi
+    affiliation: Beavernets Technologies
+  - given-names: Saman
+    family-names: Nasouri
+    affiliation: Beavernets Technologies
+  - given-names: Soroush
+    family-names: Nasouri
+    affiliation: Beavernets Technologies
+# TODO before first release: point at the dedicated paulikit
+# repository once it exists. This currently names the research
+# monorepo the package is being extracted from, which is the wrong
+# target for a citation.
 repository-code: "https://codeberg.org/mkhellat/openqcp-lab"
 abstract: >-
   paulikit computes the exact Pauli decomposition of an arbitrary
