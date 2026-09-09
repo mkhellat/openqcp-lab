@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 title: >-
   paulikit: memory-bounded, checkpointable Pauli decomposition of
-  Hermitian operators
+  complex matrices
 message: >-
   If you use this software, please cite it using the metadata in this
   file.
@@ -13,8 +13,13 @@ authors:
     affiliation: Beavernets Technologies
 repository-code: "https://codeberg.org/mkhellat/openqcp-lab"
 abstract: >-
-  paulikit computes the exact Pauli decomposition of Hermitian and
-  general complex operators via the fast Walsh-Hadamard transform.
+  paulikit computes the exact Pauli decomposition of an arbitrary
+  complex matrix via the fast Walsh-Hadamard transform. Hermitian
+  input is an optional fast path (real coefficients, with the
+  Hermiticity assumption checked rather than assumed), not a
+  restriction: general non-Hermitian matrices are fully supported and
+  are verified against an independent projection oracle and against
+  PennyLane.
   The transform itself is established practice; the contribution here
   is making it usable at scale - a streaming formulation whose peak
   resident memory is bounded independently of the term count, a

@@ -5,7 +5,7 @@ build-backend = "mesonpy"
 [project]
 name = "paulikit"
 version = "0.1.0"
-description = "Performance-engineering tools for Pauli decomposition of Hermitian operators"
+description = "Performance-engineering tools for Pauli decomposition of complex matrices"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
