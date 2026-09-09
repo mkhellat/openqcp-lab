@@ -1,5 +1,23 @@
 # Performance engineering — index
 
+> **Portability of these scripts.** The measurement harnesses here are
+> research instruments, not part of the installable package, and they
+> are not written for portability. Concretely: nine scripts under
+> `phase13/` invoke `~/.venvs/paulikit/bin/python` directly, and
+> `phase13/drain_loop_dag_d_benchmark.py` hardcodes an absolute source
+> path, so they will not run unmodified elsewhere. Several also read
+> Linux-only interfaces (`/sys/class/thermal`, `/sys/devices/system/cpu`,
+> `/proc`, `perf`, `sched_setaffinity`) and assume this machine's
+> 4-core/8-thread topology.
+>
+> The *library* has no such dependencies — `src/`, `tests/` and
+> `verification/` are free of hardcoded paths, and the correctness
+> artifacts under `verification/` are reproducible anywhere. If you
+> want to reproduce a timing result rather than a correctness result,
+> read `phase13/MEASUREMENT_METHODOLOGY.md` first: the protocol is
+> portable even where these particular scripts are not.
+
+
 This directory holds every profiling/measurement artifact behind
 `paulikit`'s performance work, in the order the work was actually done.
 It is the single entry point: read this file first, then follow the
