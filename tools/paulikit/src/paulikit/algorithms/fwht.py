@@ -84,6 +84,11 @@ except ImportError:
     _native = None
 
 try:
+    from paulikit._native import wht_native as _wht_native
+except ImportError:
+    _wht_native = None
+
+try:
     import scipy.sparse as _sp
 except ImportError:
     _sp = None
@@ -209,6 +214,28 @@ def _walsh_hadamard_transform_rows(
     transformed = array if overwrite_input else array.copy()
     dim = array.shape[1]
     rows = array.shape[0]
+
+    # Compiled path (PLAN.md Phase 14). The NumPy butterfly below
+    # operates on stride-2 views, which cannot be vectorized; the C
+    # kernel runs the same stages over contiguous memory and blocks
+    # them so each tile is carried through log2(tile) stages while
+    # cache-resident. Identical output - the tests assert it is
+    # bit-identical - so this is purely a speed path, and its absence
+    # changes results not at all.
+    #
+    # tile=0 tells the kernel to size the tile itself from this
+    # machine's L1 data cache (sysconf), so the blocking adapts to the
+    # hardware instead of encoding this machine's cache into the
+    # source - and it costs nothing per call, unlike a latency probe.
+    if (
+        _wht_native is not None
+        and transformed.dtype == np.complex128
+        and transformed.flags["C_CONTIGUOUS"]
+        and rows > 0
+        and dim > 1
+    ):
+        _wht_native.wht_rows_inplace(transformed, 0)
+        return transformed
 
     # ONE scratch buffer, allocated once and reused across all
     # log2(dim) stages, sized for the largest half-block (dim // 2
