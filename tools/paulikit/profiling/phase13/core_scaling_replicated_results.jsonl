@@ -46,3 +46,15 @@
 {"n_osc": 200, "condition": "w4_c4", "chunk_size": 1, "rep": 4, "elapsed": 33.195, "terms": 326139904, "peak_rss_mib": 369.1, "start_temp": 55.0, "cooled_s": 44.0, "cooldown_reached": true, "end_temp": 78.0}
 {"n_osc": 200, "condition": "w1_c1", "chunk_size": 1, "rep": 5, "elapsed": 86.3075, "terms": 326139904, "peak_rss_mib": 200.8, "start_temp": 55.0, "cooled_s": 52.0, "cooldown_reached": true, "end_temp": 75.0}
 {"n_osc": 200, "condition": "w4_c4", "chunk_size": 1, "rep": 5, "elapsed": 34.6453, "terms": 326139904, "peak_rss_mib": 368.9, "start_temp": 55.0, "cooled_s": 50.0, "cooldown_reached": true, "end_temp": 79.0}
+{"n_osc": 180, "condition": "w1_c1", "chunk_size": 2, "rep": 0, "elapsed": 77.9769, "terms": 264093696, "peak_rss_mib": 198.0, "start_temp": 54.0, "cooled_s": 0.0, "cooldown_reached": true, "end_temp": 74.0}
+{"n_osc": 180, "condition": "w4_c4", "chunk_size": 2, "rep": 0, "elapsed": 28.056, "terms": 264093696, "peak_rss_mib": 358.7, "start_temp": 55.0, "cooled_s": 42.0, "cooldown_reached": true, "end_temp": 80.0}
+{"n_osc": 180, "condition": "w1_c1", "chunk_size": 2, "rep": 1, "elapsed": 70.4322, "terms": 264093696, "peak_rss_mib": 194.9, "start_temp": 55.0, "cooled_s": 46.0, "cooldown_reached": true, "end_temp": 78.0}
+{"n_osc": 180, "condition": "w4_c4", "chunk_size": 2, "rep": 1, "elapsed": 28.7105, "terms": 264093696, "peak_rss_mib": 361.0, "start_temp": 55.0, "cooled_s": 42.0, "cooldown_reached": true, "end_temp": 81.0}
+{"n_osc": 180, "condition": "w1_c1", "chunk_size": 2, "rep": 2, "elapsed": 73.2071, "terms": 264093696, "peak_rss_mib": 195.1, "start_temp": 55.0, "cooled_s": 48.0, "cooldown_reached": true, "end_temp": 78.0}
+{"n_osc": 180, "condition": "w4_c4", "chunk_size": 2, "rep": 2, "elapsed": 28.6655, "terms": 264093696, "peak_rss_mib": 358.6, "start_temp": 55.0, "cooled_s": 44.0, "cooldown_reached": true, "end_temp": 80.0}
+{"n_osc": 180, "condition": "w1_c1", "chunk_size": 2, "rep": 3, "elapsed": 71.6519, "terms": 264093696, "peak_rss_mib": 196.4, "start_temp": 54.0, "cooled_s": 56.0, "cooldown_reached": true, "end_temp": 79.0}
+{"n_osc": 180, "condition": "w4_c4", "chunk_size": 2, "rep": 3, "elapsed": 28.9441, "terms": 264093696, "peak_rss_mib": 359.3, "start_temp": 55.0, "cooled_s": 44.0, "cooldown_reached": true, "end_temp": 78.0}
+{"n_osc": 180, "condition": "w1_c1", "chunk_size": 2, "rep": 4, "elapsed": 72.2139, "terms": 264093696, "peak_rss_mib": 195.6, "start_temp": 55.0, "cooled_s": 46.0, "cooldown_reached": true, "end_temp": 82.0}
+{"n_osc": 180, "condition": "w4_c4", "chunk_size": 2, "rep": 4, "elapsed": 29.3962, "terms": 264093696, "peak_rss_mib": 359.5, "start_temp": 55.0, "cooled_s": 48.0, "cooldown_reached": true, "end_temp": 80.0}
+{"n_osc": 180, "condition": "w1_c1", "chunk_size": 2, "rep": 5, "elapsed": 74.4095, "terms": 264093696, "peak_rss_mib": 195.4, "start_temp": 55.0, "cooled_s": 54.0, "cooldown_reached": true, "end_temp": 79.0}
+{"n_osc": 180, "condition": "w4_c4", "chunk_size": 2, "rep": 5, "elapsed": 29.6618, "terms": 264093696, "peak_rss_mib": 358.5, "start_temp": 55.0, "cooled_s": 50.0, "cooldown_reached": true, "end_temp": 80.0}

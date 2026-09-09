@@ -94,12 +94,50 @@ The 55C protocol is restored, and every run in this table met it.
   across that sweep was measured consistently even though its absolute
   values came from the bad regime.
 
-## Open
+## The qubit-boundary step is `dim`, not chunk count
 
-**What causes the ~9-point step at the qubit boundary.** `dim` doubles
-there, and it sets the gather/scatter row width independently of
-`chunk_size`. Two other explanations are already falsified on their own
-evidence (per-worker buffer size; chunk count / IPC volume - see
-`core_efficiency_findings.md`, whose falsifications remain valid even
-though its efficiency numbers do not). The step is now much smaller
-than previously believed, so it may not be worth chasing.
+Resolved 2026-09-09. At the boundary three variables move together, so
+"dim doubles" was never a single hypothesis. Two were already
+controlled by the data above, and the third was tested directly.
+
+| cell | dim | buffer/worker | chunks | terms/chunk | efficiency |
+|---|---|---|---|---|---|
+| N=150 cs=2 | 16384 | 512 KiB | 5,595 | 16,381 | **72.4%** |
+| N=180 cs=1 | 32768 | 512 KiB | 16,120 | 16,382 | **65.2%** |
+| N=180 cs=2 | 32768 | 1024 KiB | 8,060 | 32,764 | **62.2%** |
+
+- **Per-worker buffer: refuted.** The auto-tuner halves `chunk_size` at
+  15 qubits precisely to hold it at 512 KiB, so the first two rows
+  share the putative cause and differ in effect.
+- **Terms per chunk: never differed across the boundary.** 16,381 at
+  N=150 against 16,382 at N=180, so it cannot explain the step. It does
+  double in the third row (32,765), which is the price of using
+  `chunk_size` as the lever - see the caveat below.
+- **Chunk count: refuted by the third row.** Forcing `chunk_size=2` at
+  N=180 halves the chunk count (16,120 -> 8,060), closing the gap with
+  N=150 from 2.9x to 1.44x. Efficiency did not recover - it fell
+  slightly, to 62.2% (Welch p=5.8e-08, spreads 1.03-1.06x). If chunk
+  count drove the step, this cell should have moved toward 72%.
+
+**`dim` is what remains, and the mechanism is coherent.** Each chunk
+gathers and scatters across a row of `dim` complex128 entries: 256 KiB
+at 14 qubits, 512 KiB at 15. That footprint scales with `dim`
+regardless of `chunk_size`, so the tuner cannot compensate for it.
+Against a 256 KiB per-core L2, a 14-qubit row fits and a 15-qubit row
+does not.
+
+Caveat: `chunk_size` is the only lever that moves chunk count, and
+moving it also doubles the per-worker buffer (to 1024 KiB, 50% of L3
+in aggregate at four workers) and doubles terms per chunk. So the
+third row is not a clean single-variable change, and a perfectly
+isolated test of chunk count is not available through this knob.
+
+What makes the conclusion hold anyway is the DIRECTION of the failure.
+If chunk count drove the step, halving it should have moved efficiency
+toward 72%. It moved the other way, to 62.2%. Every confound
+introduced alongside it would have to be not merely present but
+strong enough to mask a recovery AND overshoot it - and the two
+confounds (bigger buffer, more terms per chunk) both push in the same
+direction the result already went. Chunk count is refuted as the
+explanation for the boundary step; whether it has a small effect of
+its own is not settled here.
