@@ -42,8 +42,9 @@ All at auto-tuned `chunk_size`, thermally controlled at a *reachable*
 Within a qubit count efficiency is flat (113/102 at 14; 87/86 at 15).
 Across the boundary it steps down. There is **no monotonic decay with
 N**: N=200 is 24% larger than N=180 and scales the same. The 14-qubit
-cells are superlinear - four private L2s serving a quarter of the
-working set each.
+cells are superlinear - four cores bring four private L2s and four
+L1s, so each handles a quarter of the working set with better
+residency than one core handling all of it.
 
 Practical answer to "should we expect worse and worse efficiency, and
 eventually degradation, as N grows": **no, not on this evidence.**
@@ -113,9 +114,30 @@ same way, is the finding):
 | 8 | 4 MiB | 16 MiB | 81.48s | 50.87s | 1.602x | 40.0% |
 
 Single-core time barely moves (75-83s) while 4-core time nearly
-doubles. That is contention, not extra work. The cliff sits at private
-L2 (1 MiB/core), not shared L3: an L3 story predicts trouble only at
-`chunk_size=8`, but efficiency is already halved at 4.
+doubles. That is contention, not extra work.
+
+**CORRECTED 2026-09-09.** An earlier version of this section placed
+the cliff at "private L2 (1 MiB/core)" and argued against an L3
+explanation. That was based on `lscpu`'s "L2 cache: 1 MiB (4
+instances)", which is the AGGREGATE across four cores, not the
+per-core size. `/sys` is authoritative and reports **L2 = 256 KiB per
+core** (shared by each hyperthread pair), L3 = 8 MiB shared by all
+eight logical CPUs. This is exactly the aggregate-vs-per-core
+ambiguity `autotune`'s own fallback warning names.
+
+Re-read against the real 256 KiB L2, the data says the opposite:
+
+| chunk | buf/worker | vs L2 (256 KiB) | 4-worker aggregate | vs L3 (8 MiB) | efficiency |
+|---|---|---|---|---|---|
+| 1 | 512 KiB | 2.0x | 2.0 MiB | 25% | 66.3% |
+| 2 | 1 MiB | 4.0x | 4.0 MiB | 50% | 64.0% |
+| 4 | 2 MiB | 8.0x | 8.0 MiB | **100%** | 49.0% |
+| 8 | 4 MiB | 16.0x | 16.0 MiB | 200% | 40.0% |
+
+Every chunk already exceeds L2, `chunk_size=1` included, so L2
+residency cannot be what separates 66% from 40%. The **L3 aggregate**
+tracks it exactly: efficiency is stable while four workers fit inside
+L3 and collapses at precisely the point they fill it.
 
 **Do not raise `chunk_size` above what the auto-tuner picks.**
 
@@ -126,9 +148,9 @@ currently chosen from `dim` and a memory budget, targeting **one
 core's private L2**. But the cache a chunk actually competes for
 depends on how many cores are running:
 
-- 1 core: the chunk has a full 1 MiB L2 and all 8 MiB of L3.
-- 4 cores: each still has its own 1 MiB L2, but the four now share one
-  8 MiB L3 - 2 MiB each in aggregate terms.
+- 1 core: the chunk has its own 256 KiB L2 and all 8 MiB of L3.
+- 4 cores: each still has its own 256 KiB L2, but the four now share
+  one 8 MiB L3 - 2 MiB each in aggregate terms.
 
 So the same `chunk_size` is a different proposition at `w1_c1` than at
 `w4_c4`, and the tuner cannot see which is coming. The table above is
