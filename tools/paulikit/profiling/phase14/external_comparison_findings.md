@@ -101,31 +101,36 @@ The bottom row is the supported pipeline
 (`parallel_decompose_arrays` on a `scipy.sparse` operator) and
 reproduces the ~8s figure from the same day's core-scaling work.
 
-### Replicated head-to-head
+### Replicated head-to-head - SUPERSEDED, kept as the intermediate record
+
+The numbers in this subsection and the next predate the two C kernels
+and the gather/accumulator fixes. **They are the history of how the
+gap closed, not the current position** - see the table at the top of
+this document for that.
 
 Protocol-grade (`replicated_head_to_head.py`): 5 reps, interleaved,
 cooldown to 55C before every run, first rep discarded. Run twice -
-before the phase-14 optimizations and after.
+before the first three optimizations and after.
 
 | N | pauli_lcu | paulikit before | paulikit after | ratio after |
 |---|---|---|---|---|
-| 100 | 1.022s ±0.009 | 1.780s ±0.036 | **1.587s ±0.029** | 0.64x |
-| 150 | 4.283s ±0.071 | 8.068s ±0.338 | **7.550s ±0.685** | 0.57x |
+| 100 | 1.022s ±0.009 | 1.780s ±0.036 | 1.587s ±0.029 | 0.64x |
+| 150 | 4.283s ±0.071 | 8.068s ±0.338 | 7.550s ±0.685 | 0.57x |
 
 Peak RSS across all of these: 87-89 MiB for paulikit, 2178 MiB
 (N=100) and 8893 MiB (N=150) for pauli_lcu.
 
-The N=100 improvement (1.12x) is well outside its error bars. **The
-N=150 improvement (1.07x) is NOT statistically established** - its
-sigma of 0.685 is larger than the 0.518s gain and ~10x pauli_lcu's
-own sigma on the same row, so at least one rep was disturbed. More
-reps are needed before that number is quoted.
+The N=100 improvement (1.12x) was well outside its error bars. The
+N=150 improvement (1.07x) was NOT statistically established - its
+sigma of 0.685 exceeded the 0.518s gain - and was correctly not
+quoted at the time.
 
-### CPU-seconds, which is the number that matters
+### CPU-seconds - the starting position, and why it was the right metric
 
-Wall-clock hides the real gap, because paulikit is spending four
-cores to pauli_lcu's one. Measured with `getrusage` over the
-decomposition region only (self + children):
+Wall-clock hid the real gap, because paulikit was spending four cores
+to pauli_lcu's one. Measured with `getrusage` over the decomposition
+region only (self + children). **These are the phase-14 STARTING
+numbers**; the current sequential figure is 2.648 CPU-seconds:
 
 | | wall | CPU-seconds | cores |
 |---|---|---|---|
@@ -142,8 +147,15 @@ Two distinct gaps, which earlier notes conflated:
    overhead to buy a 2.77x speedup from 4.48 cores, i.e. 62%
    efficiency.
 
-Together: paulikit spends 6.4x the total CPU to land within 1.8x of
-pauli_lcu's wall time. Closing (1) shrinks (2) proportionally.
+Together: paulikit then spent 6.4x the total CPU to land within 1.8x
+of pauli_lcu's wall time.
+
+Both gaps are now closed. (1) was resolved by the two C kernels
+(sequential CPU 18.30 -> 2.648). (2) turned out not to be a separate
+problem: the cache-tiled kernel cut 1-to-4-worker CPU growth from
++77% to +30%, and the residual is the ProcessPoolExecutor round trip
+itself - which the now-cheap compute no longer justifies paying at
+all (see `parallelism_no_longer_pays.md`).
 
 ### pauli_lcu is single-core - verified, against an initial misread
 
@@ -213,8 +225,11 @@ Also corrected: N=150 is **14 qubits, dim 16384** (dim 512 is N=30).
 2. **Memory.** ~99x smaller peak RSS at N=150 on the real pipeline.
    This is the strongest quantitative result and follows directly
    from the design rather than from tuning.
-3. **Time.** 0.57-0.64x on wall clock, replicated. Substantially
-   worse on dense unstructured input, and 6.4x worse in total CPU.
+3. **Time.** 1.44-1.63x FASTER on wall clock, replicated twice, and
+   1.77x less CPU on a single core. Still substantially worse on
+   dense unstructured input, which remains a real and reportable
+   weakness - there the sparsity-aware machinery costs without
+   anything to exploit.
 4. **Sparse-input capability.** pauli_lcu cannot accept a sparse
    operator at all; it requires the dense array as input. For
    operators too large to materialise densely, the comparison has no
@@ -237,12 +252,26 @@ this project exists to have.
 
 ## Next steps
 
-1. **The 11.5 CPU-seconds of parallel overhead** is the largest
-   single lever and does not require touching the transform.
-2. **The strided butterfly.** Whether a permutation exists that makes
-   both butterfly operands unit-stride, so NumPy can vectorize the
-   inner loop, is an open question (see the Hacker's Delight
-   perfect-shuffle material).
+Items 1 and 2 as originally written are closed - the strided butterfly
+by the C kernel, the parallel overhead by reframing (see the CPU
+section above). What remains:
+
+1. **Rebuild parallelism on a new foundation.** The process pool no
+   longer pays: per-chunk compute is now ~0.5 ms against a ~1.33 ms
+   ProcessPoolExecutor round trip, so `parallel_decompose_arrays` is
+   slower than the sequential path (see
+   `parallelism_no_longer_pays.md`). Both C kernels release the GIL,
+   so a threaded drain avoids pickling entirely; a feasibility probe
+   was promising but its magnitude is untrustworthy. Alternatives
+   worth evaluating: pthreads directly, OpenMP, OpenCilk. Note the
+   sparse gather is still Python/scipy and would become the new
+   serial fraction under threads.
+2. **Read what pauli_lcu's paper says about parallelism** (Georges,
+   Berntson, Sunderhauf, Ivanov, arXiv:2408.06206) and check it
+   against their shipped code, which is strictly single-threaded as
+   verified here. If the paper claims or discusses parallelism that
+   the release does not implement, that is worth knowing before any
+   comparison is published.
 3. Push N past the point where pauli_lcu's dense input requirement
    becomes infeasible (n=15 is 16 GiB, above this machine's RAM) -
    that is where the memory advantage becomes a capability difference

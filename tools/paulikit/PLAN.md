@@ -2806,18 +2806,63 @@ kernel added here operates on one chunk with no shared state.
    `bit_hack_avenues_closed.md`). Resolved with the C kernel instead,
    applied to our own chunked COO-producing structure.
 
-**Still open.**
+### Phase 15 — rebuild parallelism on a threaded foundation (scoped 2026-09-09, not started)
 
+**Why this is now the priority.** Phase 13 built chunk independence
+and the array-yielding API specifically so parallelism would work,
+and it did: 2.95x on 4 workers. Phase 14's kernels then made
+per-chunk compute ~2.5x cheaper without touching the
+`ProcessPoolExecutor` round trip, and the balance flipped. Measured:
+
+| N | sequential wall | parallel wall | speedup | CPU cost |
+|---|---|---|---|---|
+| 100 | 0.606s | 0.642s | **0.94x** | 3.36x |
+| 150 | 2.525s | 3.136s | **0.81x** | 5.52x |
+
+Per-chunk useful work is now ~0.5 ms against a ~1.33 ms round trip.
+Parallelism is a net loss for this workload. The work that made it
+possible is not wasted — chunk independence is what makes every
+option below available — but the transport has to change.
+
+**Direction.** Both C kernels already release the GIL, so a threaded
+drain would run them genuinely concurrently and pay no pickling at
+all. A feasibility probe (64 pre-built blocks, `ThreadPoolExecutor`)
+measured 3.04x on 2 threads and 5.42x on 4. **The magnitude is not
+trustworthy** — speedup above thread count is unphysical for
+compute-bound work, and reusing the same blocks leaves them
+cache-warm in a way real gathered chunks would not be. What it
+establishes is the mechanism, not the number.
+
+**Options to evaluate, in no fixed order.** A Python
+`ThreadPoolExecutor` drain; pthreads directly inside a C-level driver;
+OpenMP (already a build dependency pattern this project knows from
+oneTBB); OpenCilk. The choice interacts with packaging — oneTBB is
+already an optional dependency and its absence must stay survivable.
+
+**Known obstacle.** The sparse gather is still Python/scipy and holds
+the GIL, so under threads it becomes the new serial fraction. It is
+~3-9% of a chunk today; Amdahl's law on that fraction caps a threaded
+design's ceiling, and it should be measured before, not after,
+choosing a threading approach.
+
+**Also open.**
+
+- Read pauli_lcu's paper (arXiv:2408.06206) on what it says about
+  parallelism, and scrutinize that against the shipped code, which is
+  verified strictly single-threaded here (CPU-time/wall = 0.99, no
+  OpenMP symbols, no SIMD-parallel runtime). If the paper discusses
+  parallelism the release does not implement, that matters for any
+  published comparison.
+- `docs/tutorial.md` still presents `parallel_decompose_arrays` as
+  the fast path. That advice is now wrong and must be corrected
+  before release.
 - Push N past pauli_lcu's dense-input ceiling (n=15 needs 16 GiB,
   above this machine's RAM), where the memory advantage becomes a
   capability difference rather than an efficiency one.
-- The pool round trip remains ~1.33 ms/chunk against ~0.5 ms of
-  useful work now that the compute is this fast. Shared memory is the
-  one untested lever (probed at 1.96x on raw transfer); note that the
-  *sequential* path is now faster than the parallel one at N=150
-  (2.648 vs 10.109 CPU-seconds), so for this workload the honest
-  advice is that parallelism no longer pays — worth confronting
-  directly rather than defending the pool.
+- Shared memory for the process pool remains untested (probed at
+  1.96x on raw transfer) but looks unlikely to be enough on its own:
+  against ~1.33 ms of round trip and ~0.5 ms of compute it would
+  leave parallelism roughly break-even.
 
 See `profiling/phase14/` for harnesses and
 `profiling/phase14/external_comparison_findings.md` for the full
