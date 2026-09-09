@@ -97,6 +97,14 @@ _POPCOUNT_BYTE_LUT = np.array([bin(i).count("1") for i in range(256)], dtype=np.
 # way. A 4-entry gather replaces it.
 _PHASE_BY_POPCOUNT_MOD4 = np.array([1 + 0j, 1j, -1 + 0j, -1j], dtype=complex)
 
+# The conjugates of the above, which is what the coefficient formula
+# actually multiplies by (see the module docstring: the factor is
+# ``conj(i**popcount(x & z)) / dim``). Conjugating a fourth root of
+# unity is an index reflection, ``(4 - k) & 3``, so the conjugated
+# table is free to precompute and removes a full-array ``np.conj``
+# temporary from the per-chunk path.
+_CONJ_PHASE_BY_POPCOUNT_MOD4 = _PHASE_BY_POPCOUNT_MOD4.conj()
+
 
 def _popcount_array(values: NDArray[np.integer], n_bits: int) -> NDArray[np.integer]:
     """Vectorized population count for integers in [0, 2**n_bits).
@@ -122,8 +130,9 @@ def _popcount_array(values: NDArray[np.integer], n_bits: int) -> NDArray[np.inte
         count += _POPCOUNT_BYTE_LUT[(values >> shift) & 0xFF]
     return count
 
-
-def _phase_from_popcount(values: NDArray[np.integer], n_bits: int) -> NDArray[np.complexfloating]:
+def _phase_from_popcount(
+    values: NDArray[np.integer], n_bits: int, conjugate: bool = False
+) -> NDArray[np.complexfloating]:
     """``1j ** popcount(values)``, without the complex exponentiation.
 
     Two bit-level shortcuts over the obvious
@@ -146,6 +155,11 @@ def _phase_from_popcount(values: NDArray[np.integer], n_bits: int) -> NDArray[np
         values: Integer array whose set bits are to be counted
             (typically ``x & z``).
         n_bits: Number of bits to examine.
+        conjugate: If ``True``, return ``conj(1j ** popcount(...))``
+            by gathering from the pre-conjugated table instead of
+            building a ``np.conj`` temporary of the result - the form
+            the coefficient formula needs. Free: conjugation of a
+            fourth root of unity is just a different table.
 
     Returns:
         A complex array of the same shape, each entry in
@@ -155,7 +169,8 @@ def _phase_from_popcount(values: NDArray[np.integer], n_bits: int) -> NDArray[np
     count = np.zeros(narrowed.shape, dtype=np.uint8)
     for shift in range(0, n_bits, 8):
         count += _POPCOUNT_BYTE_LUT[(narrowed >> shift) & 0xFF]
-    return _PHASE_BY_POPCOUNT_MOD4[count & 3]
+    table = _CONJ_PHASE_BY_POPCOUNT_MOD4 if conjugate else _PHASE_BY_POPCOUNT_MOD4
+    return table[count & 3]
 
 
 def _walsh_hadamard_transform_rows(
@@ -676,6 +691,11 @@ def _iter_chunked_coefficients(
     """
     if chunk_size < 1:
         raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
+    # dim is a power of two, so 1/dim is exact in binary floating
+    # point and multiplying by it is bit-identical to dividing by dim
+    # - but it hoists the reciprocal out of the per-chunk loop and
+    # turns a per-term division into a per-term multiply.
+    inv_dim = 1.0 / dim
     # inverse is sorted first so each chunk's nonzero entries
     # (p_nz[lo:hi], q_nz[lo:hi]) are a contiguous slice, found via
     # searchsorted on chunk boundaries - avoiding an O(nnz) boolean
@@ -718,8 +738,9 @@ def _iter_chunked_coefficients(
         )
 
         chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
-        phase = _phase_from_popcount(chunk_x & z_indices, n_qubits)
-        chunk_coefficients = transformed_chunk * np.conj(phase) / dim
+        conj_phase = _phase_from_popcount(
+            chunk_x & z_indices, n_qubits, conjugate=True)
+        chunk_coefficients = transformed_chunk * (conj_phase * inv_dim)
 
         # Threshold now, before accumulation - the space-complexity
         # fix (PLAN.md Phase 9): only surviving triples are ever held
@@ -950,8 +971,8 @@ def fwht_pauli_coefficients(
 
     # Step 3: phase-factor multiplication, computed only for active x.
     xz_and = active_x[:, np.newaxis] & z_indices
-    phase = _phase_from_popcount(xz_and, n_qubits)
-    active_coefficients = transformed_active * np.conj(phase) / dim
+    conj_phase = _phase_from_popcount(xz_and, n_qubits, conjugate=True)
+    active_coefficients = transformed_active * (conj_phase * (1.0 / dim))
 
     if sparse:
         return active_x, active_coefficients
@@ -1635,8 +1656,9 @@ def _parallel_worker_chunk(
 
     active_x = state["active_x"]
     chunk_x = active_x[chunk_start:chunk_end, np.newaxis]
-    phase = _phase_from_popcount(chunk_x & state["z_indices"], state["n_qubits"])
-    chunk_coefficients = transformed_chunk * np.conj(phase) / dim
+    conj_phase = _phase_from_popcount(
+        chunk_x & state["z_indices"], state["n_qubits"], conjugate=True)
+    chunk_coefficients = transformed_chunk * (conj_phase * (1.0 / dim))
 
     row_idx, z_idx = np.nonzero(np.abs(chunk_coefficients) > state["atol"])
     chunk_x_out = active_x[chunk_start:chunk_end][row_idx]
