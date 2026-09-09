@@ -2438,7 +2438,7 @@ free, itself confirmation the fix is working as intended.
   branches unchanged (no cgroup concept there).
 
 
-### Phase 13 — multi-core / multi-node chunk parallelism (scoped 2026-09-02, not yet implemented)
+### Phase 13 — multi-core / multi-node chunk parallelism (scoped 2026-09-02; multi-core landed, multi-node deferred)
 
 **Motivation.** Raised directly by the user during Phase 12's
 chunk_size-floor investigation: if this pipeline cannot use more than
@@ -2767,15 +2767,31 @@ single shared mutable buffer, or positional output, is disqualified
 here regardless of speed**: it would trade away the streaming and
 multi-node properties Phases 9-13 were built to establish.
 
+**The goal is to beat pauli_lcu outright on compute, not to narrow
+the gap.** Parity is not the target. Both gaps below have to close,
+and the arithmetic says it is reachable: 29.83 CPU-seconds against
+their 4.68 means eliminating the parallel overhead entirely (11.5s)
+still leaves 18.3s sequential, so the per-core work must also come
+down ~4x. Neither alone suffices.
+
+**Scope note.** Multi-node (MPI) is scoped in Phase 13 but is *not*
+being pursued now and is not part of what ships. The chunk-independence
+property that makes it possible must be preserved, but no MPI work is
+planned in the current push.
+
 **Open, in priority order.**
 
 1. The 11.5 CPU-seconds of parallel overhead — the largest single
-   lever, and it needs no change to the transform.
-2. The strided butterfly. Open question: does an index permutation
-   exist (perfect shuffle / bit-reversal family) that makes both
-   butterfly operands unit-stride, so the inner loop vectorizes,
-   with permute + transform + unpermute still cheaper than staying
-   strided?
+   lever, and it needs no change to the transform. 63% overhead for a
+   2.77x speedup on 4.48 cores; pickling, IPC, and process
+   coordination are the suspects.
+2. The strided butterfly, ~3.9x per-core. Open question: does an
+   index permutation exist (perfect shuffle / bit-reversal family)
+   that makes both butterfly operands unit-stride, so the inner loop
+   vectorizes, with permute + transform + unpermute still cheaper
+   than staying strided? If no NumPy-level answer exists, the
+   existing C/Cython kernel infrastructure is the fallback — applied
+   to our own chunked, COO-producing structure, not their layout.
 3. Push N past pauli_lcu's dense-input ceiling (n=15 needs 16 GiB,
    above this machine's RAM), where the memory advantage becomes a
    capability difference rather than an efficiency one.
