@@ -98,8 +98,7 @@ precision) result.
 
 The practical effect: what didn't finish at $N=4$ with the symbolic
 approach completes for $N=30$ in well under a second with
-`paulikit`'s FWHT implementation (see the benchmark table in the
-package {doc}`README <index>`), and scales cleanly to $N=100$ and
+`paulikit`'s FWHT implementation, and scales cleanly to $N=100$ and
 beyond.
 
 ## Where this fits in the pipeline
