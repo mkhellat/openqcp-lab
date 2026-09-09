@@ -1,0 +1,9 @@
+{"round": "A", "tag": "cold-first", "condition": "w4_c4", "elapsed": 8.5996, "warm_reference": 8.07, "inflation_pct": 6.6, "start_temp": 48.0, "terms": 91652096}
+{"round": "A", "tag": "second", "condition": "w1_c1", "elapsed": 28.4388, "warm_reference": 23.35, "inflation_pct": 21.8, "start_temp": 68.0, "terms": 91652096}
+{"round": "A", "tag": "third(warm)", "condition": "w4_c4", "elapsed": 10.7957, "warm_reference": 8.07, "inflation_pct": 33.8, "start_temp": 82.0, "terms": 91652096}
+{"round": "A", "tag": "cold-first", "condition": "w4_c4", "elapsed": 9.0243, "warm_reference": 8.07, "inflation_pct": 11.8, "start_temp": 48.0, "cooldown_reached": true, "terms": 91652096}
+{"round": "A", "tag": "second", "condition": "w1_c1", "elapsed": 24.4261, "warm_reference": 23.35, "inflation_pct": 4.6, "start_temp": 55.0, "cooldown_reached": true, "terms": 91652096}
+{"round": "A", "tag": "third(warm)", "condition": "w4_c4", "elapsed": 8.175, "warm_reference": 8.07, "inflation_pct": 1.3, "start_temp": 55.0, "cooldown_reached": true, "terms": 91652096}
+{"round": "B", "tag": "cold-first", "condition": "w1_c1", "elapsed": 31.0208, "warm_reference": 23.35, "inflation_pct": 32.9, "start_temp": 45.0, "cooldown_reached": true, "terms": 91652096}
+{"round": "B", "tag": "second", "condition": "w4_c4", "elapsed": 8.1962, "warm_reference": 8.07, "inflation_pct": 1.6, "start_temp": 55.0, "cooldown_reached": true, "terms": 91652096}
+{"round": "B", "tag": "third(warm)", "condition": "w1_c1", "elapsed": 25.567, "warm_reference": 23.35, "inflation_pct": 9.5, "start_temp": 55.0, "cooldown_reached": true, "terms": 91652096}
