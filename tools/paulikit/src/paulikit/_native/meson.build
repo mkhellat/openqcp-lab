@@ -89,6 +89,33 @@ else
   message('paulikit: wht_native disabled via -Dwht_kernel=disabled')
 endif
 
+# The fused coefficient kernel (PLAN.md Phase 14) - phase factor,
+# scaling, thresholding and index emission in one pass. Same
+# C-and-Cython-only dependency set as the WHT kernel above, and shares
+# its option: the two are a pair (transform, then emit) and there is
+# no case for building one without the other.
+if not wht_opt.disabled() and have_cython and have_c
+  cy4 = meson.get_compiler('cython')
+
+  if cy4.version().version_compare('>=3.0')
+    np_include_coeffs = run_command(
+      py, ['-c', 'import numpy; print(numpy.get_include())'],
+      check: true,
+    ).stdout().strip()
+
+    py.extension_module(
+      'coeffs_native',
+      [
+        'coeffs_native.pyx',
+        'coeffs.c',
+      ],
+      include_directories: include_directories('.', np_include_coeffs, is_system: true),
+      install: true,
+      subdir: 'paulikit/_native',
+    )
+  endif
+endif
+
 # The empirical cache-latency probe (PLAN.md Phase 12) - standalone,
 # Cython-only, deliberately independent of the native/oneTBB option
 # above (the probe has no relationship to oneTBB; see cache_probe.pyx's
