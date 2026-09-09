@@ -121,6 +121,42 @@ def _declared_l2_size_bytes() -> int | None:
     return None
 
 
+def _declared_l1d_size_bytes() -> int | None:
+    """Best-effort per-core L1 *data* cache size from ``/sys`` (Linux
+    only), the L1 counterpart of ``_declared_l2_size_bytes``.
+
+    Returns ``None`` if unavailable - callers must have their own
+    final fallback. Only ``type == "Data"`` is accepted: unlike L2,
+    L1 is typically split, and the instruction cache is irrelevant to
+    a data-blocking decision.
+    """
+    cache_dir = "/sys/devices/system/cpu/cpu0/cache"
+    try:
+        entries = os.listdir(cache_dir)
+    except OSError:
+        return None
+
+    for entry in entries:
+        index_dir = os.path.join(cache_dir, entry)
+        try:
+            with open(os.path.join(index_dir, "level")) as f:
+                level = f.read().strip()
+            with open(os.path.join(index_dir, "type")) as f:
+                cache_type = f.read().strip()
+            if level != "1" or cache_type != "Data":
+                continue
+            with open(os.path.join(index_dir, "size")) as f:
+                size_str = f.read().strip()
+            if size_str.endswith("K"):
+                return int(size_str[:-1]) * 1024
+            if size_str.endswith("M"):
+                return int(size_str[:-1]) * 1024 * 1024
+            return int(size_str)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def _detect_l2_boundary_bytes_via_probe() -> int | None:
     """Runs the empirical cache probe, returns the buffer size at the
     first ratio jump exceeding 1.3x (matching ``configure
