@@ -2713,6 +2713,78 @@ correct as the default with no reason to batch it.
   are not part of this performance-engineering effort.
 
 
+### Phase 14 — external comparison and per-term cost reduction (2026-09-09, landed)
+
+**Motivation.** Every performance number to date has been measured
+against paulikit's own earlier self. That answers "did this change
+help" but not "is the result any good", and a comparison against an
+independent implementation of the *same* algorithm is the only thing
+that answers the second question. `pauli_lcu` 1.0.1 (Riverlane, MIT,
+arXiv:2408.06206) is that implementation.
+
+**Correctness outcome.** Bit-identical checksums (relative difference
+exactly 0.00e+00) at n=3, 5, 7, and exact term-count agreement on
+structured Hamiltonians through 91,660,288 terms at N=150. This is
+the strongest correctness evidence the project has: not a self-check,
+an independent one.
+
+**Performance outcome.** Replicated at N=150 under
+`profiling/phase13/MEASUREMENT_METHODOLOGY.md`: pauli_lcu 4.28s on
+one core, paulikit 7.55s on 4.5 cores. Peak RSS 8893 MiB vs 89 MiB,
+ours flat in N. So the memory design goal is met decisively, and the
+CPU cost is 6.4x theirs (4.68 vs 29.83 CPU-seconds).
+
+**What the comparison isolated.** Two gaps previously conflated:
+
+1. *Per-core efficiency, ~3.9x.* `_walsh_hadamard_transform_rows`
+   operates on stride-2 NumPy views. NumPy cannot emit packed SIMD
+   across a strided pair, where a compiled contiguous loop does.
+2. *Parallel overhead, 11.5 CPU-seconds.* 63% overhead to buy a 2.77x
+   speedup from 4.48 cores (62% efficiency), spent in pickling, IPC,
+   and process coordination.
+
+**Landed in this phase** (three commits, each measured separately):
+
+- Butterfly reuses one scratch buffer instead of allocating two
+  temporaries per stage — 1.29x isolated, 1.10x in situ.
+- Phase factor comes from a 4-entry table indexed by `popcount & 3`,
+  with a uint8 accumulator (exact, since `256 % 4 == 0`) — 2.65x on
+  that step.
+- Pre-conjugated table and hoisted reciprocal replace
+  `np.conj(phase) / dim` — 8.2x on that step.
+
+Sequential profile 1.33x overall; replicated parallel 1.12x at N=100.
+The N=150 replicate (1.07x) is **not** statistically established -
+its sigma exceeds the gain - and must not be quoted without more reps.
+
+**Constraint discovered, and it governs future work.** pauli_lcu's
+output *is* its input buffer: a dense (2^n, 2^n) array where position
+encodes the Pauli label. That is why it vectorizes, and why it cannot
+stream, skip zeros, or partition across nodes — its transpose touches
+`[i][j]` and `[j][i]` across the whole matrix, so distributing it
+needs all-to-all on the full array. **Any optimization requiring a
+single shared mutable buffer, or positional output, is disqualified
+here regardless of speed**: it would trade away the streaming and
+multi-node properties Phases 9-13 were built to establish.
+
+**Open, in priority order.**
+
+1. The 11.5 CPU-seconds of parallel overhead — the largest single
+   lever, and it needs no change to the transform.
+2. The strided butterfly. Open question: does an index permutation
+   exist (perfect shuffle / bit-reversal family) that makes both
+   butterfly operands unit-stride, so the inner loop vectorizes,
+   with permute + transform + unpermute still cheaper than staying
+   strided?
+3. Push N past pauli_lcu's dense-input ceiling (n=15 needs 16 GiB,
+   above this machine's RAM), where the memory advantage becomes a
+   capability difference rather than an efficiency one.
+
+See `profiling/phase14/` for harnesses and
+`profiling/phase14/external_comparison_findings.md` for the full
+write-up, including two measurement failures recorded deliberately.
+
+
 ## 7. Process notes
 
 - Work proceeds in small, individually-committed steps ("baby steps"),
