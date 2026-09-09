@@ -1,7 +1,13 @@
 # paulikit
 
-Performance-engineering tools for Pauli decomposition of Hermitian
-operators. This package is not a tutorial — it exists to build
+Performance-engineering tools for Pauli decomposition of arbitrary
+complex matrices. Hermitian input is an optional fast path
+(`assume_hermitian=True`, the default, which yields real coefficients
+and *checks* the Hermiticity assumption rather than trusting it) — not
+a restriction. General non-Hermitian matrices are fully supported and
+are verified against both an independent projection oracle and
+PennyLane (`verification/results/N20_nonhermitian_20260828.json`).
+This package is not a tutorial — it exists to build
 **original**, fast Pauli decomposition implementations to scale the
 `coupled_harmonic_oscillators` Hamiltonian-simulation tutorial (in the
 parent `openqcp-lab` repository) to larger N than its original
@@ -34,8 +40,10 @@ developed, tested, and (potentially) published independently.
 
 paulikit is built with [meson-python](https://mesonbuild.com/meson-python/)
 (the same build backend NumPy and SciPy use), and optionally compiles a
-native (Cython/C++) `pauli_label` kernel for a ~2.5-2.9x end-to-end
-speedup — see [Native extension](#native-extension) below.
+native (Cython/C++) `pauli_label` kernel, which materially reduces
+label-generation cost — see [Native extension](#native-extension)
+below. Figures live in `profiling/`, beside the data they came from,
+rather than as a ratio here that would go stale.
 
 **Recommended for development:** run `./configure` from this
 directory. It creates/reuses a dedicated venv (default
@@ -243,166 +251,44 @@ worth porting — this is why `algorithms/` is a subpackage rather than
 a single module.
 
 
-## Reference baseline (not a dependency of the implementation)
+## Reference implementations (not dependencies)
 
-PennyLane's `qml.pauli_decompose` was used during development purely
-as a correctness and performance **reference point** — it is a
-test/dev-only dependency (see `pyproject.toml`'s `test`/`dev` extras),
-never imported by `paulikit.algorithms` itself. Both implementations
-were run on the *exact same* `build_hamiltonian()` output at each N
-(see `tests/test_benchmark_reference.py`, marked `slow` and excluded
-from the default test run):
+PennyLane's `qml.pauli_decompose` is used during development as a
+**correctness** reference — it is a test/dev-only dependency (see
+`pyproject.toml`'s `test`/`dev` extras) and is never imported by
+`paulikit.algorithms` itself. Where both run to completion on the same
+`build_hamiltonian()` output, they agree exactly on term count and on
+coefficients within tolerance; that agreement is recorded in the
+committed verification artifacts under `verification/results/`.
 
-> **These numbers predate this project's own measurement protocol and
-> do not meet it.** Each cell is a single run (n=1) with no warm-up, no
-> interleaving, no repetition and no recorded temperature, and no raw
-> data file was committed for them. `profiling/phase13/MEASUREMENT_METHODOLOGY.md`
-> documents why n=1 timings on this machine are unreliable at the
-> tens-of-percent level - four rounds of this project's own figures
-> were retracted for exactly that reason. Treat the table as an
-> order-of-magnitude indication only; it is scheduled for
-> re-measurement under the protocol before any of it is published.
+**No performance comparison is published here, deliberately.** A
+speedup table in a README is a claim about two moving targets: it
+decays as this library changes, as the reference library changes, and
+as the machine it was measured on changes. Any such number would also
+have to meet the protocol in
+[`profiling/phase13/MEASUREMENT_METHODOLOGY.md`](profiling/phase13/MEASUREMENT_METHODOLOGY.md)
+— replicated, interleaved, warmed, thermally recorded, with a real
+hypothesis test — which a hand-maintained README table cannot
+guarantee over time.
 
-| N (oscillators) | qubits | Pauli terms | paulikit time | PennyLane time    | speedup |
-|------------------|--------|-------------|----------------|--------------------|---------|
-| 16               | 8      | 15360       | 0.0124s        | 5.6914s            | ~459x   |
-| 30               | 9      | 112384      | 0.0937s        | 45.9782s           | ~491x   |
-| 50               | 11     | 1261568     | 1.2371s        | 749.9998s (see below) | >=606x |
-| 100              | 13     | 20299776    | 24.6979s       | not attempted      | —       |
+Timing figures that *are* published live in `profiling/`, each beside
+the raw data it was computed from and the protocol under which it was
+taken. Read them there, with their sample sizes and error bars, rather
+than as a headline ratio here.
 
-Both implementations agree exactly on term count at every N where
-PennyLane finished (a correctness check, not just a performance one).
-**The N=50 PennyLane figure should be read as a lower bound, not a
-completion time.** It is reported as 749.9998s - four nines short of
-750s, which is the signature of a wall-clock read against a 750-second
-deadline rather than a natural finish. `PLAN.md` Section 3.4 records
-the same cell from an earlier run as `>590s (aborted)`, i.e. a
-timeout. No log or result artifact was committed for the run reported
-here, so the claim that it completed cannot currently be substantiated
-from the repository. Until it is re-run with its output retained, the
-N=50 speedup is a lower bound (`>=606x`), and the machine load at
-measurement time affects wall-clock numbers regardless. N=100 still was not
-attempted against PennyLane: a direct attempt (2026-08-26) ran for
-over 26 minutes without finishing and was deliberately killed rather
-than left running, both to avoid an indefinite wait and because the
-machine's available memory was under real pressure by that point (see
-`profiling/cache_locality/README.md`'s swap/resource-exhaustion notes
-for what that looked like in practice). See `PLAN.md` Section 3.4 for
-the full discussion, including why an earlier draft of this table
-(using a synthetic proxy matrix rather than the real Hamiltonian)
-understated PennyLane's actual cost on this problem.
+What this README does claim, and what the artifacts support:
 
-**Why this table and `PLAN.md` Section 3.4 disagree.** Section 3.4
-reports N=16 as 0.0586s / 6.7369s / 115x where this table reports
-0.0124s / 5.6914s / ~459x - a factor of ~4 in the same quantity. The
-paulikit side is explained: these numbers reflect the current,
-Phase 6-complete implementation (native label kernel plus the sparse
-`fwht_pauli_coefficients` output added in Phase 6 - see
-`profiling/cache_locality/README.md`), not the Phase 1 pure-Python
-baseline Section 3.4 recorded. **The PennyLane side is not explained**:
-the same library on the same input got 18% faster between the two
-measurements, which no change on our side accounts for. Both readings
-are n=1, so the difference is within the run-to-run variation this
-machine is now known to exhibit - which is itself the argument for
-re-measuring rather than reconciling. Section 3.4 is left as the
-historical record and is not being edited to match. That baseline densely
-computed the full $2^n \times 2^n$ coefficient array regardless of
-input sparsity, and generated Pauli-string labels with a per-term,
-per-qubit Python loop. Both of those were identified as the actual
-bottlenecks (via profiling, not guesswork) and fixed across Phases
-3a-3c and 6:
+- **Scale.** N=150 (15 qubits, 91,652,096 surviving terms) completes
+  under a 2 GB memory cap, on a laptop.
+- **Exactness.** Every one of those terms is verified individually —
+  not sampled — against an independently derived projection oracle;
+  see `verification/FINDINGS.md`.
+- **Generality.** Hermitian input is a fast path, not a restriction;
+  non-Hermitian matrices are supported and separately verified.
 
-| N (oscillators) | Phase 1 (baseline) | Phase 3b (sparse coefficients) | Phase 3c (+ native labels) | speedup vs. Phase 1 |
-|------------------|---------------------|----------------------------------|-------------------------------|----------------------|
-| 50               | 6.2213s             | 5.4957s                          | 2.1535s                       | 2.9x                |
-| 100              | 126.3250s           | 107.2403s                        | 43.5629s                      | 2.9x                |
-
-Phase 3b made `fwht_pauli_coefficients` skip the O(dim²) dense-array
-construction for empty rows (2.0-3.1x on that function alone). Phase
-3c wired in the native `pauli_label` kernel (see "Native extension"
-above), closing most of the remaining gap. Term counts match exactly
-across all versions at every N — a correctness re-confirmation, not
-just a performance comparison. Full detail, including the design
-exploration behind Phase 3b's sparsity fix, is in `PLAN.md`'s Section
-5 (Phase 3b/3c write-ups) and `profiling/phase3b/README.md`.
-
-This table does not yet include a Phase 6 column: Phase 6 (an
-optional sparse-output mode for `fwht_pauli_coefficients`, see
-`profiling/cache_locality/README.md`) removed a different cost - the
-dense array's cache-locality/memory-footprint penalty and its
-associated OOM risk at large N, not primarily wall-clock time on
-these already-fast N=50/100 cases - so it's measured and reported
-separately once that comparison sweep completes, rather than folded
-into this table's per-phase story.
-
-Two further memory-footprint fixes landed after Phase 6, still aimed
-at the N=150 OOM rather than at wall-clock time on smaller N:
-
-- `_walsh_hadamard_transform_rows` no longer force-copies its input; a
-  new `overwrite_input` flag lets `fwht_pauli_coefficients` (which owns
-  its gathered array exclusively) transform in place, and the
-  per-stage butterfly loop no longer pre-copies both halves before
-  combining them. Together these removed roughly 5.5 GiB of transient
-  allocation at N=150.
-- `fwht_pauli_coefficients` and `fwht_pauli_terms` gained an optional
-  `chunk_size` parameter: active rows are processed in bounded blocks
-  instead of one `(n_active, dim)` array all at once, bounding peak
-  memory to roughly `chunk_size * dim` complex entries. This is the
-  tiling technique from MIT 6.172 ("Performance Engineering of
-  Software Systems") lecture 1, applied here to shrink working-set
-  size rather than to improve cache reuse specifically, since each row
-  transforms independently. `--chunk-size` is exposed on both the
-  `decompose` and `benchmark` CLI subcommands. It is a manual knob for
-  now, not auto-tuned - see the open item below.
-
-Investigating N=150 with chunking surfaced a much larger, separate
-bottleneck that neither fix touches: the coupled-oscillator
-Hamiltonian is built and stored as a **dense** `numpy.ndarray` even
-though it is extremely sparse in practice (at N=150, only 0.034% of
-entries are nonzero), and `fwht_pauli_coefficients` upcasts that dense
-array to `complex128` before doing anything else - roughly 4 GiB at
-N=150, dwarfing every fix described above. `PLAN.md` Phase 8 (2026-08-27)
-closes this: `build_hamiltonian(..., sparse=True)` and
-`pad_to_power_of_two(..., sparse=True)` keep the Hamiltonian in
-`scipy.sparse` form from construction through padding, and
-`fwht_pauli_coefficients`/`fwht_pauli_terms` accept a `scipy.sparse`
-operator directly - `scipy` is optional (see Installation above),
-gated behind a clear `ImportError` rather than a silent dense
-fallback. A real N=150 attempt with this in place confirms the
-densification ceiling is cleared, but surfaced a **new, distinct**
-memory ceiling one step later, inside `fwht_pauli_coefficients`'s own
-output accumulator (unrelated to Hamiltonian sparsity). `PLAN.md`
-Phase 9 (2026-08-27) closes that too: the chunked path now thresholds
-each chunk against `atol` immediately and accumulates only surviving
-`(x, z, coefficient)` triples in an amortized-growth array, instead of
-one dense `(n_active, dim)` block regardless of `chunk_size` - plus an
-opt-in `checkpoint_path` for crash/resume. Confirmed via real,
-memory-capped N=150 runs (see `profiling/phase9/phase9_findings.md`):
-the fix works exactly as designed, but the genuine result size at
-N=150 (`atol=1e-09`, the value every committed verification run in `verification/results/` actually used) is ~92-134M terms (varies slightly by exact run
-parameters), which exceeds this machine's available RAM once
-label-string generation and dict construction are added on top -
-`fwht_pauli_terms`'s fully-materialized `dict` contract has an
-inherent ceiling no memory size removes in general. `PLAN.md` Phase 10
-(2026-08-27) closes this too: a new `fwht_pauli_terms_iter` generator
-yields one `dict` per chunk directly to the caller instead of
-re-fusing every chunk into one combined result first - each chunk is
-already an independent sub-problem (no cross-chunk combination exists
-in the math), so this is a genuine divide-and-conquer decomposition,
-not a memory workaround. `--stream`/`--parallel-labels`/
-`--checkpoint-path` are exposed on the `decompose` CLI subcommand.
-Confirmed via real, memory-capped N=150 runs (see
-`profiling/phase10/phase10_streaming_findings.md`): **N=150 now
-completes fully** - all 91,652,096 terms stream successfully under
-both a 4 GB and a 2 GB memory cap, down from a design that needed
-well over 13.5 GB and still failed. N=150 is a solved, repeatable
-case, not an open problem.
-
-Exploiting Hamiltonian sparsity further (rather than the current
-skip-empty-rows approach) and migrating to prebuilt wheels so the
-native kernel becomes a hard requirement are the next optimization
-targets — see `PLAN.md` Phase 4.
-
+For why the algorithmic approach differs from a dense reference
+implementation — sparsity-aware coefficients, a native label kernel,
+streaming output — see `PLAN.md` Section 5 and `profiling/phase3b/README.md`.
 
 ## Status
 
@@ -411,9 +297,10 @@ and PennyLane benchmarking (Phase 1), profiling to find real hot spots
 (Phase 2), a native `pauli_label` kernel with four bindings compared
 (Phase 3a), a sparsity-aware `fwht_pauli_coefficients` (Phase 3b), and
 migrating the build to meson-python with the native kernel wired into
-the main `fwht_pauli_terms` pipeline (Phase 3c) — together a 2.9x
-end-to-end speedup over the Phase 1 baseline at N=50/100 (see
-"Reference baseline" above). Next: Phase 4 (final comparison/write-up)
+the main `fwht_pauli_terms` pipeline (Phase 3c) — together a
+substantial end-to-end reduction over the Phase 1 baseline, quantified
+in `profiling/` beside its raw data rather than as a ratio here.
+Next: Phase 4 (final comparison/write-up)
 and migrating to prebuilt wheels so the native extension becomes a
 hard requirement rather than an optional fallback — see `PLAN.md` and
 the parent repository's task list for current progress.
