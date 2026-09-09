@@ -49,6 +49,46 @@ else
   message('paulikit: native extension disabled via -Dnative=disabled')
 endif
 
+# The Walsh-Hadamard butterfly kernel (PLAN.md Phase 14) - the
+# compiled fast path for the transform itself, as opposed to the
+# label generation above. Deliberately independent of the `native`
+# option: this needs only a C compiler and Cython, with no C++ and no
+# oneTBB, so a machine that cannot build pauli_label_native can still
+# get the kernel that carries 69.5% of per-chunk time. fwht.py falls
+# back to the pure-Python butterfly if it is absent.
+wht_opt = get_option('wht_kernel')
+
+if not wht_opt.disabled() and have_cython and have_c
+  cy3 = meson.get_compiler('cython')
+  cython_ok3 = cy3.version().version_compare('>=3.0')
+
+  if cython_ok3
+    np_include_wht = run_command(
+      py, ['-c', 'import numpy; print(numpy.get_include())'],
+      check: true,
+    ).stdout().strip()
+
+    py.extension_module(
+      'wht_native',
+      [
+        'wht_native.pyx',
+        'wht.c',
+      ],
+      include_directories: include_directories('.', np_include_wht, is_system: true),
+      install: true,
+      subdir: 'paulikit/_native',
+    )
+  elif wht_opt.enabled()
+    error('WHT kernel explicitly requested (-Dwht_kernel=enabled) but ' +
+          'Cython >= 3.0 was not found')
+  else
+    message('paulikit: wht_native not built (Cython >= 3.0 not found) - ' +
+            'falling back to the pure-Python butterfly at import time')
+  endif
+else
+  message('paulikit: wht_native disabled via -Dwht_kernel=disabled')
+endif
+
 # The empirical cache-latency probe (PLAN.md Phase 12) - standalone,
 # Cython-only, deliberately independent of the native/oneTBB option
 # above (the probe has no relationship to oneTBB; see cache_probe.pyx's
