@@ -228,10 +228,10 @@ def build_parser():
     parser = argparse.ArgumentParser(
         prog="paulikit",
         description=(
-            "Performance-engineering tools for Pauli decomposition, "
-            "built for the coupled_harmonic_oscillators Hamiltonian-"
-            "simulation tutorial in the openqcp-lab repository. See "
-            "PLAN.md for the full research background and phased plan."
+            "Exact Pauli decomposition of complex matrices, with "
+            "streamed output so peak memory is bounded by chunk size "
+            "rather than term count. See PLAN.md for the research "
+            "background and design rationale."
         ),
     )
     parser.add_argument(

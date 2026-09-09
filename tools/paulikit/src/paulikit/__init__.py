@@ -1,9 +1,10 @@
 """paulikit: performance-engineering tools for Pauli decomposition.
 
-An original, from-scratch fast Pauli decomposition implementation
-built to scale the coupled_harmonic_oscillators Hamiltonian-simulation
-tutorial (in the parent openqcp-lab repository) to larger N than its
-original O(4^n) symbolic brute-force approach allows.
+Exact Pauli decomposition of arbitrary complex matrices, built for
+the regime where materialising the full 4^n coefficient set is the
+binding constraint rather than the transform itself. Output is
+streamed, so peak resident memory is bounded by the chunk size rather
+than by the term count.
 
 Currently implements the Fast Walsh-Hadamard Transform (FWHT) based
 algorithm, O(N^2 log N) for an N x N matrix. See
