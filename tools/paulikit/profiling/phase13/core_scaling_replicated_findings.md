@@ -94,9 +94,16 @@ The 55C protocol is restored, and every run in this table met it.
   across that sweep was measured consistently even though its absolute
   values came from the bad regime.
 
-## The qubit-boundary step is `dim`, not chunk count
+## The qubit-boundary step: chunk count refuted, cause NOT established
 
-Resolved 2026-09-09. At the boundary three variables move together, so
+**Status: OPEN.** What follows narrows the candidates; it does not
+close the question. The remaining explanation is plausible and
+consistent with the data but has not been demonstrated, and the
+effect may well be multi-causal - several of the variables that move
+at the boundary are not independently controllable through any knob
+this codebase exposes.
+
+Investigated 2026-09-09. At the boundary three variables move together, so
 "dim doubles" was never a single hypothesis. Two were already
 controlled by the data above, and the third was tested directly.
 
@@ -119,12 +126,28 @@ controlled by the data above, and the third was tested directly.
   slightly, to 62.2% (Welch p=5.8e-08, spreads 1.03-1.06x). If chunk
   count drove the step, this cell should have moved toward 72%.
 
-**`dim` is what remains, and the mechanism is coherent.** Each chunk
-gathers and scatters across a row of `dim` complex128 entries: 256 KiB
-at 14 qubits, 512 KiB at 15. That footprint scales with `dim`
-regardless of `chunk_size`, so the tuner cannot compensate for it.
-Against a 256 KiB per-core L2, a 14-qubit row fits and a 15-qubit row
-does not.
+**`dim` is what remains, and a coherent mechanism exists for it** -
+but "what remains after eliminating others" is not the same as
+"demonstrated". Each chunk gathers and scatters across a row of `dim`
+complex128 entries: 256 KiB at 14 qubits, 512 KiB at 15. That
+footprint scales with `dim` regardless of `chunk_size`, so the tuner
+cannot compensate for it, and against a 256 KiB per-core L2 a
+14-qubit row fits where a 15-qubit row does not.
+
+**Why this is not yet a conclusion.** `dim` is itself a bundle.
+Doubling it simultaneously doubles the gather/scatter row width, the
+stride between consecutive row elements, the transform depth
+(log2 dim, 14 -> 15 butterfly stages), and the operator's total
+footprint. Nothing in the current code varies these independently, so
+none has been isolated. The step may be caused by one of them, or by
+several acting together - a multi-dimensional cause is entirely
+consistent with the evidence and is not excluded.
+
+A demonstration would require either a synthetic kernel in which row
+width can be varied at fixed transform depth (and vice versa), or
+hardware counters showing the predicted cache behaviour at the
+boundary - LLC-miss rate rising with `dim` while instructions stay
+constant. Neither has been done.
 
 Caveat: `chunk_size` is the only lever that moves chunk count, and
 moving it also doubles the per-worker buffer (to 1024 KiB, 50% of L3

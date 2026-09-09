@@ -60,6 +60,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PYTHON = os.path.expanduser("~/.venvs/paulikit/bin/python")
 TARGET = os.path.join(HERE, "arrays_vs_dict_target.py")
 RESULTS = os.path.join(HERE, "core_scaling_replicated_results.jsonl")
+# The standard warm-up: a paulikit-FREE synthetic multi-core workload
+# already validated in this phase (synthetic_ipc_control.py). Using the
+# measured workload itself as a warm-up is circular - it makes the
+# warm-up vary with whatever is being measured, so two studies are no
+# longer warmed identically and the protocol is not portable. A fixed
+# external load is the same for every N, every condition, and every
+# replication.
+WARMUP = os.path.join(HERE, "synthetic_ipc_control.py")
+WARMUP_CONDITION = os.environ.get("PAULIKIT_WARMUP_CONDITION", "w4_c4")
+# busywork_n=1200 gives ~43s of sustained four-core load. The default
+# (150) runs in 4.0s, which is NOT enough: 6s of arithmetic was
+# measured not to reproduce the warm state, because the P-state ramp
+# needs sustained load rather than a brief burst. 43s is long enough to
+# ramp and short beside a measurement session.
+WARMUP_BUSYWORK_N = os.environ.get("PAULIKIT_WARMUP_N", "1200")
 
 CONDITIONS = ("w1_c1", "w4_c4")
 COOLDOWN_TARGET_C = float(os.environ.get("PAULIKIT_COOLDOWN_C", "55.0"))
@@ -121,6 +136,43 @@ def run_one(n_osc, condition, chunk_size, rep):
     return rec
 
 
+def standard_warmup():
+    """Fixed, paulikit-free multi-core load run once before any timed
+    measurement.
+
+    Purpose is to bring the CPU out of its idle P-state: on this
+    machine `intel_pstate` under `powersave` idles near 800 MHz against
+    a 4.0 GHz maximum, and the first real run of a quiet session is
+    inflated up to 33% purely because the clock has not ramped
+    (MEASUREMENT_METHODOLOGY.md section 2.3).
+
+    Deliberately NOT the measured workload. Warming with paulikit
+    itself would make the warm-up a function of N and of the condition
+    under test, so different studies would be warmed differently and
+    the protocol would not be reproducible by anyone measuring
+    something else. A short synthetic burst is also not enough - 6s of
+    arithmetic was measured not to reproduce the warm state, because
+    the ramp needs sustained realistic load.
+    """
+    t0 = time.perf_counter()
+    proc = subprocess.run(
+        [PYTHON, WARMUP, WARMUP_CONDITION, WARMUP_BUSYWORK_N],
+        capture_output=True, text=True,
+        env=dict(os.environ, OPENBLAS_NUM_THREADS="1"),
+    )
+    took = time.perf_counter() - t0
+    ok = proc.returncode == 0
+    log(f"warm-up ({os.path.basename(WARMUP)} {WARMUP_CONDITION} "
+        f"n={WARMUP_BUSYWORK_N}): {took:.1f}s "
+        f"{'ok' if ok else 'FAILED - runs are NOT warmed'}")
+    if ok and took < 20:
+        log(f"  WARNING: warm-up only ran {took:.1f}s - too short to ramp "
+            f"the P-state reliably; raise PAULIKIT_WARMUP_N")
+    if not ok:
+        log(f"  stderr: {proc.stderr.strip()[-200:]}")
+    return ok, took
+
+
 def describe(values):
     m = statistics.mean(values)
     sd = statistics.stdev(values) if len(values) > 1 else 0.0
@@ -147,6 +199,9 @@ def main():
           f"INTERLEAVED, no checkpointing", flush=True)
     print(f"cooldown to {COOLDOWN_TARGET_C:.0f}C before every run\n",
           flush=True)
+
+    standard_warmup()
+    print(flush=True)
 
     rows = {c: [] for c in CONDITIONS}
     for rep in range(reps):

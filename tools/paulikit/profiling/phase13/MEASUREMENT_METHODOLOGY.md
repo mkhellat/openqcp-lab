@@ -146,19 +146,36 @@ covariate rather than a held constant.
 
 ### 4.1 Warm-up
 
-Before any timed measurement, execute the **full workload once,
-untimed, and discard it**. This is specified as experimental setup,
-not as post-hoc data exclusion: it is the same class of action as
-allowing an instrument to reach operating temperature.
+Before any timed measurement, execute a **fixed, standard, untimed
+warm-up load**. This is experimental setup, not post-hoc data
+exclusion - the same class of action as allowing an instrument to
+reach operating temperature.
 
-A synthetic load is **not** an acceptable substitute. The frequency
-ramp requires sustained realistic load; a short arithmetic loop was
-measured not to reproduce the warm state.
+The warm-up must be **independent of the workload under measurement**.
+Warming with the measured workload itself is circular: it makes the
+warm-up a function of the problem size and the condition being tested,
+so two studies are no longer warmed identically and the protocol is
+not portable to anyone measuring something else.
 
-Discarding the first *recorded* run is an acceptable fallback where an
-untimed warm-up is impractical, but is weaker: it is an exclusion
+The standard used here is `synthetic_ipc_control.py` at `w4_c4` with
+`busywork_n=1200` - a paulikit-free multi-core load already validated
+in this phase, sharing only the coarse shape of the real workload
+(many small CPU-bound tasks over `ProcessPoolExecutor`). It runs
+approximately 43 s.
+
+**Duration matters and must be checked.** The same script at its
+default `busywork_n=150` runs in 4.0 s, which is *not* sufficient: a
+6 s synthetic burst was measured not to reproduce the warm state,
+because the P-state ramp needs sustained load rather than a brief one.
+The harness warns if the warm-up completes in under 20 s.
+
+Discarding the first *recorded* run is a weaker fallback, acceptable
+only where a standard warm-up is impractical. It is an exclusion
 applied after seeing the data, and it depends on the replicator's
-session structure matching ours.
+session structure matching ours. **Results in section 6 were obtained
+under that weaker fallback**, before this standard was adopted; they
+are not invalidated by it, but a replication should use the warm-up
+above.
 
 ### 4.2 Interleaving
 
