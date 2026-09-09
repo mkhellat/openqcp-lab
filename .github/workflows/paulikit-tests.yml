@@ -1,0 +1,83 @@
+name: paulikit tests
+
+# Runs the suite on every push and pull request touching the package.
+#
+# The only pre-existing workflow (paulikit-wheels.yml) triggers on
+# release tags and workflow_dispatch, so nothing exercised the test
+# suite between releases and the declared Python 3.10-3.13 support was
+# unverified until a tag was pushed. Automated tests that visibly run
+# are also a review criterion for software-paper venues.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "tools/paulikit/**"
+      - ".github/workflows/paulikit-tests.yml"
+  pull_request:
+    paths:
+      - "tools/paulikit/**"
+      - ".github/workflows/paulikit-tests.yml"
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: tools/paulikit
+
+jobs:
+  test:
+    name: "py${{ matrix.python-version }} / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          # The library documents a degraded-but-correct fallback where
+          # CPU pinning and topology detection are unavailable
+          # (sched_setaffinity and /sys/devices/system/cpu are
+          # Linux-only). That fallback was never exercised in CI, so
+          # the claim rested on code inspection alone. One job on each
+          # non-Linux platform tests it.
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build dependencies
+        # Installed first and separately so the editable install can
+        # use --no-build-isolation: meson-python bakes NumPy's include
+        # path into the rebuild hook, and with build isolation that
+        # path points into a throwaway environment that is deleted
+        # immediately afterwards.
+        run: python -m pip install --upgrade pip numpy meson-python cython ninja
+
+      - name: Install paulikit with test extras
+        run: pip install -e ".[test]" --no-build-isolation
+
+      - name: Run the test suite
+        # -m 'not slow' matches pyproject's default addopts; the slow
+        # marker covers reference comparisons that take minutes.
+        run: pytest -v -m "not slow"
+
+      - name: Report whether the native extension was built
+        # Not a failure condition: the extension is an optional
+        # accelerator with a documented pure-Python fallback. This step
+        # records which path the run actually exercised, so a green
+        # tick cannot silently mean "fallback only" on every platform.
+        shell: bash
+        run: |
+          python - <<'PY'
+          try:
+              from paulikit._native import pauli_label_native  # noqa: F401
+              print("native extension: BUILT")
+          except ImportError as exc:
+              print(f"native extension: FALLBACK ({exc})")
+          PY
