@@ -248,7 +248,7 @@ once the rest of the pipeline is accounted for. That 2.191x is the
 controlled experiment's result for the drain loop in isolation, not
 yet an end-to-end, thermal-controlled measurement of
 `parallel_decompose_arrays` itself with checkpointing enabled — that
-sweep is tracked as follow-up work in `PLAN.md`'s Phase 13 section
-and `profiling/phase13/README.md`. Treat the array API as the
+sweep is tracked as follow-up work in the project's research record.
+Treat the array API as the
 principled fix for a well-understood serial bottleneck, not (yet) as a
 number to quote for your own workload without measuring it.

@@ -1,0 +1,38 @@
+# Proposed mailmap for the extraction. NOT applied yet - decide first.
+#
+# Every one of the 279 commits in tools/paulikit's history carries
+# mkhellat@gmail.com. Meanwhile CITATION.cff and pyproject.toml credit
+# four authors at @beavernets.com. A reviewer who compares the two
+# sees a single-author Gmail project claiming four institutional
+# authors, and asks why.
+#
+# Nothing here is dishonest either way - you wrote the code, and the
+# co-authors are credited for the work as a whole. The question is
+# only which identity the published history should carry.
+#
+# THREE OPTIONS:
+#
+# 1. Do nothing. History keeps mkhellat@gmail.com. Honest, and the
+#    mismatch is explainable in one sentence if anyone asks. Costs
+#    nothing and rewrites nothing.
+#
+# 2. Apply this mailmap during extraction:
+#       git filter-repo --subdirectory-filter tools/paulikit \
+#                       --mailmap .mailmap-proposed
+#    Rewrites the author address on all 279 commits to the
+#    institutional one. Do this only if @beavernets.com is genuinely
+#    your identity for this work - retroactively reassigning authorship
+#    to an address you did not use is the kind of thing that looks
+#    worse than the problem it solves.
+#
+# 3. Ship this file as a plain .mailmap in the new repository without
+#    rewriting anything. Git and GitHub then DISPLAY the canonical
+#    address while the underlying commits keep their original one.
+#    This is what .mailmap is actually designed for, it is not a
+#    history rewrite, and it is reversible. Recommended.
+#
+# Option 3 is the default recommendation: it fixes the display
+# mismatch, leaves the record intact, and is the conventional use of
+# the mechanism.
+
+Mohammadreza Khellat <mkhellat@beavernets.com> <mkhellat@gmail.com>

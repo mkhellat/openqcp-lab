@@ -12,7 +12,7 @@ src/paulikit/
     algorithms/
         __init__.py
         fwht.py             The Fast Walsh-Hadamard Transform based
-                            decomposition algorithm (see PLAN.md;
+                            decomposition algorithm (
                             more algorithms planned here).
     testing/
         __init__.py
@@ -25,7 +25,7 @@ src/paulikit/
                             `pauli_label.c`/`pauli_label_parallel.cpp`)
                             used by `algorithms/fwht.py` when available,
                             with a pure-Python fallback otherwise — see
-                            "Native extension" above and PLAN.md Phase 3c.
+                            "Native extension" in the README.
     cli.py                  Command-line interface wiring the above
                             together into subcommands.
     meson.build             Per-directory Meson build rules (one per
