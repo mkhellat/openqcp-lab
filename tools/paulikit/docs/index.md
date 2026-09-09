@@ -6,10 +6,11 @@
 :caption: Contents
 :hidden:
 
+installation
 tutorial
 background
 theory
 non_hermitian
-plan
+package_layout
 api/index
 ```
