@@ -1,0 +1,3 @@
+{"round": 0, "arm": "heated", "elapsed": 26.1528, "inflation_pct": 12.0, "start_temp": 48.0, "note": "external heat, no prior paulikit run", "core_temps": {"Core 0": 48.0, "Core 1": 47.0, "Core 2": 47.0, "Core 3": 45.0}, "terms": 91652096}
+{"round": 0, "arm": "warm", "elapsed": 25.0895, "inflation_pct": 7.4, "start_temp": 61.0, "note": "real paulikit run immediately before", "core_temps": {"Core 0": 60.0, "Core 1": 60.0, "Core 2": 60.0, "Core 3": 58.0}, "terms": 91652096}
+{"round": 0, "arm": "cold", "elapsed": 29.8734, "inflation_pct": 27.9, "start_temp": 45.0, "core_temps": {"Core 0": 45.0, "Core 1": 45.0, "Core 2": 44.0, "Core 3": 42.0}, "note": "baseline temp, no burn", "terms": 91652096}

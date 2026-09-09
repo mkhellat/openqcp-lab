@@ -1,0 +1,8 @@
+{"arm": "cold", "elapsed": 30.2806, "subprocess_wall": 30.831, "setup_overhead": 0.55, "terms": 91652096, "start_temp": 47.0, "clock_proxy_ms": 132.0, "round": 0, "prep_s": 0.0}
+{"arm": "freq", "elapsed": 27.0424, "subprocess_wall": 27.512, "setup_overhead": 0.469, "terms": 91652096, "start_temp": 96.0, "clock_proxy_ms": 126.5, "round": 0, "prep_s": 6.0}
+{"arm": "cache", "elapsed": 25.3249, "subprocess_wall": 25.745, "setup_overhead": 0.42, "terms": 91652096, "start_temp": 58.0, "clock_proxy_ms": 122.5, "round": 0, "prep_s": 2.21}
+{"arm": "both", "elapsed": 24.8731, "subprocess_wall": 25.289, "setup_overhead": 0.416, "terms": 91652096, "start_temp": 73.0, "clock_proxy_ms": 131.0, "round": 0, "prep_s": 6.13}
+{"arm": "freq", "elapsed": 25.1136, "subprocess_wall": 25.492, "setup_overhead": 0.379, "terms": 91652096, "start_temp": 92.0, "clock_proxy_ms": 126.3, "round": 1, "prep_s": 6.0}
+{"arm": "cache", "elapsed": 25.6801, "subprocess_wall": 26.098, "setup_overhead": 0.418, "terms": 91652096, "start_temp": 58.0, "clock_proxy_ms": 130.1, "round": 1, "prep_s": 0.12}
+{"arm": "both", "elapsed": 25.8771, "subprocess_wall": 26.269, "setup_overhead": 0.392, "terms": 91652096, "start_temp": 68.0, "clock_proxy_ms": 137.5, "round": 1, "prep_s": 6.12}
+{"arm": "cold", "elapsed": 26.0098, "subprocess_wall": 26.451, "setup_overhead": 0.441, "terms": 91652096, "start_temp": 50.0, "clock_proxy_ms": 126.0, "round": 1, "prep_s": 0.0}
