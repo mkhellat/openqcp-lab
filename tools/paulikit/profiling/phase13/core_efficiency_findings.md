@@ -1,5 +1,19 @@
 # Physical-core scaling: 86-113% efficiency, and two falsified theories
 
+> **SUPERSEDED 2026-09-09 by `core_scaling_replicated_findings.md`.**
+> Every efficiency number below was computed from n=1 per cell and
+> every one is wrong, some by 40 percentage points. The `w1_c1`
+> baseline - the numerator of each figure - is unstable on the first
+> run of a session, and each single-run baseline used here was such a
+> run. Replicated (6 reps, interleaved, 55C): N=150 72.4%, N=160
+> 75.5%, N=180 65.2%, N=200 65.4%. Nothing is superlinear.
+>
+> The two FALSIFICATIONS below (per-worker buffer size; chunk count /
+> IPC volume) remain valid - they were argued from internal
+> contradictions rather than from these numbers. The cache-hierarchy
+> correction (L2 is 256 KiB/core, not 1 MiB) also stands. Everything
+> stated as an efficiency percentage does not.
+
 Recorded 2026-09-08. Measured by `worker_scaling_no_checkpoint.py` and
 `core_efficiency_vs_working_set.py`, one worker per PHYSICAL core
 throughout (no hyperthread siblings), n=1 per cell.
