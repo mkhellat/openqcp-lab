@@ -22,12 +22,26 @@ starting numbers were 17.63 CPU-seconds sequential against their 4.68
 | + hoisted gather, pre-sized accumulators | **2.648** |
 | *pauli_lcu, for reference* | *4.68* |
 
-Replicated head-to-head (5 reps, interleaved, cooldown to 55C):
+Replicated head-to-head (5 reps, interleaved, cooldown to 55C), run
+twice - the second after the gather/accumulator fixes:
 
 | N | pauli_lcu | paulikit | ratio | peak RSS |
 |---|---|---|---|---|
-| 100 | 1.129s ±0.035 | **0.742s ±0.020** | **1.52x** | 2177 / **88** MiB |
-| 150 | 4.447s ±0.181 | **3.021s ±0.196** | **1.47x** | 8892 / **89** MiB |
+| 100 | 1.129s ±0.035 | 0.742s ±0.020 | 1.52x | 2177 / 88 MiB |
+| 100 | 1.111s ±0.044 | **0.680s ±0.030** | **1.63x** | 2178 / **88** MiB |
+| 150 | 4.447s ±0.181 | 3.021s ±0.196 | 1.47x | 8892 / 89 MiB |
+| 150 | 4.349s ±0.116 | **3.011s ±0.270** | **1.44x** | 8893 / **89** MiB |
+
+N=150 reproduces closely across the two runs (3.021s then 3.011s,
+1.47x then 1.44x). N=100 improves from 1.52x to 1.63x, which is the
+two Python fixes - the first run predates them.
+
+**These rows measure the PARALLEL path**, which is no longer the
+faster of paulikit's two options (see
+`parallelism_no_longer_pays.md`). The sequential path does N=150 in
+2.525s wall / 2.648 CPU-seconds, so paulikit's real margin over
+pauli_lcu is wider than these rows show: about 1.7x on wall clock and
+1.77x on CPU.
 
 The memory result was always the structural claim and it still holds,
 unchanged, through every optimization. The CPU gap - originally
