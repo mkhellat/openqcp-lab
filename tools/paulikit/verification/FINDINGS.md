@@ -113,10 +113,9 @@ in the verification method:
    `MemoryError` cleanly instead of thrashing the whole machine's
    swap). Found the *actual* failure point: `fwht_pauli_terms`'s own
    internal `_pauli_label_batch` call, building the label-string dict.
-   Cross-checked against this project's own prior profiling
-   (`profiling/phase9/phase9_findings.md`,
-   `profiling/phase10/phase10_streaming_findings.md`): **this is a
-   known, already-documented ceiling** - the dict-returning
+   Cross-checked against this project's own prior profiling (Phases 9
+   and 10 of the research record): **this is a known,
+   already-documented ceiling** - the dict-returning
    `fwht_pauli_terms` API cannot complete at N=150 *regardless of
    available RAM* (previously measured failing even at 13.5 GiB),
    because it re-fuses every chunk's terms into one ~91.65M-entry dict
