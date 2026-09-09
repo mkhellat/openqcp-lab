@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+title: >-
+  paulikit: memory-bounded, checkpointable Pauli decomposition of
+  Hermitian operators
+message: >-
+  If you use this software, please cite it using the metadata in this
+  file.
+type: software
+authors:
+  - given-names: Mohammadreza
+    family-names: Khellat
+    email: mkhellat@beavernets.com
+    affiliation: Beavernets Technologies
+repository-code: "https://codeberg.org/mkhellat/openqcp-lab"
+abstract: >-
+  paulikit computes the exact Pauli decomposition of Hermitian and
+  general complex operators via the fast Walsh-Hadamard transform.
+  The transform itself is established practice; the contribution here
+  is making it usable at scale - a streaming formulation whose peak
+  resident memory is bounded independently of the term count, a
+  chunk-framed binary checkpoint format cheap enough to leave
+  permanently enabled, cache-aware automatic chunk sizing, and
+  exhaustive per-term verification against an independent projection
+  oracle at up to 91,652,096 terms.
+keywords:
+  - Pauli decomposition
+  - fast Walsh-Hadamard transform
+  - quantum Hamiltonian simulation
+  - linear combination of unitaries
+  - memory-bounded algorithms
+  - scientific Python
+  - checkpoint and restart
+license: GPL-3.0-or-later
+version: 0.1.0
+# NOTE: no DOI yet. This is added on the first archived release
+# (Zenodo), and the version above must be bumped to match the tag that
+# is archived. A CITATION.cff claiming a version that was never
+# released is worse than none.
