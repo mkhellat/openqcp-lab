@@ -49,16 +49,12 @@ Requires Python >= 3.10; the only runtime dependency is NumPy.
 | [`docs/theory.md`](docs/theory.md) | Mathematical derivation |
 | [`docs/background.md`](docs/background.md) | Physical motivation |
 | [`docs/non_hermitian.md`](docs/non_hermitian.md) | Non-Hermitian operators |
-| [`PLAN.md`](PLAN.md) | Research background and design rationale |
+| [`docs/package_layout.md`](docs/package_layout.md) | Annotated source tree |
 
 
 ## Installation
 
-```bash
-pip install paulikit
-```
-
-From source, for development:
+Not yet published to PyPI. Install from source:
 
 ```bash
 ./configure && make          # creates a venv, generates a Makefile
@@ -142,23 +138,31 @@ imports to resolve).
 
 ### Fast Walsh-Hadamard Transform (FWHT) — `paulikit.algorithms.fwht`
 
-O(N² log N) for an N×N matrix (N = 2ⁿ), per
-[Pauli decomposition via the fast Walsh-Hadamard transform](https://iopscience.iop.org/article/10.1088/1367-2630/adb44d).
-This is an **original implementation**: the algorithm's three steps
-(XOR-index gather, Walsh-Hadamard Transform, phase-factor
-multiplication) were independently re-derived from the symplectic
-(X/Z) representation of Pauli operators and verified against a
-from-scratch, definition-level brute-force decomposition before being
-written in fast form — see `algorithms/fwht.py`'s module docstring for
-the full derivation.
+`O(N² log N)` for an `N×N` matrix — equivalently `O(n·4ⁿ)` for `n`
+qubits, since `N = 2ⁿ`. Note the two symbols differ by an exponential:
+`n` counts qubits everywhere else in this file, `N` is the matrix side.
 
-Verified two ways (see `tests/test_fwht.py`):
+Decomposition by Walsh-Hadamard transform is established practice
+rather than novel — PennyLane and Classiq both use it, and it is
+treated at length in
+[Pauli decomposition via the fast Walsh-Hadamard transform](https://iopscience.iop.org/article/10.1088/1367-2630/adb44d).
+What is original here is the implementation, not the method: the three
+steps (XOR-index gather, Walsh-Hadamard transform, phase-factor
+multiplication) were re-derived from the symplectic (X/Z)
+representation of Pauli operators and checked against a
+definition-level brute-force decomposition before being written in
+fast form — see `algorithms/fwht.py`'s module docstring for the
+derivation. The contribution of this package is making that
+computation memory-bounded, checkpointable, and verified at scale.
+
+Unit-level checks on this algorithm (see `tests/test_fwht.py`; the
+whole-package correctness evidence is under **Correctness** below):
 - Against a from-scratch brute-force reference on random Hermitian
   matrices (n = 1..4 qubits): exact match to floating-point precision.
 - Against `testing.fixtures.ALL_FIXTURES` (real coupled-oscillator
   Hamiltonians at N=2, N=4): exact label-set and coefficient match.
 
-Planned (see `PLAN.md`): Tensorized Pauli Decomposition (TPD), PHASE,
+Planned: Tensorized Pauli Decomposition (TPD), PHASE,
 and C-ported variants of whichever algorithm profiling identifies as
 worth porting — this is why `algorithms/` is a subpackage rather than
 a single module.
@@ -181,11 +185,10 @@ a single module.
 
 No performance comparison is published here. Benchmark tables in a
 README go stale as either implementation changes, and any figure worth
-citing has to meet the protocol in
-[`profiling/phase13/MEASUREMENT_METHODOLOGY.md`](profiling/phase13/MEASUREMENT_METHODOLOGY.md) -
-replicated, interleaved, thermally recorded, with a hypothesis test.
-Measured figures live in [`profiling/`](profiling/), each beside the
-raw data it came from.
+citing has to be replicated, interleaved, thermally controlled and
+tested for significance — which a hand-maintained table cannot
+guarantee over time. Measured figures, the protocol behind them, and
+the raw data live in the project's research record (see Status).
 
 
 ## Status
@@ -199,15 +202,14 @@ bounded memory, chunked and parallel execution with cache-aware
 auto-tuning, binary checkpoint/restart, and exhaustive verification to
 91,652,096 terms.
 
-Known gaps, tracked in [`PLAN.md`](PLAN.md):
+Known gaps:
 
 - Prebuilt wheels are not yet published, so the native extension
   remains an optional accelerator rather than a hard requirement.
 - CPU pinning and topology detection are Linux-only, with a documented
   fallback elsewhere; the non-Linux paths are not yet exercised in CI.
 - A parallel-efficiency step at the 14-to-15 qubit boundary is
-  measured but not explained
-  ([`profiling/phase13/`](profiling/phase13/)).
+  measured but not explained.
 
 
 ## License

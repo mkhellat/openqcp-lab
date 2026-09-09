@@ -9,52 +9,60 @@ migration is complete.
 
 ---
 
-## What moves
+## What moves, measured
 
-Only what a user or a packaging system needs:
+| directory | files | size | decision |
+|---|---|---|---|
+| `src/` | 24 | 248K | **ships** - the library |
+| `tests/` | 13 | 132K | **ships** - 214 tests, no hardcoded paths |
+| `verification/` | 10 | 64K | **ships** - see below |
+| `docs/` | 23 | 240K | **ships, minus `superpowers/`** |
+| `profiling/` | 248 | **6.3M** | **stays** |
 
-```
-src/paulikit/        the library
-tests/               the test suite
-docs/                tutorial, theory, background, installation, layout
-verification/        exhaustive correctness runs and their artifacts
-meson.build          build rules
-pyproject.toml       packaging metadata
-README.md
-LICENSE
-CITATION.cff
-configure            build configuration script
-Makefile.in
-```
+Plus root files: `README.md`, `LICENSE`, `CITATION.cff`,
+`pyproject.toml`, `meson.build`, `meson.options`, `configure`,
+`Makefile.in`, `.gitignore`. And the CI workflow, relocated from the
+monorepo's `.github/workflows/paulikit-tests.yml` into the new
+repository's own `.github/workflows/` (dropping the `tools/paulikit`
+path filters and `working-directory`, which exist only because of the
+monorepo layout).
 
-Plus the CI workflow, relocated from the monorepo's
-`.github/workflows/paulikit-tests.yml` to the new repository's own
-`.github/workflows/` (dropping the `tools/paulikit` path filters and
-`working-directory`, which exist only because of the monorepo layout).
+### Why `verification/` ships
 
-`verification/` moves because it is the evidence behind the
-correctness claims in the README, it is reproducible on any machine,
-and it is small.
+1. It is the evidence for the README's central claim - "every term
+   verified individually, not sampled". Shipping the claim without the
+   artifacts is what a reviewer objects to.
+2. It is portable: zero hardcoded paths, no `/sys`, no `/proc`, no
+   venv assumptions - unlike `profiling/`, anyone can run it.
+3. It is 64K, about 1% of `profiling/`. Six JSON artifacts recording
+   command, git commit, dependency versions, machine, and results.
+4. It runs fast at small N (N=20 in ~0.02s), so a reviewer can
+   verify the verifier without a long wait.
 
-## What stays behind
+### Why `profiling/` stays
 
-```
-profiling/           every measurement harness and research note
-PLAN.md              the phased research plan
-docs/superpowers/    design specs and implementation plans
-```
+248 files and 6.3M of research log irrelevant to installing the
+package; several harnesses are machine-bound (hardcoded venv paths,
+Linux-only interfaces, this machine's topology - see
+`profiling/README.md`); and its value is as a research record, which
+the monorepo already provides.
 
-`profiling/` stays for three reasons: it is ~250 files of research log
-irrelevant to anyone installing the package; several of its harnesses
-are machine-bound (hardcoded venv paths, Linux-only interfaces, this
-machine's topology - see `profiling/README.md`); and its value is as a
-research record, which the monorepo already provides.
+### `docs/` needs surgery before it moves
 
-Consequence: any README or docstring reference to `profiling/` or
-`PLAN.md` breaks on arrival and must be resolved before the first
-release. If a document under `docs/` needs to cite a measured figure,
-either inline the figure with its provenance or cite the archived
-research record by DOI - not a relative path that will not exist.
+- **`docs/plan.md` was a one-line `include` of `../PLAN.md`**, which
+  stays behind. Left in place it breaks the Sphinx build, since
+  `docs/index.md`'s toctree referenced it. Already removed, and the
+  toctree now lists `installation` and `package_layout`, which were
+  orphaned pages. Build verified.
+- **`docs/superpowers/` (6 files)** holds internal design specs and
+  implementation plans - the process record of how features were
+  built. Research material, not user documentation. It should stay
+  with the monorepo.
+
+### Root files that stay
+
+`PLAN.md` (the phased research plan), `REVIEW_NOTES.md`, and
+`MIGRATION.md` itself.
 
 ## Conventional files still to add
 
@@ -83,9 +91,10 @@ The new repository needs the usual GNU/FOSS set. Present or absent:
    version that was never released is worse than none.
 3. **Version.** Currently `0.1.0` in both `pyproject.toml` and
    `CITATION.cff`. Keep them in step.
-4. **Broken relative links.** Run a link check after the move; the
-   README currently links to `profiling/phase13/MEASUREMENT_METHODOLOGY.md`
-   and `profiling/`, neither of which will exist.
+4. **Broken relative links.** The README's links into `profiling/`
+   and `PLAN.md` have been removed and every remaining relative link
+   verified to resolve. Re-run a link check after the move anyway -
+   `docs/` still has to be re-checked once `superpowers/` is dropped.
 
 ## Worth deciding deliberately
 
