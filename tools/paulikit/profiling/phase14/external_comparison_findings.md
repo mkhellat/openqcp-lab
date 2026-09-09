@@ -2,15 +2,36 @@
 
 Date: 2026-09-09. Machine: i7-8550U, 15 GiB RAM.
 
-**Headline, N=150, replicated: pauli_lcu is 1.76x faster on wall
-clock (4.28s vs 7.55s) using ONE core to our 4.5, so 6.4x less total
-CPU (4.68 vs 29.83 CPU-seconds). paulikit uses 100x less memory (89
-MiB vs 8893 MiB), essentially flat in N where theirs grows with the
-dense operator it requires as input.**
+**Headline, N=150, replicated after the Phase 14 optimizations:
+paulikit is 1.47x FASTER on wall clock (3.021s +/-0.196 vs 4.447s
++/-0.181) and uses 100x less memory (89 MiB vs 8892 MiB). On a single
+core it now uses 1.77x less CPU than pauli_lcu (2.648 vs 4.68
+CPU-seconds) while emitting explicit (x, z) indices their positional
+output never has to produce.**
 
-The memory result is the structural claim and it holds. The CPU
-result is the open problem, and it splits cleanly into a ~3.9x
-per-core efficiency gap and 11.5 CPU-seconds of parallel overhead.
+This reverses the position this document originally recorded. The
+starting numbers were 17.63 CPU-seconds sequential against their 4.68
+- a 3.8x deficit. What closed it, in order of contribution:
+
+| change | N=150 sequential CPU-s |
+|---|---|
+| phase-14 start | 17.63 |
+| + scratch buffer, phase LUT, conj table | (see below) |
+| + WHT C kernel | 7.29 |
+| + fused coefficient C kernel | 3.83 |
+| + hoisted gather, pre-sized accumulators | **2.648** |
+| *pauli_lcu, for reference* | *4.68* |
+
+Replicated head-to-head (5 reps, interleaved, cooldown to 55C):
+
+| N | pauli_lcu | paulikit | ratio | peak RSS |
+|---|---|---|---|---|
+| 100 | 1.129s ±0.035 | **0.742s ±0.020** | **1.52x** | 2177 / **88** MiB |
+| 150 | 4.447s ±0.181 | **3.021s ±0.196** | **1.47x** | 8892 / **89** MiB |
+
+The memory result was always the structural claim and it still holds,
+unchanged, through every optimization. The CPU gap - originally
+presented here as the open problem - is closed.
 
 An earlier version of this file reported paulikit at 41.3s and
 concluded pauli_lcu won on both axes. That was a harness defect, not

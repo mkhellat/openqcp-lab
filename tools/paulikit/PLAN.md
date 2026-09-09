@@ -2767,34 +2767,57 @@ single shared mutable buffer, or positional output, is disqualified
 here regardless of speed**: it would trade away the streaming and
 multi-node properties Phases 9-13 were built to establish.
 
-**The goal is to beat pauli_lcu outright on compute, not to narrow
-the gap.** Parity is not the target. Both gaps below have to close,
-and the arithmetic says it is reachable: 29.83 CPU-seconds against
-their 4.68 means eliminating the parallel overhead entirely (11.5s)
-still leaves 18.3s sequential, so the per-core work must also come
-down ~4x. Neither alone suffices.
+**The goal was to beat pauli_lcu outright on compute, not to narrow
+the gap. That is done.** At N=150, replicated (5 reps, interleaved,
+cooldowns): paulikit 3.021s ±0.196 against pauli_lcu's 4.447s ±0.181,
+**1.47x faster**, at 89 MiB against their 8892 MiB. On a single core
+paulikit uses 2.648 CPU-seconds against their 4.68 — **1.77x less
+CPU** — while emitting the explicit (x, z) indices their positional
+output never has to produce.
+
+The path from a 3.8x deficit to a 1.77x lead, in order:
+
+| change | N=150 sequential CPU-s |
+|---|---|
+| phase-14 start | 17.63 |
+| WHT C kernel (cache-tiled, sysconf-sized) | 7.29 |
+| fused phase/scale/threshold/emit C kernel | 3.83 |
+| hoisted gather + pre-sized accumulators | **2.648** |
+| *pauli_lcu* | *4.68* |
 
 **Scope note.** Multi-node (MPI) is scoped in Phase 13 but is *not*
 being pursued now and is not part of what ships. The chunk-independence
-property that makes it possible must be preserved, but no MPI work is
-planned in the current push.
+property that makes it possible has been preserved throughout — every
+kernel added here operates on one chunk with no shared state.
 
-**Open, in priority order.**
+**Closed during this phase.**
 
-1. The 11.5 CPU-seconds of parallel overhead — the largest single
-   lever, and it needs no change to the transform. 63% overhead for a
-   2.77x speedup on 4.48 cores; pickling, IPC, and process
-   coordination are the suspects.
-2. The strided butterfly, ~3.9x per-core. Open question: does an
-   index permutation exist (perfect shuffle / bit-reversal family)
-   that makes both butterfly operands unit-stride, so the inner loop
-   vectorizes, with permute + transform + unpermute still cheaper
-   than staying strided? If no NumPy-level answer exists, the
-   existing C/Cython kernel infrastructure is the fallback — applied
-   to our own chunked, COO-producing structure, not their layout.
-3. Push N past pauli_lcu's dense-input ceiling (n=15 needs 16 GiB,
-   above this machine's RAM), where the memory advantage becomes a
-   capability difference rather than an efficiency one.
+1. *Parallel overhead.* Investigated and largely reframed rather than
+   "fixed": holding chunk_size fixed and varying workers showed CPU
+   growth of +77% from 1 to 4 workers, which the cache-tiled kernel
+   cut to +30%. The residual is the ProcessPoolExecutor round trip
+   itself, not dispatch latency or pool starvation — the batched-
+   refill fix inherited from Phase 13 was implemented, measured, and
+   falsified by direct instrumentation (`wait()` returns exactly one
+   future 100.0% of the time; the pool is saturated throughout). See
+   `profiling/phase14/drain_loop_refill_falsified.md`.
+2. *The strided butterfly.* No NumPy-level permutation exists — the
+   perfect-shuffle family is bit-word-scoped, not array-scoped (see
+   `bit_hack_avenues_closed.md`). Resolved with the C kernel instead,
+   applied to our own chunked COO-producing structure.
+
+**Still open.**
+
+- Push N past pauli_lcu's dense-input ceiling (n=15 needs 16 GiB,
+  above this machine's RAM), where the memory advantage becomes a
+  capability difference rather than an efficiency one.
+- The pool round trip remains ~1.33 ms/chunk against ~0.5 ms of
+  useful work now that the compute is this fast. Shared memory is the
+  one untested lever (probed at 1.96x on raw transfer); note that the
+  *sequential* path is now faster than the parallel one at N=150
+  (2.648 vs 10.109 CPU-seconds), so for this workload the honest
+  advice is that parallelism no longer pays — worth confronting
+  directly rather than defending the pool.
 
 See `profiling/phase14/` for harnesses and
 `profiling/phase14/external_comparison_findings.md` for the full
