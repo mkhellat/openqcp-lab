@@ -198,8 +198,9 @@ every term happens in the single parent process, not in the worker
 pool, and at large problem sizes that step dominates the function's
 own runtime. Measured directly at $N=150$ (91.6 million terms), it is
 about 82% of total runtime — a serial fraction that, by Amdahl's law,
-caps the achievable speedup at roughly 1.21x no matter how many cores
-are thrown at the problem. This isn't a defect to be fixed later; it's
+caps the achievable speedup for the dict-returning API no matter how
+many cores are thrown at the problem. (The array-yielding API added
+later removes that ceiling; see below.) This isn't a defect to be fixed later; it's
 an inherent cost of returning fully-labeled Python dicts at that
 scale, and `parallel_decompose` remains the correct, supported choice
 whenever you need those labels.
@@ -241,14 +242,20 @@ paying it and discarding most of the result.
 How much does this actually buy you? A controlled experiment isolating
 the drain loop's per-chunk work — comparing full label-and-dict
 construction against yielding arrays only, against a control doing no
-per-chunk work at all — measured the arrays-only path at 2.191x,
-statistically indistinguishable from the no-op control; the
-label-and-dict path measured 0.865x, consistent with the ~1.21x ceiling
-once the rest of the pipeline is accounted for. That 2.191x is the
-controlled experiment's result for the drain loop in isolation, not
-yet an end-to-end, thermal-controlled measurement of
-`parallel_decompose_arrays` itself with checkpointing enabled — that
-sweep is tracked as follow-up work in the project's research record.
-Treat the array API as the
-principled fix for a well-understood serial bottleneck, not (yet) as a
-number to quote for your own workload without measuring it.
+per-chunk work at all — found the arrays-only path statistically
+indistinguishable from a control doing no per-chunk work, while the
+label-and-dict path scaled *negatively*: adding workers made it
+slower.
+
+Specific ratios are deliberately not quoted here. They were obtained
+before this project adopted a measurement protocol, and the
+conditions they used mixed hyperthread siblings with physical cores
+in a way that protocol now rules out for scaling claims. The
+qualitative result — removing per-term Python work from the drain
+loop is what restores multi-core scaling — is robust and reproduced
+under the protocol; the exact numbers are not, and are being
+re-measured.
+
+Treat the array API as the principled fix for a well-understood
+serial bottleneck, and measure your own workload rather than quoting
+a ratio.
