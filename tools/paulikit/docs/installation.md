@@ -9,8 +9,8 @@ paulikit is built with [meson-python](https://mesonbuild.com/meson-python/)
 (the same build backend NumPy and SciPy use), and optionally compiles a
 native (Cython/C++) `pauli_label` kernel, which materially reduces
 label-generation cost — see [Native extension](#native-extension)
-below. Figures live in `profiling/`, beside the data they came from,
-rather than as a ratio here that would go stale.
+below. Measured figures for it live in the project's research record
+rather than here, where they would go stale.
 
 **Recommended for development:** run `./configure` from this
 directory. It creates/reuses a dedicated venv (default
@@ -18,7 +18,7 @@ directory. It creates/reuses a dedicated venv (default
 rejects an absolute in-tree numpy include path if the venv lives
 inside `tools/paulikit/`), prints an itemized capability/environment
 diagnostic report (compiler, Cython, TBB, cache hierarchy, NumPy's
-BLAS backend, etc. — see `PLAN.md`'s Phase 0.5 for the full list and
+BLAS backend, etc. — see the research record for the full list and
 rationale), and generates a `Makefile` with the standard GNU set of
 targets (`all`/`build`/`install`/`install-strip`/`installdirs`/
 `check`/`test`/`installcheck`/`uninstall`/`docs`/`dist`/`TAGS`/
@@ -65,7 +65,7 @@ those are only used in the `test`/`dev` extras, for generating and
 cross-checking correctness fixtures. `scipy` is likewise optional:
 only needed for the `sparse=True` path on `build_hamiltonian`,
 `pad_to_power_of_two`, and (as an input type)
-`fwht_pauli_coefficients`/`fwht_pauli_terms` (see `PLAN.md` Phase 8) -
+`fwht_pauli_coefficients`/`fwht_pauli_terms` (see the research record) -
 calling any of those with `sparse=True` (or passing a
 `scipy.sparse` operator directly) without `scipy` installed raises a
 clear `ImportError` naming the `sparse` extra, rather than silently
@@ -100,7 +100,7 @@ The native extension is currently an optional, best-effort
 accelerator, not a hard requirement — paulikit has no prebuilt-wheel
 CI yet, so requiring a C++ toolchain for every `pip install` would be
 too heavy a default. This is a deliberate, temporary trade-off, not
-a permanent architecture decision — see `PLAN.md` Phase 3c for the
+a permanent architecture decision — see the research record for the
 full rationale. Migrating to prebuilt wheels (so the extension can
 become a hard requirement, matching the NumPy/SciPy model) is tracked
 as a near-term goal, not indefinitely deferred.
