@@ -9,7 +9,11 @@
 
 native_opt = get_option('native')
 
-if not native_opt.disabled()
+# have_cython / have_cpp come from add_languages() in the top-level
+# meson.build. Guarding on them matters: meson.get_compiler('cython')
+# is a hard error when the language was never successfully added, so
+# calling it unguarded defeats the whole auto-fallback.
+if not native_opt.disabled() and have_cython and have_cpp
   cy = meson.get_compiler('cython')
   tbb_dep = dependency('tbb', required: native_opt)
   cython_ok = cy.version().version_compare('>=3.0')
@@ -51,7 +55,7 @@ endif
 # own docstring for why bundling them would be wrong).
 cache_probe_opt = get_option('cache_probe')
 
-if not cache_probe_opt.disabled()
+if not cache_probe_opt.disabled() and have_cython and have_c
   cy2 = meson.get_compiler('cython')
   cython_ok2 = cy2.version().version_compare('>=3.0')
 
