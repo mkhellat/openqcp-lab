@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Extract paulikit from the openqcp-lab monorepo into a standalone
+# repository, preserving history.
+#
+# Writes to a NEW directory. Never modifies the monorepo - it clones
+# it first, and every filter-repo call runs against the clone.
+#
+# Usage:
+#   ./extract-standalone [DEST]
+#
+# DEST defaults to ../../../paulikit-standalone (a sibling of the
+# monorepo, deliberately outside it).
+#
+# Afterwards, from DEST:
+#   git remote add origin git@codeberg.org:beavernets/paulikit.git
+#   git remote add github git@github.com:<namespace>/paulikit.git
+#   proxychains4 -q git push -u origin main
+#   proxychains4 -q git push github main
+
+set -euo pipefail
+
+MONOREPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DEST="${1:-$(dirname "$MONOREPO")/paulikit-standalone}"
+SUBDIR="tools/paulikit"
+
+# Everything here is research material: measurement harnesses that are
+# machine-bound, the phased research plan, internal design specs, and
+# the binding comparison from Phase 3a. It stays with the monorepo.
+# See MIGRATION.md for the reasoning behind each.
+PRUNE=(
+  profiling
+  bindings
+  PLAN.md
+  REVIEW_NOTES.md
+  MIGRATION.md
+  extract-standalone
+  .mailmap-proposed
+  docs/superpowers
+  docs/plan.md
+)
+
+command -v git-filter-repo >/dev/null || {
+  echo "error: git-filter-repo not found (pip install git-filter-repo)" >&2
+  exit 1
+}
+[ -e "$DEST" ] && { echo "error: $DEST already exists" >&2; exit 1; }
+
+echo "monorepo: $MONOREPO"
+echo "dest:     $DEST"
+echo
+
+# --no-local forces a real object copy rather than hardlinks, so the
+# filter cannot reach back into the monorepo's object store.
+git clone --no-local --quiet "$MONOREPO" "$DEST"
+cd "$DEST"
+git remote remove origin 2>/dev/null || true
+
+before=$(git rev-list --count HEAD)
+
+# TWO PASSES, deliberately. Combining --subdirectory-filter with
+# --invert-paths in one invocation does NOT compose: it silently
+# produces the PARENT repository's files instead. Verified by dry run.
+echo "pass 1: extracting $SUBDIR to the repository root ..."
+git filter-repo --subdirectory-filter "$SUBDIR" --force --quiet
+after_extract=$(git rev-list --count HEAD)
+
+echo "pass 2: pruning research material ..."
+args=()
+for p in "${PRUNE[@]}"; do args+=(--path "$p"); done
+git filter-repo --invert-paths "${args[@]}" --force --quiet
+after_prune=$(git rev-list --count HEAD)
+
+echo
+echo "  monorepo commits          : $before"
+echo "  after subdirectory filter : $after_extract"
+echo "  after pruning             : $after_prune"
+echo
+
+# The CI workflow lives at the MONOREPO root, outside $SUBDIR, so the
+# filter cannot carry it. Recreate it here with the monorepo-specific
+# bits (path filters, working-directory) removed.
+mkdir -p .github/workflows
+sed -e '/^    paths:$/,/^      - "\.github/d' \
+    -e '/^defaults:$/,/^    working-directory: tools\/paulikit$/d' \
+    -e 's|tools/paulikit/\*\*|**|' \
+    "$MONOREPO/.github/workflows/paulikit-tests.yml" \
+    > .github/workflows/tests.yml
+echo "  recreated .github/workflows/tests.yml (monorepo paths stripped)"
+
+echo
+echo "sanity checks:"
+for f in README.md LICENSE CITATION.cff pyproject.toml meson.build; do
+  [ -f "$f" ] && echo "  ok      $f" || echo "  MISSING $f"
+done
+for d in src tests docs verification; do
+  [ -d "$d" ] && echo "  ok      $d/" || echo "  MISSING $d/"
+done
+for d in profiling bindings docs/superpowers; do
+  [ -e "$d" ] && echo "  LEAKED  $d (should not be here)" || echo "  ok      $d absent"
+done
+
+echo
+echo "dangling references to pruned paths in shipping files:"
+if git ls-files '*.md' | xargs grep -ln 'profiling/\|PLAN\.md' 2>/dev/null; then
+  echo "  ^ fix these before pushing"
+else
+  echo "  none"
+fi
+
+echo
+echo "history size: $(du -sh .git | cut -f1)"
+echo "done. Review $DEST, then add remotes and push."
