@@ -179,6 +179,12 @@ argument details on any of these.
 
 ## 6. Multi-core decomposition and the array-yielding API
 
+> **Read the end of this section before choosing a function for
+> speed.** Since the transform moved into compiled C kernels, the
+> multi-core path is *slower* than the sequential one on the sizes
+> measured here. It remains the right choice for streaming and
+> bounded memory — just not for throughput.
+
 For a large Hamiltonian, `paulikit.algorithms.fwht.parallel_decompose`
 spreads the FWHT coefficient math for each chunk across a
 `ProcessPoolExecutor`, then streams back `dict[str, complex]` chunks
@@ -239,23 +245,39 @@ this pattern — decompose with `parallel_decompose_arrays`, filter, then
 label only the survivors — sidesteps the serial bottleneck rather than
 paying it and discarding most of the result.
 
-How much does this actually buy you? A controlled experiment isolating
-the drain loop's per-chunk work — comparing full label-and-dict
-construction against yielding arrays only, against a control doing no
-per-chunk work at all — found the arrays-only path statistically
-indistinguishable from a control doing no per-chunk work, while the
-label-and-dict path scaled *negatively*: adding workers made it
-slower.
+How much does this actually buy you? Removing per-term Python work
+from the drain loop is a real and well-understood fix for a real
+serial bottleneck — the label-and-dict path scaled *negatively*,
+where adding workers made it slower.
 
-Specific ratios are deliberately not quoted here. They were obtained
-before this project adopted a measurement protocol, and the
-conditions they used mixed hyperthread siblings with physical cores
-in a way that protocol now rules out for scaling claims. The
-qualitative result — removing per-term Python work from the drain
-loop is what restores multi-core scaling — is robust and reproduced
-under the protocol; the exact numbers are not, and are being
-re-measured.
+### But do not reach for the parallel API for speed
 
-Treat the array API as the principled fix for a well-understood
-serial bottleneck, and measure your own workload rather than quoting
-a ratio.
+**On current measurements, `parallel_decompose_arrays` is slower than
+the sequential path**, and costs several times the CPU:
+
+| N | sequential wall | parallel wall | speedup | CPU cost |
+|---|---|---|---|---|
+| 100 | 0.606s | 0.642s | 0.94x | 3.4x |
+| 150 | 2.525s | 3.136s | 0.81x | 5.5x |
+
+Nothing about the parallel machinery regressed. The compute it wraps
+got much cheaper: the transform and the coefficient step now run in
+compiled C kernels, which cut per-chunk work to roughly 0.5 ms
+against a process-pool round trip of roughly 1.33 ms that no amount
+of arithmetic optimization touches. Amdahl's law does the rest. On a
+workload with heavier chunks — a much larger `dim`, or an expensive
+per-chunk step of your own — the balance would tip back.
+
+So, concretely:
+
+- **For throughput**, use
+  `fwht_pauli_coefficients(..., sparse=True, chunk_size=...)`. It is
+  faster in wall clock and several times cheaper in CPU.
+- **For the streaming contract**, use `parallel_decompose_arrays`:
+  bounded memory regardless of result size, resumable checkpoints,
+  and a consumer that sees chunks as they arrive. Those properties
+  are why it exists, and they are unaffected — peak resident memory
+  is still tens of MiB at N=150. It is simply not the faster option
+  today.
+
+Measure your own workload rather than assuming either way.
