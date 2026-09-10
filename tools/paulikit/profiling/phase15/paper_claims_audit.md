@@ -135,15 +135,54 @@ any artifact the authors published**: not the PyPI package, not the
 GitHub repo, and not the Zenodo deposit that exists precisely to make
 the paper's numbers reproducible.
 
-**How to state this fairly.** The paper does not claim the *released
-package* is parallel. It says "we have implemented this
-parallelization", a claim about work the authors did, and there is no
-reason to doubt they did it - the algorithm plainly parallelises, and
-the claim is modest and plausible. The criticism is narrower and is
-about reproducibility, not honesty: a parallel speedup is reported and
-plotted, while every artifact offered to readers - package, repo, and
-archive - is serial. A reader wanting to verify figure 3, or to build
-on the parallel version, has nothing to work from.
+**How to state this fairly - and the distinction that matters.** The
+paper does not claim the *released package* is parallel. It says "we
+have implemented this parallelization", a claim about work the authors
+did, and there is no reason to doubt they did it.
+
+But "the algorithm parallelises" and "the system delivers that
+speedup" are **different claims about different artifacts**, and only
+the first is established here. A decomposition into independent rows
+is a mathematical property; turning it into sustained multi-core
+throughput is an engineering problem with its own failure modes, none
+of which the row-independence argument addresses:
+
+- Where does the result go? Independent rows still have to be
+  collected. Phase 13 measured a 25 GiB blowup from unbounded result
+  queuing that no amount of algorithmic independence prevented.
+- Does the working set survive concurrency? Phase 14 measured total
+  CPU rising 77% from 1 to 4 workers on identical work - shared-L3
+  contention that only a cache-blocked kernel reduced (to +30%).
+- Is the per-unit work large enough to amortise the coordination?
+  Phase 14 found it was not: once the kernels made chunks cheap, the
+  same pool that had bought 2.95x became a net loss.
+- What is the serial fraction *in the implementation*, as opposed to
+  the algorithm? Measured here at f = 0.0336 - small, but it had to
+  be measured, not assumed.
+
+Each of those is invisible from the algorithm and decisive for the
+system. This project's own history is the evidence: the row
+independence was never in doubt, and it still took Phases 13-15 -
+bounded submission, an array-yielding API, two C kernels, and a
+falsified drain-loop fix - to convert it into real throughput.
+
+So the criticism is not about honesty, and it is not only about
+reproducibility. It is that **a reported speedup is doing the work of
+a delivered capability**. Figure 3 is presented as what the method
+achieves, while every artifact offered to readers - PyPI package,
+GitHub repo, and the Zenodo deposit that exists precisely to make the
+numbers reproducible - is serial. A reader cannot verify the figure,
+cannot build on the parallel version, and cannot obtain the speedup
+the paper reports. The gap between "we implemented it" and "you can
+run it" is exactly the engineering, and it is the part that is
+missing.
+
+**For our own write-up:** state this plainly but without insinuation.
+We are not alleging the measurement is wrong. We are pointing out
+that a parallel result which ships in no artifact is a claim about
+the authors' private build, and that the distance between a
+parallelisable algorithm and a parallel system is the substance of
+the work - not a detail to be assumed away.
 
 **Consequence for any comparison we publish.** Two things follow, and
 both matter:
@@ -153,11 +192,21 @@ both matter:
    in exactly those terms - "pauli_lcu 1.0.1 as released", never
    "pauli_lcu is single-threaded" as though that were a property of
    the algorithm. It is not; the paper shows otherwise.
-2. Their algorithm parallelises well - 7x on 8 cores by their own
-   measurement, on rows that are independent exactly as ours are.
-   Any claim of a parallelism advantage on our side must be measured
-   against a comparably parallel build of theirs, not against the
-   serial release. We have not done that.
+2. We must not claim a *parallelism* advantage over their method on
+   the strength of comparing against a serial release. Their rows are
+   independent exactly as ours are, and they report 7x on 8 cores. If
+   we ever claim to parallelise better, it has to be against a
+   comparably parallel build of theirs - which does not exist
+   publicly, so that comparison currently cannot be made by anyone,
+   us included.
+
+   What we *can* claim, and should, is on the axis where artifacts
+   can actually be compared: what a user obtains and runs. On that
+   axis paulikit ships a working parallel path, a streaming
+   bounded-memory path, and measured numbers reproducible from this
+   repository. That is an engineering claim, and it is the honest
+   one - it does not require asserting anything about the quality of
+   their unpublished parallel build.
 
 ---
 
