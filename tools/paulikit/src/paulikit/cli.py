@@ -64,11 +64,52 @@ def cmd_decompose(args):
     spring_constants = _default_spring_constants(n)
     masses = _default_masses(n)
 
-    unpadded = build_hamiltonian(n, spring_constants, masses)
-    padded, n_qubits = pad_to_power_of_two(unpadded)
+    # --parallel builds the operator SPARSE. That is not an
+    # optimisation detail: at 15 qubits a dense operator is 16 GiB and
+    # at 16 qubits it is 64 GiB, so densifying here would put the
+    # sizes this path exists to reach out of reach before the
+    # decomposition even starts.
+    sparse_input = bool(getattr(args, "parallel", False))
+    unpadded = build_hamiltonian(n, spring_constants, masses,
+                                 sparse=sparse_input)
+    padded, n_qubits = pad_to_power_of_two(unpadded, sparse=sparse_input)
 
     print(f"N={n} oscillators, {n_qubits} qubits, {padded.shape[0]}x{padded.shape[0]} "
           f"padded Hamiltonian")
+
+    if getattr(args, "parallel", False):
+        if not args.chunk_size:
+            print("--parallel requires --chunk-size", file=sys.stderr)
+            return 1
+
+        from paulikit.algorithms.fwht import parallel_decompose_arrays
+
+        start = time.perf_counter()
+        total_terms = 0
+        n_chunks = 0
+        for _x, _z, coeff in parallel_decompose_arrays(
+            padded,
+            chunk_size=args.chunk_size,
+            n_workers=args.n_workers,
+            atol=args.atol,
+            checkpoint_path=args.checkpoint_path,
+            executor=args.executor,
+        ):
+            n_chunks += 1
+            total_terms += len(coeff)
+        elapsed = time.perf_counter() - start
+
+        print(f"Decomposition time (parallel, executor={args.executor}): "
+              f"{elapsed:.4f}s")
+        print(f"Chunks: {n_chunks}, nonzero Pauli terms: {total_terms}")
+        if args.show_terms:
+            # Labels are deliberately not built on this path - that is
+            # the serial cost it exists to avoid. Say so rather than
+            # silently ignoring the flag.
+            print("(--show-terms not available with --parallel: this path "
+                  "yields raw arrays and never builds labels; use "
+                  "terms_from_arrays on the chunks you actually need)")
+        return 0
 
     if args.stream:
         # Exercises fwht_pauli_terms_iter directly (PLAN.md Phase 10):
@@ -305,6 +346,38 @@ def build_parser():
              "total time, dwarfing labeling's ~7% share) - see "
              "profiling/phase10/full_pipeline_n150_findings.md. "
              "Ignored without --stream.",
+    )
+    decompose_parser.add_argument(
+        "--parallel", action="store_true",
+        help="Decompose across multiple workers via "
+             "parallel_decompose_arrays, streaming raw (x, z, coeff) "
+             "arrays per chunk rather than building labels. This is "
+             "the path that scales: at N=150 it does 91.6M terms in "
+             "~1.0s in ~72 MiB, and it reaches problem sizes a dense "
+             "implementation cannot hold at all (15 qubits needs "
+             "16 GiB dense, 16 qubits needs 64 GiB). Requires "
+             "--chunk-size. Labels are not built, so --show-terms "
+             "reports counts only.",
+    )
+    decompose_parser.add_argument(
+        "--executor", choices=("auto", "thread", "process"), default="auto",
+        help="With --parallel, how to drain chunks. 'thread' runs the "
+             "compiled kernels concurrently with no pickling (both "
+             "release the GIL); 'process' uses a process pool, which "
+             "pays IPC but does not depend on the kernels being built. "
+             "'auto' (default) picks thread when the compiled kernels "
+             "are available and process otherwise - the right choice "
+             "differs by ~6x in each direction, so it is decided per "
+             "build rather than globally.",
+    )
+    decompose_parser.add_argument(
+        "--n-workers", type=int, default=None,
+        help="With --parallel, how many workers. Defaults to the "
+             "number of distinct physical cores (not logical CPUs - "
+             "hyperthread siblings share execution units and measured "
+             "worse). On the 4-core development machine, 4 threads "
+             "measured 3.44x against an Amdahl ceiling of 3.63x, "
+             "while 8 cost 1.72x the cycles for no wall-clock gain.",
     )
     decompose_parser.add_argument(
         "--checkpoint-path", type=str, default=None,

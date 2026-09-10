@@ -208,8 +208,9 @@ Known gaps:
   remains an optional accelerator rather than a hard requirement.
 - CPU pinning and topology detection are Linux-only, with a documented
   fallback elsewhere; the non-Linux paths are not yet exercised in CI.
-- A parallel-efficiency step at the 14-to-15 qubit boundary is
-  measured but not explained.
+- A parallel-efficiency step at the 14-to-15 qubit boundary was
+  measured under the process-pool drain and remains unexplained; it
+  has not been re-characterised since the threaded drain landed.
 
 
 ## License

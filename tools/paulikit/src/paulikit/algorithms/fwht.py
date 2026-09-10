@@ -2233,7 +2233,7 @@ def parallel_decompose_arrays(
     atol: float = 1e-10,
     assume_hermitian: bool = True,
     checkpoint_path: str | Path | None = None,
-    executor: str = "process",
+    executor: str = "auto",
 ) -> Iterator[tuple[NDArray, NDArray, NDArray]]:
     """Multi-core decomposition yielding raw ``(x, z, coeff)`` arrays -
     PLAN.md Phase 13.
@@ -2280,9 +2280,29 @@ def parallel_decompose_arrays(
 
     from paulikit.algorithms import autotune
 
-    if executor not in ("process", "thread"):
+    if executor not in ("auto", "process", "thread"):
         raise ValueError(
-            f"executor must be 'process' or 'thread', got {executor!r}"
+            f"executor must be 'auto', 'process' or 'thread', "
+            f"got {executor!r}"
+        )
+    if executor == "auto":
+        # Threads are the better drain ONLY when the compiled kernels
+        # are present, because that is what releases the GIL. The
+        # difference is not marginal in either direction. Measured at
+        # N=100, 4 workers:
+        #
+        #   kernels present : thread 0.313s vs process 2.009s (6.4x)
+        #   kernels absent  : thread 2.460s vs process 1.708s (0.69x)
+        #
+        # Without them the NumPy fallback holds the GIL for the bulk
+        # of each chunk, so threads serialise and additionally pay
+        # contention; processes remain the right choice. Choosing per
+        # build rather than globally is what makes this safe to
+        # default.
+        executor = (
+            "thread"
+            if (_wht_native is not None and _coeffs_native is not None)
+            else "process"
         )
 
     (
