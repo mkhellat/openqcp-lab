@@ -128,3 +128,21 @@ def test_checkpoint_round_trips_through_the_cli(capsys, tmp_path):
     )
     assert code == 0
     assert f"nonzero Pauli terms: {expected}" in out.out
+
+
+@pytest.mark.parametrize("command", [[], ["decompose"], ["benchmark"]])
+def test_help_renders(capsys, command):
+    """`--help` must actually render.
+
+    argparse runs %-formatting over every help string, so a literal
+    percent sign in help text (e.g. "~60% of total time") is read as a
+    format specifier and raises TypeError at display time. That is
+    invisible to tests which build the parser and parse known argv -
+    it only fires when the help is formatted - so this exercises the
+    real path a user takes.
+    """
+    parser = build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args([*command, "--help"])
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip()
