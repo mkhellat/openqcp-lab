@@ -99,16 +99,98 @@ Structural differences from `pauli_lcu` worth noting:
   `_get_signed_coefficient(..., is_hermitian)` rather than the
   `i**popcount(x & z)` form.
 
-## The priority question — what is and is not established
+## Dating the prior art — VERIFIED against primary sources
 
-**Established here:** Classiq ships an FWHT-based Pauli decomposition
-with explicit non-Hermitian support, and documents the Hadamard
-change-of-basis insight in the function's own docstring.
+Reference dates for the paper: **arXiv:2408.06206 posted 12 Aug
+2024**; **NJP submission 10 Oct 2024**; published 28 Feb 2025.
 
-**NOT established here:** *when* Classiq first published it. This
-repo pins classiq 1.23.0 and its own history begins 2026-08, so it
-cannot date Classiq's release. Dating requires PyPI release history
-or Classiq's public repos, and is being traced separately.
+### PennyLane — 10 August 2023, over a year earlier
+
+PR #4395, *"Faster, better and differentiable Pauli decompose"*,
+merged **2023-08-10** (commit `b5789db`), rewrote
+`qml.pauli_decompose` to use the Fast Walsh-Hadamard Transform. The
+source at that merge commit imports
+`_walsh_hadamard_transform` and carries the comment
+`# https://quantumcomputing.stackexchange.com/a/31790` - Gidney's
+answer - from that commit onward.
+
+The PR description states it "removes restriction for matrix being
+square or Hermitian", so **non-Hermitian support arrived in the same
+PR**.
+
+This is the same lineage the paper itself acknowledges ("Gidney's code
+then was also incorporated in Pennylane"), now with a date.
+
+### Classiq — 5 August 2024, seven days before the arXiv posting
+
+Verified independently against primary sources:
+
+- **PyPI**: `classiq` 0.44.0, `classiq-0.44.0-py3-none-any.whl`,
+  upload time **2024-08-05T10:33:10.010714Z** (PyPI JSON API).
+- **The wheel's own source**, downloaded and read directly -
+  `classiq/applications/hamiltonian/pauli_decomposition.py`, which
+  ships as **plain readable Python**, not obfuscated:
+  - line 4: `from sympy import fwht`
+  - `matrix_to_hamiltonian(mat, tol=ATOL, is_hermitian=True)` with the
+    Walsh-Hadamard docstring quoted above
+  - `_get_signed_coefficient` computing
+    **`(1j) ** ((i & k).bit_count())`**
+- **Classiq's public library repo**: the matching notebook usage
+  landed at commit `ef365378`, **2024-08-05T11:14:37Z** ("Updates for
+  0.44.0"), the same day. The two prior commits touching that
+  notebook (Feb-Jun 2024) do not contain `matrix_to_hamiltonian`.
+
+That phase factor deserves emphasis. Classiq's
+`(1j) ** ((i & k).bit_count())` is **the same expression** as the
+paper's equation (8) factor `i^(-|r∧s|)` and as `pauli_lcu`'s
+`__builtin_popcount(i & j) & 3` switch - the same popcount-of-AND
+phase correction, shipped 2024-08-05.
+
+**Caveat, stated because it bounds the claim:** version 0.44.0 is the
+earliest release *verified* to contain it. Versions before 0.42.2
+(2024-06-17) were not diffed, so the function may exist in an earlier
+release without corresponding library-repo usage. The established
+claim is "no later than 2024-08-05", not "first appeared then".
+
+### Gidney's StackExchange answer — date NOT established
+
+`quantumcomputing.stackexchange.com/a/31790` could not be fetched in
+this environment, and no timestamp was obtained from a primary
+source. It **must** predate PennyLane's 2023-08-10 merge that cites
+it, but that is inference. **Do not cite a date for it.**
+
+### Summary table
+
+| implementation | FWHT for Pauli decomposition | non-Hermitian | date basis |
+|---|---|---|---|
+| PennyLane | yes | yes, same PR | **2023-08-10**, merge commit `b5789db` |
+| Classiq | yes | yes, `is_hermitian=False` | **2024-08-05**, PyPI upload + wheel source |
+| Gidney (SO) | yes | — | predates 2023-08-10 (inferred, not verified) |
+| arXiv:2408.06206 | yes | yes | posted 2024-08-12 |
+| NJP 27 033004 | yes | yes | submitted 2024-10-10 |
+
+## What this does and does not show
+
+**It does not show the paper claimed false priority.** As recorded in
+`paper_claims_audit.md`, the paper explicitly concedes Gidney and
+Hamaguchi et al as prior FWHT work and confines its novelty claim to
+equations (8)/(9) and their proofs. PennyLane's implementation is
+exactly the lineage it names.
+
+**What it adds** is that the prior art is broader and better dated
+than the related-work section conveys. Classiq is a *third*
+independent FWHT-based implementation, with non-Hermitian support and
+the same popcount phase factor, in a public release predating the
+arXiv posting by a week - and it is not cited. PennyLane is cited
+[19], but as a package carrying Gidney's code rather than as a dated
+prior implementation.
+
+**Practical consequence for us:** any claim we publish must not
+describe FWHT-based Pauli decomposition as originating with this
+paper, and should note that at least three public implementations
+(PennyLane 2023-08, Classiq 2024-08, pauli_lcu 2024) predate or
+accompany it. Our own contribution is the streaming/COO/bounded-memory
+design and the measured performance, not the transform.
 
 The comparison date that matters is **10 October 2024**, the paper's
 submission (arXiv:2408.06206 was posted August 2024).
