@@ -2233,6 +2233,7 @@ def parallel_decompose_arrays(
     atol: float = 1e-10,
     assume_hermitian: bool = True,
     checkpoint_path: str | Path | None = None,
+    executor: str = "process",
 ) -> Iterator[tuple[NDArray, NDArray, NDArray]]:
     """Multi-core decomposition yielding raw ``(x, z, coeff)`` arrays -
     PLAN.md Phase 13.
@@ -2273,9 +2274,16 @@ def parallel_decompose_arrays(
             this check remains possible.
     """
     import multiprocessing
-    from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+    from concurrent.futures import (
+        FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait,
+    )
 
     from paulikit.algorithms import autotune
+
+    if executor not in ("process", "thread"):
+        raise ValueError(
+            f"executor must be 'process' or 'thread', got {executor!r}"
+        )
 
     (
         operator, is_sparse_input, dim, n_qubits, p_nz, q_nz, x_nz, values_nz
@@ -2373,6 +2381,92 @@ def parallel_decompose_arrays(
     # on startup to claim a distinct entry (ProcessPoolExecutor's
     # initializer gives every worker identical initargs, with no
     # built-in per-worker ordinal of its own).
+    if executor == "thread":
+        # THREADED DRAIN (PLAN.md Phase 15).
+        #
+        # Threads work here for one specific reason: both compiled
+        # kernels release the GIL, so `_parallel_worker_chunk`'s real
+        # cost runs genuinely concurrently. Measured per chunk, the
+        # GIL-held part (the zeroed block, the value slice, the
+        # scatter) is 13.0us against 374.6us inside the kernels - a
+        # serial fraction of f = 0.0336.
+        #
+        # Measured scaling (perf cycles, which unlike wall clock on
+        # this machine are frequency-invariant): 1.87x on 2 threads
+        # and 3.44x on 4, against Amdahl ceilings of 1.93x and 3.63x
+        # for that f. Threading costs only 7% and 16% extra cycles
+        # respectively. See profiling/phase15/.
+        #
+        # Why it is worth having: with the transform compiled, a chunk
+        # costs ~0.5ms while a ProcessPoolExecutor round trip costs
+        # ~1.33ms, so the process path became a net loss at these
+        # sizes (0.94x at N=100, 0.81x at N=150, at 3-5x the CPU).
+        # Threads pay no pickling at all - the arrays never leave this
+        # address space.
+        #
+        # Everything else is deliberately unchanged: same chunking,
+        # same atol, same checkpoint format, same yield contract, same
+        # bounded in-flight window. Only the drain differs.
+        global _parallel_worker_state
+        saved_state = _parallel_worker_state
+        # Threads share the parent's memory, so the per-worker state
+        # the process path ships through `initargs` is simply set here
+        # and read by the same `_parallel_worker_chunk`. No pinning:
+        # pin_cpus exists to stop separate processes migrating, and
+        # pinning threads within one process individually would
+        # serialise them onto one core.
+        _parallel_worker_init(
+            operator, is_sparse_input, sorted_inverse, sorted_p_nz,
+            sorted_q_nz, sorted_values, active_x, dim, n_qubits,
+            z_indices, atol, None, None,
+        )
+        try:
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                pending_iter = iter(pending)
+                in_flight: set = set()
+
+                def _submit_next_thread() -> bool:
+                    item = next(pending_iter, None)
+                    if item is None:
+                        return False
+                    ci, cs_, ce_ = item
+                    in_flight.add(
+                        pool.submit(_parallel_worker_chunk, ci, cs_, ce_)
+                    )
+                    return True
+
+                for _ in range(max_in_flight):
+                    if not _submit_next_thread():
+                        break
+
+                while in_flight:
+                    done, in_flight = wait(
+                        in_flight, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        (chunk_index, chunk_x_out, z_idx,
+                         chunk_coeff_out) = future.result()
+                        _submit_next_thread()
+
+                        if checkpoint_path is not None:
+                            _append_parallel_checkpoint_chunk(
+                                checkpoint_path, completed_indices,
+                                chunk_index, chunk_x_out, z_idx,
+                                chunk_coeff_out, idx_dtype,
+                            )
+
+                        if assume_hermitian:
+                            _check_hermitian_violation(
+                                chunk_coeff_out, atol, chunk_x_out,
+                                z_idx, n_qubits
+                            )
+                        yield chunk_x_out, z_idx, chunk_coeff_out
+        finally:
+            # Restore rather than clear: a worker PROCESS legitimately
+            # holds state here, and this function can be called from
+            # inside one.
+            _parallel_worker_state = saved_state
+        return
+
     pin_cpus = _physical_core_representative_cpus()
     next_pin_index = multiprocessing.Value("i", 0)
 
