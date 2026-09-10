@@ -168,6 +168,50 @@ $ paulikit benchmark --n-oscillators 2 4 8 16 30
 (Timings vary run to run and by machine; term counts are the part
 worth checking against your own run.)
 
+### Decomposing in parallel from the command line
+
+`--parallel` runs the decomposition across multiple workers through
+`parallel_decompose_arrays`, which is the path that scales. It needs
+`--chunk-size`:
+
+```console
+$ paulikit decompose --n-oscillators 150 --chunk-size 2 --parallel
+N=150 oscillators, 14 qubits, 16384x16384 padded Hamiltonian
+Decomposition time (parallel, executor=auto): 0.9887s
+Chunks: 5595, nonzero Pauli terms: 91652096
+```
+
+Two things this path does differently, both deliberate:
+
+- **The operator is built sparse.** At 15 qubits a dense operator is
+  16 GiB and at 16 qubits it is 64 GiB, so densifying would put the
+  sizes this path exists for out of reach before the decomposition
+  started.
+- **Labels are never built.** That per-term Python work is the serial
+  cost this API removes, so `--show-terms` reports counts only and
+  says so rather than silently ignoring the flag. Use
+  `terms_from_arrays` in a script if you need labels for a subset.
+
+`--executor` chooses how chunks are drained:
+
+| value | behaviour |
+|---|---|
+| `auto` (default) | `thread` when the compiled kernels are available, `process` otherwise |
+| `thread` | one process, threads running the kernels concurrently — no pickling |
+| `process` | a process pool; pays IPC but does not depend on the kernels being built |
+
+The default is conditional because the right answer differs by about
+6x *in each direction*. The compiled kernels release the GIL, so with
+them threads win decisively; without them the NumPy fallback holds the
+GIL and threads are slower than processes. Deciding per build rather
+than globally is what makes a default safe here.
+
+`--n-workers` sets the worker count, defaulting to the number of
+distinct physical cores. Hyperthread siblings share execution units,
+and measured worse: on a 4-core machine, 4 threads reached 3.44x
+against an Amdahl ceiling of 3.63x, while 8 cost 1.72x the cycles for
+no wall-clock gain.
+
 `paulikit regenerate-fixtures` recomputes the expected Pauli terms
 used by the test suite's correctness fixtures, using PennyLane as an
 independent oracle — see the {doc}`API reference <api/testing>` for
@@ -250,34 +294,53 @@ from the drain loop is a real and well-understood fix for a real
 serial bottleneck — the label-and-dict path scaled *negatively*,
 where adding workers made it slower.
 
-### But do not reach for the parallel API for speed
+### Which executor, and why it matters
 
-**On current measurements, `parallel_decompose_arrays` is slower than
-the sequential path**, and costs several times the CPU:
+`parallel_decompose_arrays` takes an `executor` argument. The default,
+`"auto"`, picks `"thread"` when the compiled kernels are available and
+`"process"` otherwise.
 
-| N | sequential wall | parallel wall | speedup | CPU cost |
-|---|---|---|---|---|
-| 100 | 0.606s | 0.642s | 0.94x | 3.4x |
-| 150 | 2.525s | 3.136s | 0.81x | 5.5x |
+That conditional is not hedging. Measured at N=100 with 4 workers:
 
-Nothing about the parallel machinery regressed. The compute it wraps
-got much cheaper: the transform and the coefficient step now run in
-compiled C kernels, which cut per-chunk work to roughly 0.5 ms
-against a process-pool round trip of roughly 1.33 ms that no amount
-of arithmetic optimization touches. Amdahl's law does the rest. On a
-workload with heavier chunks — a much larger `dim`, or an expensive
-per-chunk step of your own — the balance would tip back.
+| build | thread | process | |
+|---|---|---|---|
+| compiled kernels present | 0.313s | 2.009s | thread **6.4x better** |
+| pure-NumPy fallback | 2.460s | 1.708s | thread **0.69x — worse** |
 
-So, concretely:
+The kernels release the GIL, so with them threads run the real work
+concurrently and pay no pickling at all. Without them the NumPy
+fallback holds the GIL through most of each chunk, so threads
+serialise *and* add contention. Neither choice is right in general,
+which is why it is decided per build.
 
-- **For throughput**, use
-  `fwht_pauli_coefficients(..., sparse=True, chunk_size=...)`. It is
-  faster in wall clock and several times cheaper in CPU.
-- **For the streaming contract**, use `parallel_decompose_arrays`:
-  bounded memory regardless of result size, resumable checkpoints,
-  and a consumer that sees chunks as they arrive. Those properties
-  are why it exists, and they are unaffected — peak resident memory
-  is still tens of MiB at N=150. It is simply not the faster option
-  today.
+At N=150 (91.6M terms), the three paths measure:
 
-Measure your own workload rather than assuming either way.
+| | wall | peak RSS |
+|---|---|---|
+| sequential chunked | 2.367s | 66 MiB |
+| **parallel, threads** | **0.989s** | 72 MiB |
+| parallel, processes | 3.140s | 67 MiB |
+
+So the parallel path is now the fastest option as well as the
+streaming one — the process pool's IPC was what had made it a net
+loss, and threads remove it.
+
+### Reaching sizes a dense implementation cannot
+
+The streaming design's real payoff is not the constant factor. Peak
+resident memory stays roughly flat as the problem grows, because only
+one chunk is live at a time:
+
+| qubits | terms | wall | peak RSS |
+|---|---|---|---|
+| 14 | 91,652,096 | 0.989s | 72 MiB |
+| 15 | 326,134,272 | 3.211s | 89 MiB |
+| 16 | 1,470,021,632 | 19.59s | 123 MiB |
+
+An implementation that requires the caller to hold the dense
+$2^n \times 2^n$ operator needs 4 GiB at 14 qubits, 16 GiB at 15 and
+64 GiB at 16 — so on a 16 GiB machine the last two are simply out of
+reach, regardless of how fast its inner loop is.
+
+Measure your own workload rather than assuming either way — but the
+memory profile is a property of the design, not of tuning.
