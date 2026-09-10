@@ -1,6 +1,7 @@
 """Head-to-head, cycle-measured, across the qubit boundary where
 pauli_lcu's dense-input requirement becomes a hard ceiling."""
 import json, os, statistics, subprocess, sys, time
+import tempfile
 SP=os.path.dirname(os.path.abspath(__file__))
 PY_=os.path.expanduser("~/.venvs/paulikit/bin/python")
 CH=os.path.join(SP,"bench_child.py")
@@ -15,7 +16,8 @@ def cool(t=55.0,cap=240):
         time.sleep(2)
     return True
 def run(impl,N,nw=4):
-    csv=os.path.join(SP,"bperf.csv")
+    # Transient perf output goes to a temp file, not into the repo.
+    csv=os.path.join(tempfile.gettempdir(),"paulikit_bperf.csv")
     p=subprocess.run(["perf","stat","-e","instructions:u,cycles:u","-x,","-o",csv,
                       PY_,CH,impl,str(N),str(nw)],
                      capture_output=True,text=True,
