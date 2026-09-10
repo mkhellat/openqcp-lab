@@ -12,6 +12,7 @@ contention show up as extra cycles. Wall is still recorded, flagged
 as advisory only.
 """
 import json, os, statistics, subprocess, sys, time
+import tempfile
 SP=os.path.dirname(os.path.abspath(__file__))
 PY_=os.path.expanduser("~/.venvs/paulikit/bin/python")
 CH=os.path.join(SP,"thread_child.py")
@@ -26,7 +27,7 @@ def cool(t=55.0,cap=180):
         time.sleep(2)
     return True
 def run(nt,N,cs):
-    csv=os.path.join(SP,f"perf_{nt}.csv")
+    csv=os.path.join(tempfile.gettempdir(),f"paulikit_perf_{nt}.csv")
     p=subprocess.run(["perf","stat","-e","instructions:u,cycles:u","-x,","-o",csv,
                       PY_,CH,str(nt),str(N),str(cs)],
                      capture_output=True,text=True,
