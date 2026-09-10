@@ -215,6 +215,14 @@ CI takes over.
 - [ ] Sphinx builds without new warnings.
 - [ ] Package installs and `paulikit --help` works.
 
+### PyPI release
+
+Planned separately in `PYPI_RELEASE_PLAN.md`, because it depends on
+the migration: the sdist currently ships 401 entries including 297
+profiling files (meson-python packages every git-tracked file), and
+that is fixed by the new repository not tracking them, not by
+configuration. Projected clean sdist ~82 entries.
+
 ### Deliberately deferred
 
 - [ ] **DOI** — added to `CITATION.cff` only once a release is
