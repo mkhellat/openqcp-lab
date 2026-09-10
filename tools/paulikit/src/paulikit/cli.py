@@ -342,8 +342,8 @@ def build_parser():
              "instead of the serial one for each chunk. Wins ~1.1-1.4x "
              "wall-clock in isolation, but delivers no measurable "
              "benefit once embedded in the real streaming pipeline at "
-             "N=150 (dict construction there dominates at ~60% of "
-             "total time, dwarfing labeling's ~7% share) - see "
+             "N=150 (dict construction there dominates at ~60%% of "
+             "total time, dwarfing labeling's ~7%% share) - see "
              "profiling/phase10/full_pipeline_n150_findings.md. "
              "Ignored without --stream.",
     )
