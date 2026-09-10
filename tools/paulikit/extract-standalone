@@ -37,6 +37,12 @@ PRUNE=(
   .mailmap-proposed
   docs/superpowers
   docs/plan.md
+  # Belt and braces. This file is gitignored and has never been
+  # committed (verified: zero commits touch it, absent from every
+  # tree on every branch), so filter-repo has nothing to remove. It
+  # is listed anyway so that if it were ever staged by accident, the
+  # extraction would still strip it rather than publish it.
+  PRIVATE_PERF_PLAN.md
 )
 
 command -v git-filter-repo >/dev/null || {
@@ -98,6 +104,20 @@ done
 for d in profiling bindings docs/superpowers; do
   [ -e "$d" ] && echo "  LEAKED  $d (should not be here)" || echo "  ok      $d absent"
 done
+
+echo
+echo "private-material check:"
+for forbidden in PRIVATE_PERF_PLAN.md .mailmap-proposed; do
+  if git ls-files | grep -qx "$forbidden"; then
+    echo "  FATAL: $forbidden is tracked in the extracted repo" >&2
+    exit 1
+  fi
+done
+if git log --all --oneline -- '*PRIVATE_PERF_PLAN*' | grep -q .; then
+  echo "  FATAL: PRIVATE_PERF_PLAN appears in extracted history" >&2
+  exit 1
+fi
+echo "  ok      no private material in tree or history"
 
 echo
 echo "dangling references to pruned paths in shipping files:"
