@@ -1,7 +1,19 @@
 # Item 1: the threading premise is still not honestly measured
 
-2026-09-10. **Status: BLOCKED on measurement environment. No speedup
-number from this session should be quoted.**
+2026-09-10. **SUPERSEDED by `threading_premise_measured.md`** - the
+measurement succeeded once it was taken in cycles rather than wall
+clock. This file is kept as the record of the failed attempt and the
+diagnosis path, because the wrong turns are instructive.
+
+The conclusion below ("blocked on measurement environment") was
+half right: the environment was not the problem - the *metric* was.
+The ~2x frequency swing hits the 1-core baseline and the threaded
+runs alike, so it never justified abandoning the measurement, only
+switching to a frequency-invariant quantity. Result:
+**1.87x on 2 threads, 3.44x on 4.**
+
+Original status line, for the record: *BLOCKED on measurement
+environment. No speedup number from this session should be quoted.*
 
 ## What was attempted
 
