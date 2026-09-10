@@ -109,11 +109,41 @@ the paper points readers to (reference [24], `pip install pauli_lcu`)
 
 The shipped README makes no mention of parallelism either.
 
+**The archived reproduction package does not contain it either.**
+The paper deposits its benchmark materials on Zenodo (reference [31],
+doi:10.5281/zenodo.14905815, *"Pauli Decomposition via the Fast
+Walsh-Hadamard Transform v3"*, published 2025-02-21). Fetched and
+inspected directly:
+
+- `README.txt` directs readers to `pip install pauli_lcu` or the
+  GitHub repo - i.e. to the serial release - and additionally pins
+  the two competitor sources (Hamaguchi's `paulidecomp`, and Qiskit
+  PR #11557 at commit `9ad36a3da`, both "as of 26 Sept 2024").
+- `run.py`, the benchmark driver, contains **no OpenMP, thread, or
+  core references whatsoever** (grepped for `omp`, `thread`, `core`,
+  `parallel`).
+- The archived results are `results_coeff.txt`,
+  `results_zx_phase.txt`, `results_qiskit.txt` and
+  `results_hamaguchi.txt` - **exactly the four single-core series of
+  figure 2**. There is no fifth series, and no script, for figure 3's
+  OpenMP scaling.
+- The record declares no sibling versions or related identifiers, so
+  there is no separate parallel deposit.
+
+So figure 3's result - the 7x on 8 cores - is **not reproducible from
+any artifact the authors published**: not the PyPI package, not the
+GitHub repo, and not the Zenodo deposit that exists precisely to make
+the paper's numbers reproducible.
+
 **How to state this fairly.** The paper does not claim the *released
 package* is parallel. It says "we have implemented this
-parallelization" - which is a claim about work the authors did, and
-there is no reason to doubt they did it. The gap is between the
-paper's reported capability and the artifact readers can obtain.
+parallelization", a claim about work the authors did, and there is no
+reason to doubt they did it - the algorithm plainly parallelises, and
+the claim is modest and plausible. The criticism is narrower and is
+about reproducibility, not honesty: a parallel speedup is reported and
+plotted, while every artifact offered to readers - package, repo, and
+archive - is serial. A reader wanting to verify figure 3, or to build
+on the parallel version, has nothing to work from.
 
 **Consequence for any comparison we publish.** Two things follow, and
 both matter:
