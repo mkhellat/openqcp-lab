@@ -2839,33 +2839,79 @@ premise is re-measured honestly and the serial fraction is known.
    the number. Redo it with real gathers, real memory traffic and
    thermal control before anything is built on it.
 
-2. **Measure the serial fraction first.** The sparse gather is still
-   Python/scipy and holds the GIL, so under threads it becomes the
-   new serial fraction. It is ~3-9% of a chunk today; Amdahl's law on
-   that fraction caps any threaded design's ceiling. Measure it
-   before, not after, choosing an approach — if the ceiling is low
-   enough, the right answer may be to move the gather to C first, or
-   not to thread at all.
+2. **Measure the serial fraction first — DONE 2026-09-10.** Measured
+   per real N=150 chunk: GIL-held work (`np.zeros`, value slice,
+   scatter) is 13.0 µs against 374.6 µs in the two GIL-releasing C
+   kernels, so **f = 0.0336**. Amdahl ceilings: 1.94x at 2 threads,
+   3.63x at 4, 6.48x at 8, 29.8x asymptotically. **The gather is not
+   a blocking serial fraction** — it does not need porting to C
+   first, and threading is worth pursuing. See
+   `profiling/phase15/gil_serial_fraction.py`.
 
-3. **Evaluate the threading technologies.** A Python
-   `ThreadPoolExecutor` drain; pthreads directly inside a C-level
-   driver; OpenMP; OpenCilk. Section 3's MIT 6.172 notes already
-   cover deep dives on pthread, OpenMP, Intel TBB and Cilk — start
-   there rather than from scratch. The choice interacts with
-   packaging: oneTBB is already an optional dependency and its
-   absence must stay survivable, so whatever is chosen has to degrade
-   gracefully the way the existing kernels do.
+3. **Evaluate the threading technologies — DONE 2026-09-10.** The
+   choice turned out not to be a performance question. Dispatch
+   overhead measured at our real granularity (5595 tasks, tiny work
+   body to isolate dispatch): OpenMP 0.056–0.266 µs/task, pthreads
+   0.090–0.245 µs/task, against ~390 µs of work per chunk — under
+   0.07% either way, roughly four orders of magnitude cheaper than
+   the process round trip it replaces.
 
-4. **Scrutinize pauli_lcu's paper on parallelism**
-   (arXiv:2408.06206) against their shipped code, which is verified
-   strictly single-threaded here (CPU-time/wall = 0.99, no OpenMP
-   symbols, no SIMD-parallel runtime). If the paper claims or
-   discusses parallelism the release does not implement, that matters
-   for any published comparison.
+   Decided on packaging instead. **Start with a Python
+   `ThreadPoolExecutor` drain**: zero packaging cost, both kernels
+   already release the GIL, and the existing chunk-independent
+   structure carries over unchanged. Fallback if insufficient is
+   narrow — move the drain into C with pthreads behind the same API.
+   Rejected: OpenMP (links `libgomp.so.1`, plus an Apple-clang
+   `libomp` special case, for <0.07% — and NumPy's own wheels carry
+   no OpenMP dependency at all); OpenCilk (a mandatory custom LLVM
+   toolchain, for work-stealing that solves load imbalance our
+   uniform chunks do not have); extending oneTBB to the C kernels
+   (would couple the deliberately-independent C path back to the
+   C++/TBB build). See
+   `profiling/phase15/threading_technology_evaluation.md`.
 
-5. **Correct `docs/tutorial.md`**, which still presents
-   `parallel_decompose_arrays` as the fast path. That advice is now
-   wrong and must be fixed before release.
+4. **Scrutinize pauli_lcu's paper — DONE 2026-09-10.** Three
+   findings, in `profiling/phase15/paper_claims_audit.md`:
+
+   - *Memory, "O(1) additional": true.* Measured auxiliary space is
+     +0.0 MiB at n=10–13. What the framing omits is the mandatory
+     Θ(4ⁿ) dense input (4 GiB at n=14, 64 GiB at n=16), which the
+     paper nowhere acknowledges or discusses.
+   - *Parallelism: the paper claims OpenMP and 7x on 8 cores, but no
+     published artifact contains it.* Not the PyPI package (no
+     `pragma omp`, `setup.py` passes only `['-O3']`), not the wheel
+     (no OpenMP symbols, CPU-time/wall = 0.99), and **not the Zenodo
+     deposit** cited for the benchmarks (ref [31],
+     10.5281/zenodo.14905815) — whose `run.py` has no
+     OpenMP/thread/core references and whose archived results are
+     exactly the four single-core series of figure 2. Figure 3 is
+     not reproducible by anyone.
+   - *Priority: the paper does not claim to have originated FWHT
+     Pauli decomposition* and concedes Gidney and Hamaguchi et al.
+     Its novelty claim is narrow — equations (8)/(9) and their
+     proofs.
+
+   Prior art dated against primary sources: **PennyLane 2023-08-10**
+   (PR #4395, merge `b5789db`, non-Hermitian in the same PR) and
+   **Classiq 2024-08-05** (PyPI upload verified, wheel source read
+   directly: `from sympy import fwht`, an `is_hermitian` flag, and
+   the phase factor `(1j) ** ((i & k).bit_count())` — the same
+   popcount-of-AND expression as equation (8)). Classiq predates the
+   arXiv posting by seven days and is not cited. Gidney's
+   StackExchange date could **not** be established and must not be
+   cited. See `profiling/phase15/non_hermitian_and_classiq.md`.
+
+   **Framing rule for the paper:** "the algorithm parallelises" and
+   "the system delivers that speedup" are different claims about
+   different artifacts. Name the artifact. State the gap politely and
+   factually; do not allege the measurement is wrong.
+
+5. **Correct `docs/tutorial.md` — DONE 2026-09-10.** Replaced the
+   "fast path" framing with the measured table (0.94x at N=100, 0.81x
+   at N=150, 3.4–5.5x the CPU), the reason (C kernels cut per-chunk
+   compute below the pool's round-trip cost), and an explicit split:
+   sequential for throughput, parallel for streaming and bounded
+   memory. Sphinx build verified.
 
 **Also open.**
 
