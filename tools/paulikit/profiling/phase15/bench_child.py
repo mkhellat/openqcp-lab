@@ -51,6 +51,17 @@ try:
                     n_workers=1):
                 n += len(c)
             el = time.perf_counter() - t0
+        elif impl == "paulikit_default":
+            # Pass NOTHING but the operator and chunk_size - this is
+            # what a user gets out of the box, including the auto
+            # executor choice and the default worker count. The point
+            # of this condition is that the defaults are the thing
+            # being measured, so it must not override them.
+            t0 = time.perf_counter(); n = 0
+            for x, z, c in parallel_decompose_arrays(
+                    Hp, chunk_size=2, atol=atol):
+                n += len(c)
+            el = time.perf_counter() - t0
         else:
             ex = "thread" if impl == "paulikit_thread" else "process"
             t0 = time.perf_counter(); n = 0

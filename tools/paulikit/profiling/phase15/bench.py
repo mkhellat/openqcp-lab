@@ -31,7 +31,7 @@ def run(impl,N,nw=4):
     except Exception: pass
     return d
 Ns=[int(a) for a in sys.argv[1:]] or [150]
-impls=["pauli_lcu","paulikit_seq","paulikit_thread","paulikit_process"]
+impls=["pauli_lcu","paulikit_default","paulikit_seq","paulikit_thread","paulikit_process"]
 reps=3
 print(f"{'N':>4} {'q':>3} {'impl':>17} {'wall':>9} {'cycles':>10} {'peak RSS':>10} {'terms':>14}")
 for N in Ns:
