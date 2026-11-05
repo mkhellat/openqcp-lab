@@ -3,15 +3,21 @@
 Thank you for considering contributing to openqcp-lab! Here are some
 guidelines to help you get started.
 
+Development happens on GitHub, at
+https://github.com/mkhellat/openqcp-lab: pull requests and issues go
+there, where the checks described under [Review and CI](#review-and-ci)
+run. https://codeberg.org/mkhellat/openqcp-lab is a mirror of `main`.
+
 ## How to Contribute
 
 1. **Fork the Repository:**
-   - Click the "Fork" button at the top right of the repository page.
+   - Click the "Fork" button at the top right of
+     https://github.com/mkhellat/openqcp-lab.
 
 2. **Clone Your Fork Locally:**
    - Clone your fork to your local machine:
      ```bash
-     git clone git@codeberg.org:<YOURCODEBERGUSERNAME>/openqcp-lab.git
+     git clone git@github.com:<YOUR-GITHUB-USERNAME>/openqcp-lab.git
      ```
    - Navigate to the cloned directory:
      ```bash
@@ -42,7 +48,7 @@ guidelines to help you get started.
    - Add the original repository as an upstream remote to keep your
      fork up-to-date:
      ```bash
-     git remote add upstream git@codeberg.org:mkhellat/openqcp-lab.git
+     git remote add upstream git@github.com:mkhellat/openqcp-lab.git
      ```
 
 5. **Create a Branch:**
@@ -105,18 +111,18 @@ guidelines to help you get started.
      ```
 
 10. **Create a Pull Request:**
-    - Go to the fork repository (your repository) on Codeberg.
-    - Create a "New Pull Request".
-    - Select your fork and the branch you created as the `HEAD`, and
-      `openqcp-lab/main` as the `BASE` and then submit the pull
-      request.
+    - On GitHub, open a pull request from your fork's branch
+      (`compare`) against `mkhellat/openqcp-lab`'s `main` (`base`).
+    - DCO and preflight report within a minute; fix anything they
+      flag by pushing new commits to the same branch.
 
 11. **Update your Fork and Local repos:**
-    - Upon successful merge of your changes to `openqcp-lab`, sync your
-      fork repo and then update the cloned local repo:
+    - Once your pull request is merged, update your local `main`
+      from upstream, push it to your fork, and delete the branch:
       ```bash
       git checkout main
-      git pull (--rebase) origin main
+      git pull --rebase upstream main
+      git push origin main
       git branch -D feature/your-feature-name
       ```
 
@@ -161,9 +167,6 @@ summarises the run and is the one required for merging.
 The full test set also runs weekly on `main`, to catch breakage from
 new releases of unpinned dependencies.
 
-These checks run on the GitHub mirror,
-https://github.com/mkhellat/openqcp-lab.
-
 ## Code Style and Guidelines
 
 - **Python Code:** Follow PEP 8 style guidelines where applicable
@@ -188,7 +191,8 @@ nationality, race, and gender.
 
 ## Reporting Issues
 
-If you find a bug or have a feature request, please open an issue here.
+If you find a bug or have a feature request, please open an issue at
+https://github.com/mkhellat/openqcp-lab/issues.
 
 ## Contact
 
