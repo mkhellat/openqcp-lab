@@ -121,11 +121,15 @@ typedef struct tk_groups tk_groups;
  * Options:
  *   strategy   TK_AUTO, TK_ONTHEFLY or TK_TABLES (see above).
  *   tile_bits  0 = auto, < 0 = no cache blocking, > 0 = tiles of
- *              2^tile_bits amplitudes.
+ *              2^tile_bits amplitudes: consecutive terms with
+ *              x < 2^tile_bits are applied tile by tile.
  *   n_threads  0 = auto, 1 = serial, k > 1 = k threads; < 0 invalid.
- * A value the backend does not support returns TK_EINVAL. The C
- * backend today supports strategy AUTO/ONTHEFLY, tile_bits <= 0 and
- * n_threads 0 or 1.
+ * The result does not depend on tile_bits or n_threads. A value the
+ * backend does not support returns TK_EINVAL. The C backend supports
+ * strategy AUTO/ONTHEFLY, tile_bits 3..n_qubits-1 (or <= 0), and
+ * n_threads > 1 only when built with OpenMP. Its auto choices are
+ * measured on one machine: serial below 11 qubits, otherwise up to 4
+ * threads with tiles of 2^(n_qubits-2).
  *
  * Returns TK_EINVAL if psi, terms or s is NULL, if n > 0 with a NULL
  * term array, if n_stages > 0 with dt NULL, if any x[g] or z[g] has a
