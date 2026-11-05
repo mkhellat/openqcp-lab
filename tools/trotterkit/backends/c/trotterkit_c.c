@@ -545,22 +545,24 @@ static void drive(const drive_ctx *c, int tid, int T)
 }
 
 /* Automatic choices (n_threads = 0, tile_bits = 0), measured with
- * bench/quick on an i7-8550U (4 cores, 2 threads each); other
- * machines may want explicit values. Threads lost at 9 qubits (one
- * barrier per term outweighs a 0.4 us term) and won from 11; 4
- * threads beat 8 (hyperthreads share the SIMD units this kernel
- * saturates); tiles of 2^(n-2) amplitudes were best at 11 and 12
- * qubits. */
-#define TK_AUTO_MIN_QUBITS 11u
+ * bench/quick on an i7-8550U (4 cores, 2 threads each) with the
+ * spinning barrier; other machines may want explicit values. Threads
+ * lost at 9 qubits (2 threads 1.07x, 4 threads 1.45x the serial
+ * time), 2 threads won at 10 (0.77; 4 threads 0.90), 4 threads won
+ * from 11 (0.53; 2 threads 0.63); 8 threads lost to 4 (hyperthreads
+ * share the SIMD units this kernel saturates); tiles of 2^(n-2)
+ * amplitudes were best at 11 and 12 qubits. */
+#define TK_AUTO_MIN_QUBITS 10u
 #define TK_AUTO_MAX_THREADS 4
 
 static int auto_threads(uint32_t n_qubits)
 {
 #if defined(_OPENMP)
     int procs = omp_get_num_procs();
+    int want = n_qubits == TK_AUTO_MIN_QUBITS ? 2 : TK_AUTO_MAX_THREADS;
     if (n_qubits < TK_AUTO_MIN_QUBITS)
         return 1;
-    return procs < TK_AUTO_MAX_THREADS ? procs : TK_AUTO_MAX_THREADS;
+    return procs < want ? procs : want;
 #else
     (void)n_qubits;
     return 1;

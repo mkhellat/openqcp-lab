@@ -26,6 +26,6 @@
   fallback), branch-free signs; 4.1x fewer cycles than the scalar
   loop. Results unchanged to the bit.
 - C per-term evolution runs on OpenMP threads, with tiles for runs of
-  tile-local terms; `n_threads = 0` is serial below 11 qubits.
+  tile-local terms; `n_threads = 0` is serial below 10 qubits.
 - Grouped-mode block constants are computed from real libm functions
   instead of C99 complex.h, so other languages can match them.

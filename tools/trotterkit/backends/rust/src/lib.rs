@@ -30,8 +30,9 @@ pub const TK_ONTHEFLY: i32 = 1;
 pub const TK_TABLES: i32 = 2;
 const TK_MAX_QUBITS: u32 = 32;
 
-// Automatic choices, the C backend's (measured on an i7-8550U).
-const AUTO_MIN_QUBITS: u32 = 11;
+// Automatic choices, the C backend's (measured on an i7-8550U):
+// serial below 10 qubits, 2 threads at 10, up to 4 from 11.
+const AUTO_MIN_QUBITS: u32 = 10;
 const AUTO_MAX_THREADS: usize = 4;
 
 #[repr(C)]
@@ -197,10 +198,11 @@ fn auto_threads(n_qubits: u32) -> usize {
     if n_qubits < AUTO_MIN_QUBITS {
         return 1;
     }
+    let want = if n_qubits == AUTO_MIN_QUBITS { 2 } else { AUTO_MAX_THREADS };
     let procs = std::thread::available_parallelism()
         .map(|p| p.get())
         .unwrap_or(1);
-    procs.min(AUTO_MAX_THREADS)
+    procs.min(want)
 }
 
 fn force_scalar() -> bool {
