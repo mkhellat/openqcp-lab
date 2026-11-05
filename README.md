@@ -155,6 +155,13 @@ and (where applicable) benchmarked as software in their own right.
   development: Python reference and a C backend today; C++ and Rust
   backends and a measured comparison of the three to follow.
 
+## Contributing
+
+Development happens on GitHub,
+https://github.com/mkhellat/openqcp-lab: open pull requests and
+issues there. https://codeberg.org/mkhellat/openqcp-lab mirrors
+`main`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## GNU GPL v3+
 
 Copyright (C) 2023 Mohammadreza Khellat GNU GPL v3+
