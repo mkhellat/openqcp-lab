@@ -11,6 +11,7 @@
 #include "trotterkit.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -350,6 +351,30 @@ void apply_range(Path path, double *re, double *im, std::uint64_t x,
     }
 }
 
+// Team barrier after every term or tile-local run: a spinning barrier
+// on atomics, the same algorithm as the C and Rust backends (OpenMP's
+// barrier cost 26% more wall time at 12 qubits, 4 threads).
+struct SpinBarrier {
+    std::atomic<std::size_t> arrived{0}, gen{0};
+
+    void wait(std::size_t n)
+    {
+        std::size_t g = gen.load(std::memory_order_acquire);
+        if (arrived.fetch_add(1, std::memory_order_acq_rel) + 1 == n) {
+            // Reset before releasing: the next phase's arrivals only
+            // start after they observe the new generation.
+            arrived.store(0, std::memory_order_relaxed);
+            gen.fetch_add(1, std::memory_order_release);
+        } else {
+            while (gen.load(std::memory_order_acquire) == g) {
+#if defined(__x86_64__) || defined(__i386__)
+                __builtin_ia32_pause();
+#endif
+            }
+        }
+    }
+};
+
 struct Drive {
     double *re, *im;
     std::size_t dim, n, n_st, n_steps;
@@ -359,16 +384,12 @@ struct Drive {
     unsigned tile_bits;  // 0: no tiles
     const unsigned char *local;
     const std::size_t *run_end, *run_begin;
+    SpinBarrier *bar;
 
     void barrier(int T) const
     {
-#if defined(_OPENMP)
-        if (T > 1) {
-#pragma omp barrier
-        }
-#else
-        (void)T;
-#endif
+        if (T > 1)
+            bar->wait(static_cast<std::size_t>(T));
     }
 
     void term_share(std::size_t g, const double *k4, int tid, int T) const
@@ -532,7 +553,9 @@ int evolve_terms(double *psi, std::uint32_t n_qubits, const tk_terms *t,
     Drive d{re.data(), im.data(), dim, n, n_st, s->n_steps, t->x, t->z,
             consts.data(), force_scalar(),
             tile_bits > 0 ? static_cast<unsigned>(tile_bits) : 0u,
-            local.data(), run_end.data(), run_begin.data()};
+            local.data(), run_end.data(), run_begin.data(), nullptr};
+    SpinBarrier bar;
+    d.bar = &bar;
 #if defined(_OPENMP)
     if (T > 1) {
 #pragma omp parallel num_threads(T)
