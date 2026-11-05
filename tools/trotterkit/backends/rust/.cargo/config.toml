@@ -1,0 +1,3 @@
+# Same target as the C and C++ backends (-march=native).
+[build]
+rustflags = ["-C", "target-cpu=native"]
