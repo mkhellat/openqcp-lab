@@ -1,0 +1,224 @@
+name: ci
+
+# The repository's tests, in one workflow with one approval per push.
+#
+#   changes    which components the pull request touches
+#              (.github/scripts/changed-components)
+#   approve    waits for a reviewer to approve the `ci` environment;
+#              pull requests only, skipped when nothing testable changed
+#   paulikit   pytest on Python 3.10-3.13 Linux, plus macOS and Windows
+#   trotterkit configure + make check on Linux (the C backend is built
+#              as a .so and loaded by that name, so Linux only for now)
+#   notebooks  tutorials executed with nbmake against requirements.txt,
+#              except those that need Classiq's cloud
+#              (.github/scripts/runnable-notebooks)
+#   ci-result  always runs; passes only if every selected job passed.
+#              This is the check branch protection requires.
+#
+# Scheduled weekly on main, because paulikit's tests install current
+# dependency releases and can break with no pull request at all.
+# Scheduled and manual runs test every component and need no
+# approval: they run code already on a branch of this repository.
+on:
+  pull_request: {}
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push supersedes a run still waiting for approval.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      paulikit: ${{ steps.select.outputs.paulikit }}
+      trotterkit: ${{ steps.select.outputs.trotterkit }}
+      notebooks: ${{ steps.select.outputs.notebooks }}
+      any: ${{ steps.select.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            .github/scripts/changed-components "$BASE_SHA" "$HEAD_SHA" \
+              | tee -a "$GITHUB_OUTPUT"
+          else
+            .github/scripts/changed-components --all \
+              | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  approve:
+    # "Review deployments" on the run page, select ci, approve.
+    name: reviewer approval
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    environment: ci
+    steps:
+      - run: echo "CI approved for ${{ github.sha }}"
+
+  paulikit:
+    name: "paulikit py${{ matrix.python-version }} / ${{ matrix.os }}"
+    needs: [changes, approve]
+    if: >-
+      !cancelled() && needs.changes.outputs.paulikit == 'true' &&
+      (needs.approve.result == 'success' ||
+       (github.event_name != 'pull_request' &&
+        needs.approve.result == 'skipped'))
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tools/paulikit
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          # The library documents a degraded-but-correct fallback where
+          # CPU pinning and topology detection are unavailable
+          # (sched_setaffinity and /sys/devices/system/cpu are
+          # Linux-only). One job on each non-Linux platform tests it.
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build dependencies
+        # Installed first and separately so the editable install can
+        # use --no-build-isolation: meson-python bakes NumPy's include
+        # path into the rebuild hook, and with build isolation that
+        # path points into a throwaway environment that is deleted
+        # immediately afterwards.
+        run: >-
+          python -m pip install --upgrade
+          pip numpy meson-python cython ninja
+
+      - name: Install paulikit with test extras
+        run: pip install -e ".[test]" --no-build-isolation
+
+      - name: Run the test suite
+        # -m 'not slow' matches pyproject's default addopts; the slow
+        # marker covers reference comparisons that take minutes.
+        run: pytest -v -m "not slow"
+
+      - name: Report whether the native extension was built
+        # Not a failure condition: the extension is an optional
+        # accelerator with a documented pure-Python fallback. This step
+        # records which path the run actually exercised, so a green
+        # tick cannot silently mean "fallback only" on every platform.
+        shell: bash
+        run: |
+          python - <<'PY'
+          try:
+              from paulikit._native import pauli_label_native  # noqa: F401
+              print("native extension: BUILT")
+          except ImportError as exc:
+              print(f"native extension: FALLBACK ({exc})")
+          PY
+
+  trotterkit:
+    name: "trotterkit py${{ matrix.python-version }}"
+    needs: [changes, approve]
+    if: >-
+      !cancelled() && needs.changes.outputs.trotterkit == 'true' &&
+      (needs.approve.result == 'success' ||
+       (github.event_name != 'pull_request' &&
+        needs.approve.result == 'skipped'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/trotterkit
+    strategy:
+      fail-fast: false
+      matrix:
+        # Lowest and highest supported.
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install meson and ninja
+        run: python -m pip install meson ninja
+
+      - name: Configure
+        run: >-
+          ./configure --venv="$RUNNER_TEMP/trotterkit-venv"
+          --python="$(command -v python)"
+
+      - name: Build and check
+        # make check builds the C backend, shellchecks configure and
+        # runs pytest.
+        run: make check
+
+  notebooks:
+    name: tutorial notebooks
+    needs: [changes, approve]
+    if: >-
+      !cancelled() && needs.changes.outputs.notebooks == 'true' &&
+      (needs.approve.result == 'success' ||
+       (github.event_name != 'pull_request' &&
+        needs.approve.result == 'skipped'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # The tutorials target Python 3.12 (see README).
+          python-version: "3.12"
+
+      - name: Install the pinned tutorial environment
+        run: python -m pip install -r requirements.txt nbmake
+
+      - name: Execute the notebooks that need no cloud account
+        run: |
+          mapfile -t nbs < <(.github/scripts/runnable-notebooks)
+          python -m pytest --nbmake --nbmake-timeout=600 "${nbs[@]}"
+
+  ci-result:
+    name: ci-result
+    needs: [changes, approve, paulikit, trotterkit, notebooks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: >-
+            changes=${{ needs.changes.result }}
+            approve=${{ needs.approve.result }}
+            paulikit=${{ needs.paulikit.result }}
+            trotterkit=${{ needs.trotterkit.result }}
+            notebooks=${{ needs.notebooks.result }}
+        run: |
+          status=0
+          for r in $RESULTS; do
+            echo "$r"
+            case "${r#*=}" in
+              success|skipped) ;;
+              *) status=1 ;;
+            esac
+          done
+          exit "$status"
