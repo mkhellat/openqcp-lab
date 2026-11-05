@@ -240,9 +240,10 @@ static __m256d flip_if(__m256d pat, uint64_t par)
 
 /* One group of 4 pairs: lanes g..g+3 against g2..g2+3 permuted by p,
  * with sign vectors s1 (j1 updates) and s2 (j2 updates). */
-static void pair4_group(double *re, double *im, size_t g, size_t g2,
-                        unsigned p, __m256d s1, __m256d s2, __m256d ar,
-                        __m256d ai, __m256d kr, __m256d ki)
+static inline void pair4_group(double *re, double *im, size_t g,
+                               size_t g2, unsigned p, __m256d s1,
+                               __m256d s2, __m256d ar, __m256d ai,
+                               __m256d kr, __m256d ki)
 {
     __m256d pr = _mm256_load_pd(re + g), pi = _mm256_load_pd(im + g);
     __m256d qr = _mm256_load_pd(re + g2), qi = _mm256_load_pd(im + g2);
@@ -272,13 +273,17 @@ static void pair4_group(double *re, double *im, size_t g, size_t g2,
 
 /* Groups [lo, hi) of term x, block by block so the inner loop is a
  * plain stride-4 walk (a flat loop over group indices cost about 5
- * more instructions per group). */
-static void apply_pair4(double *re, double *im, uint64_t x, uint64_t z,
-                        const double *k4, size_t lo, size_t hi)
+ * more instructions per group). p = x & 3 is passed as a constant by
+ * the four wrappers below, so each gets its own loop with the lane
+ * permutation fixed at compile time, as C++ templates and Rust const
+ * generics do. */
+static inline void apply_pair4_p(double *re, double *im, uint64_t x,
+                                 uint64_t z, const double *k4, size_t lo,
+                                 size_t hi, unsigned p)
 {
     const __m256d ar = _mm256_set1_pd(k4[0]), ai = _mm256_set1_pd(k4[1]);
     const __m256d kr = _mm256_set1_pd(k4[2]), ki = _mm256_set1_pd(k4[3]);
-    unsigned h = top_bit(x), p = (unsigned)(x & 3u);
+    unsigned h = top_bit(x);
     size_t hi_mask = (size_t)(x & ~(uint64_t)3), left = hi - lo;
     size_t span = (size_t)1 << h, g = group_base(lo, h);
     size_t end = (g & ~(2u * span - 1u)) + span;
@@ -300,6 +305,37 @@ static void apply_pair4(double *re, double *im, uint64_t x, uint64_t z,
         }
         g += span;               /* skip the partner half */
         end += 2u * span;
+    }
+}
+
+#define TK_PAIR4(P)                                                    \
+    static void apply_pair4_##P(double *re, double *im, uint64_t x,   \
+                                uint64_t z, const double *k4,         \
+                                size_t lo, size_t hi)                 \
+    {                                                                  \
+        apply_pair4_p(re, im, x, z, k4, lo, hi, P);                   \
+    }
+TK_PAIR4(0)
+TK_PAIR4(1)
+TK_PAIR4(2)
+TK_PAIR4(3)
+#undef TK_PAIR4
+
+static void apply_pair4(double *re, double *im, uint64_t x, uint64_t z,
+                        const double *k4, size_t lo, size_t hi)
+{
+    switch (x & 3u) {
+    case 0:
+        apply_pair4_0(re, im, x, z, k4, lo, hi);
+        break;
+    case 1:
+        apply_pair4_1(re, im, x, z, k4, lo, hi);
+        break;
+    case 2:
+        apply_pair4_2(re, im, x, z, k4, lo, hi);
+        break;
+    default:
+        apply_pair4_3(re, im, x, z, k4, lo, hi);
     }
 }
 #else
