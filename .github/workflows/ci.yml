@@ -89,20 +89,39 @@ jobs:
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         include:
+          # native: the meson option for the oneTBB-backed
+          # pauli_label_native extension. "enabled" makes the build
+          # fail if oneTBB is missing, so these jobs cannot pass on the
+          # pure-Python fallback by accident.
+          - os: ubuntu-latest
+            native: enabled
           # The library documents a degraded-but-correct fallback where
           # CPU pinning and topology detection are unavailable
           # (sched_setaffinity and /sys/devices/system/cpu are
           # Linux-only). One job on each non-Linux platform tests it.
           - os: macos-latest
             python-version: "3.12"
+            native: enabled
+          # Windows installs no oneTBB and keeps "auto", so the
+          # documented pure-Python fallback for pauli_label stays
+          # tested too.
           - os: windows-latest
             python-version: "3.12"
+            native: auto
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Install oneTBB (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libtbb-dev
+
+      - name: Install oneTBB (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tbb
 
       - name: Install build dependencies
         # Installed first and separately so the editable install can
@@ -115,7 +134,9 @@ jobs:
           pip numpy meson-python cython ninja
 
       - name: Install paulikit with test extras
-        run: pip install -e ".[test]" --no-build-isolation
+        run: >-
+          pip install -e ".[test]" --no-build-isolation
+          -Csetup-args=-Dnative=${{ matrix.native }}
 
       - name: Run the test suite
         # -m 'not slow' matches pyproject's default addopts; the slow
@@ -123,10 +144,9 @@ jobs:
         run: pytest -v -m "not slow"
 
       - name: Report whether the native extension was built
-        # Not a failure condition: the extension is an optional
-        # accelerator with a documented pure-Python fallback. This step
-        # records which path the run actually exercised, so a green
-        # tick cannot silently mean "fallback only" on every platform.
+        # Informational: where native is "enabled" the build above
+        # already fails without the extension. This records which
+        # path each job exercised.
         shell: bash
         run: |
           python - <<'PY'
