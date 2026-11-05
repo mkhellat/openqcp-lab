@@ -18,7 +18,7 @@ test = ["pytest>=8", "paulikit>=0.1.4"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-trotterkit = ["_lib/*.so"]
+trotterkit = ["_lib/*.so", "_lib/trotterkit-*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
