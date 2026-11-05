@@ -13,7 +13,6 @@
 
 #include "trotterkit.h"
 
-#include <complex.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -807,6 +806,39 @@ int tk_groups_build(uint32_t n_qubits, const uint64_t *row,
     return TK_OK;
 }
 
+/* Complex arithmetic written out on (re, im) pairs from real libm
+ * functions only, so the C++ and Rust backends can repeat the same
+ * operations in the same order and agree to the bit (C's complex.h
+ * functions have no Rust counterpart with identical rounding). */
+typedef struct {
+    double re, im;
+} cplx;
+
+static cplx cmul(cplx a, cplx b)
+{
+    cplx r;
+    r.re = a.re * b.re - a.im * b.im;
+    r.im = a.re * b.im + a.im * b.re;
+    return r;
+}
+
+/* Principal square root, the branch chosen to avoid cancellation. */
+static cplx csqrt_h(cplx a)
+{
+    double r = hypot(a.re, a.im);
+    cplx w;
+    if (a.re >= 0.0) {
+        w.re = sqrt((r + a.re) * 0.5);
+        w.im = a.im / (2.0 * w.re);
+    } else {
+        w.im = sqrt((r - a.re) * 0.5);
+        if (a.im < 0.0)
+            w.im = -w.im;
+        w.re = a.im / (2.0 * w.im);
+    }
+    return w;
+}
+
 /* (c, A, B) for one block and angle theta:
  * exp(-i theta [[0,a],[b,0]]) = [[c, A], [B, c]],
  * c = cos(theta w), A = -i (sin(theta w)/w) a, B likewise with b,
@@ -814,25 +846,41 @@ int tk_groups_build(uint32_t n_qubits, const uint64_t *row,
 static void block_constants(double theta, double a_re, double a_im,
                             double b_re, double b_im, double out[6])
 {
-    double complex a = a_re + I * a_im, b = b_re + I * b_im;
-    double complex u = theta * theta * a * b, c, sv, A, B;
+    cplx a, b, ab, u, c, sv, sa, sb;
+    double t2 = theta * theta;
 
-    if (cabs(u) < 1e-6) {
-        c = 1.0 - u / 2.0 + u * u / 24.0;
-        sv = theta * (1.0 - u / 6.0 + u * u / 120.0);
+    a.re = a_re;
+    a.im = a_im;
+    b.re = b_re;
+    b.im = b_im;
+    ab = cmul(a, b);
+    u.re = t2 * ab.re;
+    u.im = t2 * ab.im;
+    if (hypot(u.re, u.im) < 1e-6) {
+        cplx u2 = cmul(u, u);
+        c.re = (1.0 - u.re / 2.0) + u2.re / 24.0;
+        c.im = (0.0 - u.im / 2.0) + u2.im / 24.0;
+        sv.re = theta * ((1.0 - u.re / 6.0) + u2.re / 120.0);
+        sv.im = theta * ((0.0 - u.im / 6.0) + u2.im / 120.0);
     } else {
-        double complex w = csqrt(a * b);
-        c = ccos(theta * w);
-        sv = csin(theta * w) / w;
+        cplx w = csqrt_h(ab), sn;
+        double xr = theta * w.re, xi = theta * w.im;
+        double d = w.re * w.re + w.im * w.im;
+        c.re = cos(xr) * cosh(xi);
+        c.im = -(sin(xr) * sinh(xi));
+        sn.re = sin(xr) * cosh(xi);
+        sn.im = cos(xr) * sinh(xi);
+        sv.re = (sn.re * w.re + sn.im * w.im) / d;
+        sv.im = (sn.im * w.re - sn.re * w.im) / d;
     }
-    A = -I * sv * a;
-    B = -I * sv * b;
-    out[0] = creal(c);
-    out[1] = cimag(c);
-    out[2] = creal(A);
-    out[3] = cimag(A);
-    out[4] = creal(B);
-    out[5] = cimag(B);
+    sa = cmul(sv, a);
+    sb = cmul(sv, b);
+    out[0] = c.re;
+    out[1] = c.im;
+    out[2] = sa.im;            /* -i (x + iy) = y - ix */
+    out[3] = -sa.re;
+    out[4] = sb.im;
+    out[5] = -sb.re;
 }
 
 static void apply_diag(double *re, double *im, const tk_groups *g,
