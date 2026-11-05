@@ -64,3 +64,9 @@ config.mk
 # Private paulikit performance-engineering research notes (not for
 # the public repo - see tools/paulikit/PLAN.md for the published plan)
 tools/paulikit/PRIVATE_PERF_PLAN.md
+
+# Local agent plans/specs - internal working files, never shipped
+# (same rule as the standalone paulikit repository)
+plans/
+docs/superpowers/
+**/superpowers/
