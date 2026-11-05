@@ -152,8 +152,8 @@ and (where applicable) benchmarked as software in their own right.
 - [`trotterkit`](tools/trotterkit) — product-formula (Trotter-Suzuki)
   evolution of Pauli-sum Hamiltonians: per-term (as a circuit runs)
   and grouped exact exponentials of XOR-offset slices. In
-  development: Python reference and a C backend today; C++ and Rust
-  backends and a measured comparison of the three to follow.
+  development: Python reference plus C, C++ and Rust backends that
+  agree to the bit; a measured comparison of the three to follow.
 
 ## Contributing
 

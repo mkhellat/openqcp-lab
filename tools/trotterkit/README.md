@@ -12,11 +12,15 @@ Status: in development inside openqcp-lab; not published.
 | Backend | Per-term | Grouped | SIMD / tiles / threads | CLI |
 |---|---|---|---|---|
 | python (reference) | yes | yes | - | - |
-| c | yes | yes | per-term: AVX2, tiles, OpenMP; grouped: serial | `trotterkit-c` |
-| cpp, rust | not yet | not yet | - | - |
+| c (C99) | yes | yes | per-term: AVX2, tiles, OpenMP; grouped: serial | `trotterkit-c` |
+| cpp (C++17) | yes | yes | same; OpenMP | `trotterkit-cpp` |
+| rust | yes | yes | same; std threads, spinning barrier | `trotterkit-rs` |
 
-Every path of the C backend (SIMD or scalar, tiles, any thread count)
-gives the same final state to the bit.
+All three implement one C ABI (`include/trotterkit.h`) with the same
+algorithm and the same operations in the same order, without FMA
+contraction, so every backend and every path (SIMD or scalar, tiles,
+any thread count) gives the same final state to the bit. A measured
+comparison of the three is the next step.
 
 Usage:
 
@@ -47,6 +51,8 @@ the same input:
     trotterkit-c chain30.tkwl --t 1 --steps 100 [--mode grouped]
         [--order 4] [--threads K] [--tile-bits K] [--out psi.bin]
 
+`trotterkit-cpp` and `trotterkit-rs` take the same arguments.
+
 A workload file (`trotterkit.workload`) holds the Pauli terms, the
 sparse H and the initial state behind a SHA-256-checked header.
 `bench/make_workload` builds chain or fully coupled oscillator
@@ -72,4 +78,6 @@ At N=30 a Strang step over the 14,080 terms takes about 11 ms.
 
 `make build` installs the package with pip, so it needs network
 access. `make check` also runs `shellcheck`, so it must be installed.
-OpenMP is optional; without it the C backend is serial.
+OpenMP is optional; without it the C and C++ backends are serial.
+The Rust backend is built when `cargo` is installed (no crates are
+downloaded).
