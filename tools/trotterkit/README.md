@@ -61,14 +61,17 @@ cycles (or wall time for threads), interleaved, with a cooldown
 between runs and Welch's t-test.
 
 Measured on an Intel i7-8550U (4 cores, AVX2); other hardware will
-differ. Per-term mode, chain workloads:
+differ. Per-term mode, chain workloads, C backend:
 
-| | N=30 (9 qubits) | N=50 (11) | N=80 (12) |
+| | N=30 (9 qubits) | N=40 (10) | N=50 (11) |
 |---|---|---|---|
-| SIMD vs scalar loop, cycles | 0.243 | 0.241 | - |
-| threads (auto) vs 1 thread, time | 0.984 (serial) | 0.745 | 0.547 |
+| SIMD vs scalar loop, cycles | 0.243 | - | 0.241 |
+| threads (auto) vs 1 thread, time | serial | 0.765 (2) | 0.530 (4) |
 
-At N=30 a Strang step over the 14,080 terms takes about 11 ms.
+At N=30 a Strang step over the 14,080 terms takes about 11 ms. How
+the three languages are compared, and the decisions that make the
+comparison fair, are in `bench/METHODOLOGY.md`; the campaign results
+will follow.
 
 ## Build and test
 

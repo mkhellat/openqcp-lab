@@ -15,7 +15,8 @@
   `bench/make_workload` for chain and fully coupled oscillators.
 - `trotterkit-c` command-line program timing only the kernel.
 - `bench/quick`: interleaved `perf stat` comparisons with cooldown
-  and Welch's t-test.
+  and Welch's t-test; `bench/campaign` and `bench/tables` for the
+  language comparison; `bench/METHODOLOGY.md`.
 - C++17 backend (`trotterkit-cpp`) and Rust backend (`trotterkit-rs`)
   implementing the same ABI and design; all backends agree to the
   bit, checked by `tests/test_cross_backend.py`.
@@ -29,3 +30,7 @@
   tile-local terms; `n_threads = 0` is serial below 10 qubits.
 - Grouped-mode block constants are computed from real libm functions
   instead of C99 complex.h, so other languages can match them.
+- One spinning team barrier in all backends (C and C++ no longer use
+  OpenMP's barrier); C fixes the lane permutation at compile time;
+  automatic threads re-measured: serial below 10 qubits, 2 at 10, up
+  to 4 from 11.
