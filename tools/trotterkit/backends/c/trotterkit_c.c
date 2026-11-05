@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
  *
- * trotterkit C backend (C99). Plan 1: scalar, serial, on-the-fly
- * strategy; SIMD, cache blocking and threads arrive in Plan 2 behind
- * the same ABI.
+ * trotterkit C backend (C99): scalar, serial, on-the-fly strategy.
+ * SIMD, cache blocking and threads are not implemented yet; options
+ * that would request them return TK_EINVAL.
  */
 #define _POSIX_C_SOURCE 200112L
 

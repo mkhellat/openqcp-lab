@@ -14,4 +14,4 @@ shared_library('trotterkit_c',
   'backends/c/trotterkit_c.c',
   include_directories: inc,
   dependencies: m_dep,
-  c_args: ['-march=native'])
+  c_args: ['-march=native', '-ffp-contract=off'])
