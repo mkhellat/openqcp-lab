@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "trotterkit_rs"
+version = "0.0.1"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+description = "trotterkit Rust backend: the C ABI of include/trotterkit.h"
+
+# cdylib: libtrotterkit_rs.so for the Python front-end; rlib: linked
+# into the trotterkit-rs CLI.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "trotterkit-rs"
+path = "src/bin/trotterkit-rs.rs"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+panic = "abort"

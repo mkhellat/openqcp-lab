@@ -18,15 +18,26 @@ build:
 	cp builddir/trotterkit-c src/trotterkit/_lib/
 	cp builddir/libtrotterkit_cpp.so builddir/trotterkit-cpp \
 	    src/trotterkit/_lib/
+	if command -v cargo >/dev/null 2>&1; then \
+	    (cd backends/rust && cargo build --release --offline) && \
+	    cp backends/rust/target/release/libtrotterkit_rs.so \
+	        backends/rust/target/release/trotterkit-rs \
+	        src/trotterkit/_lib/; \
+	else \
+	    echo "cargo not found: Rust backend not built"; \
+	fi
 	$(PIP) install -e '.[test]'
 
 check: build
 	shellcheck -s sh configure
+	if command -v cargo >/dev/null 2>&1; then \
+	    (cd backends/rust && cargo test --release --offline); \
+	fi
 	$(PYTEST)
 
 test: check
 
 clean:
-	rm -rf builddir src/trotterkit/_lib
+	rm -rf builddir src/trotterkit/_lib backends/rust/target
 
 .PHONY: all build check test clean
