@@ -80,3 +80,19 @@ def test_too_many_qubits_raises_equbits():
                              ctypes.byref(terms), ctypes.byref(sched),
                              0, 0, 1)
     assert rc == 3
+
+
+@pytest.mark.parametrize("bad", ["short_x", "short_z", "2d_x"])
+def test_mismatched_term_arrays_raise_valueerror(bad):
+    x = np.array([1, 2, 3], dtype=np.uint64)
+    z = np.array([0, 1, 2], dtype=np.uint64)
+    c = np.array([0.5, 0.25, 0.125], dtype=complex)
+    if bad == "short_x":
+        x = x[:2]
+    elif bad == "short_z":
+        z = z[:2]
+    else:
+        x = x.reshape(3, 1)
+    with pytest.raises(ValueError):
+        trotterkit.evolve(random_state(3, 0), t=1.0, steps=1,
+                          terms=(x, z, c), backend="c")

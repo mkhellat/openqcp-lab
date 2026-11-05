@@ -96,6 +96,10 @@ def evolve_terms(lib, psi, n_qubits, x, z, coeff, stage_dts, steps,
     x = np.ascontiguousarray(x, dtype=np.uint64)
     z = np.ascontiguousarray(z, dtype=np.uint64)
     c = np.asarray(coeff, dtype=complex)
+    if not (x.ndim == z.ndim == c.ndim == 1
+            and len(x) == len(z) == len(c)):
+        raise ValueError(
+            "x, z and coeff must be 1-D arrays of equal length")
     c_re = np.ascontiguousarray(c.real)
     c_im = np.ascontiguousarray(c.imag)
     out = np.array(psi, dtype=np.complex128, order="C", copy=True)
