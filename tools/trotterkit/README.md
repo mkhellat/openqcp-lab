@@ -40,4 +40,5 @@ into XOR-offset fragments or use Trotter-Suzuki product formulas.
     make build
     make check
 
-`make check` also runs `shellcheck`, so it must be installed.
+`make build` installs the package with pip, so it needs network
+access. `make check` also runs `shellcheck`, so it must be installed.
