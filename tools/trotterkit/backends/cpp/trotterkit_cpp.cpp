@@ -466,8 +466,9 @@ struct Drive {
     }
 };
 
-// Automatic choices, the C backend's (measured on an i7-8550U).
-constexpr std::uint32_t AUTO_MIN_QUBITS = 11;
+// Automatic choices, the C backend's (measured on an i7-8550U):
+// serial below 10 qubits, 2 threads at 10, up to 4 from 11.
+constexpr std::uint32_t AUTO_MIN_QUBITS = 10;
 constexpr int AUTO_MAX_THREADS = 4;
 
 int auto_threads(std::uint32_t n_qubits)
@@ -475,7 +476,8 @@ int auto_threads(std::uint32_t n_qubits)
 #if defined(_OPENMP)
     if (n_qubits < AUTO_MIN_QUBITS)
         return 1;
-    return std::min(omp_get_num_procs(), AUTO_MAX_THREADS);
+    int want = n_qubits == AUTO_MIN_QUBITS ? 2 : AUTO_MAX_THREADS;
+    return std::min(omp_get_num_procs(), want);
 #else
     (void)n_qubits;
     return 1;

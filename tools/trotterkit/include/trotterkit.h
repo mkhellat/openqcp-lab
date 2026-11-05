@@ -129,7 +129,7 @@ typedef struct tk_groups tk_groups;
  * backends support strategy AUTO/ONTHEFLY, tile_bits 3..n_qubits-1
  * (or <= 0), and n_threads > 1 (c and cpp only when built with
  * OpenMP). Their auto choices are measured on one machine: serial
- * below 11 qubits, otherwise up to 4 threads with tiles of
+ * below 10 qubits, 2 threads at 10, up to 4 from 11, with tiles of
  * 2^(n_qubits-2).
  *
  * Returns TK_EINVAL if psi, terms or s is NULL, if n > 0 with a NULL
