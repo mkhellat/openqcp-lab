@@ -11,6 +11,10 @@ MESON  = @MESON@
 all: build
 
 build:
+	test -f builddir/build.ninja || $(MESON) setup builddir
+	$(MESON) compile -C builddir
+	mkdir -p src/trotterkit/_lib
+	cp builddir/libtrotterkit_c.so src/trotterkit/_lib/
 	$(PIP) install -e '.[test]'
 
 check: build
