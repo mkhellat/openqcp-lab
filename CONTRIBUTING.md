@@ -135,6 +135,16 @@ request. Two checks give first feedback as soon as it is opened:
   .github/scripts/preflight origin/main HEAD
   ```
 
+The test matrix does not start on its own. A reviewer approves each
+run: on the workflow run page, "Review deployments", select `ci`,
+"Approve and deploy". Any of the repository's reviewers (the `ci`
+environment's approvers) can approve, including on their own pull
+requests. Pushing new commits starts a new run that needs approval
+again.
+
+These checks run on the GitHub mirror,
+https://github.com/mkhellat/openqcp-lab.
+
 ## Code Style and Guidelines
 
 - **Python Code:** Follow PEP 8 style guidelines where applicable
