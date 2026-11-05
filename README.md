@@ -138,12 +138,11 @@ and (where applicable) benchmarked as software in their own right.
   Fast Walsh-Hadamard Transform algorithm for Pauli decomposition of
   Hermitian and non-Hermitian operators, with a Cython/C++ native
   kernel (oneTBB-parallelized) and a `meson-python` build matching
-  NumPy/SciPy's own model. Measured 115-120x faster than PennyLane's
-  `qml.pauli_decompose` on identical real-world inputs (see that
-  package's README for the full benchmark table and methodology).
-  Originated from module ( 05 )'s Hamiltonian-simulation tutorial
-  hitting its symbolic decomposition's practical scaling limit
-  (~N=4), but has since grown well past being tutorial-support code.
+  NumPy/SciPy's own model; its results are cross-checked against
+  PennyLane's `qml.pauli_decompose` in its tests. Originated from
+  module ( 05 )'s Hamiltonian-simulation tutorial hitting its
+  symbolic decomposition's practical scaling limit (~N=4), but has
+  since grown well past being tutorial-support code.
   It is now maintained as a standalone package,
   [paulikit on PyPI](https://pypi.org/project/paulikit/), which the
   tutorials install (`requirements.txt`); `tools/paulikit` is the
