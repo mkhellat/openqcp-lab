@@ -9,8 +9,8 @@ name: ci
 #   paulikit   pytest on Python 3.10-3.13 Linux, plus macOS and Windows
 #   trotterkit configure + make check on Linux (the C backend is built
 #              as a .so and loaded by that name, so Linux only for now)
-#   notebooks  tutorials executed with nbmake against requirements.txt,
-#              except those that need Classiq's cloud
+#   notebooks  tutorials executed with nbmake against requirements.txt
+#              and tools/trotterkit, except those that need Classiq's cloud
 #              (.github/scripts/runnable-notebooks)
 #   ci-result  always runs; passes only if every selected job passed.
 #              This is the check branch protection requires.
@@ -192,7 +192,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install the pinned tutorial environment
-        run: python -m pip install -r requirements.txt nbmake
+        run: python -m pip install -r requirements.txt nbmake meson ninja
+
+      - name: Build tools/trotterkit (used by the N=30 notebook)
+        working-directory: tools/trotterkit
+        run: |
+          ./configure --venv="$pythonLocation"
+          make build
 
       - name: Execute the notebooks that need no cloud account
         run: |
