@@ -52,8 +52,11 @@ def test_input_state_is_not_modified():
 
 
 @pytest.mark.parametrize("kwargs", [
-    {"strategy": "tables"}, {"n_threads": 2}, {"tile_bits": 4}])
+    {"strategy": "tables"}, {"n_threads": -1}, {"tile_bits": 2},
+    {"tile_bits": 3}, {"tile_bits": 4}])
 def test_unsupported_options_raise_einval(kwargs):
+    # 3 qubits: tiles must have >= 8 amplitudes and split the state,
+    # so no tile_bits > 0 is valid; tables are not implemented.
     x, z, c, _ = random_pauli_sum(3, 5, seed=16)
     with pytest.raises(trotterkit.TrotterkitError) as err:
         trotterkit.evolve(random_state(3, 0), t=1.0, steps=1,

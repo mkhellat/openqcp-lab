@@ -5,8 +5,9 @@
  *
  * Per-term mode processes amplitudes in aligned groups of 4 (AVX2
  * when available, otherwise the same arithmetic in scalar code), with
- * a scalar loop for small masks. Cache blocking and threads are not
- * implemented yet; options that would request them return TK_EINVAL.
+ * a scalar loop for small masks. With OpenMP, threads split each term
+ * (one barrier per term) or, for runs of tile-local terms, split the
+ * tiles (one barrier per run). Every path gives the same bits.
  */
 #define _POSIX_C_SOURCE 200112L
 
@@ -19,6 +20,9 @@
 
 #if defined(__AVX2__)
 #include <immintrin.h>
+#endif
+#if defined(_OPENMP)
+#include <omp.h>
 #endif
 
 static int parity64(uint64_t v)
@@ -87,46 +91,78 @@ static void term_constants(double theta, double c_re, double c_im,
     out[3] = -p_re;
 }
 
-/* Reference path, one pair (or one element) at a time. Used for
- * masks below 4, states below 8 amplitudes, and when
- * TROTTERKIT_FORCE_SCALAR=1 (tests compare the paths). */
-static void apply_term_scalar(double *re, double *im, size_t dim,
-                              uint64_t x, uint64_t z, const double *k4)
+/* Kernels over index ranges, so threads and tiles can split them.
+ * The unit of a range depends on the path:
+ *   P_DIAG1  element j            (x = 0, scalar)
+ *   P_PAIR1  pair k, j1 = k with a zero inserted at bit h
+ *   P_DIAG4  group of 4 elements  (x = 0)
+ *   P_PAIR4  group of 4 pairs     (top bit of x >= 2)
+ * The scalar paths are the reference: P_PAIR1 also serves masks
+ * below 4, states below 8 amplitudes, and TROTTERKIT_FORCE_SCALAR=1
+ * (tests compare the paths). */
+enum { P_DIAG1, P_PAIR1, P_DIAG4, P_PAIR4 };
+
+static int path_of(uint64_t x, size_t dim, int scalar)
+{
+    if (scalar || dim < 8u)
+        return x == 0u ? P_DIAG1 : P_PAIR1;
+    if (x == 0u)
+        return P_DIAG4;
+    return x < 4u ? P_PAIR1 : P_PAIR4;
+}
+
+static size_t units_of(int path, size_t dim)
+{
+    switch (path) {
+    case P_DIAG1:
+        return dim;
+    case P_PAIR1:
+        return dim / 2u;
+    case P_DIAG4:
+        return dim / 4u;
+    default:
+        return dim / 8u;
+    }
+}
+
+static void apply_diag1(double *re, double *im, uint64_t z,
+                        const double *k4, size_t lo, size_t hi)
 {
     const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
     size_t j;
 
-    if (x == 0u) {
-        for (j = 0; j < dim; j++) {
-            double sg = 1.0 - 2.0 * (double)parity64((uint64_t)j & z);
-            double mr = ar + sg * kr, mi = ai + sg * ki;
-            double pr = re[j], pi = im[j];
-            re[j] = mr * pr - mi * pi;
-            im[j] = mr * pi + mi * pr;
-        }
-        return;
-    }
-    {
-        unsigned h = top_bit(x);
-        size_t low = ((size_t)1 << h) - 1u, half = dim >> 1, k;
-
-        for (k = 0; k < half; k++) {
-            size_t j1 = ((k >> h) << (h + 1u)) | (k & low);
-            size_t j2 = j1 ^ (size_t)x;
-            double s1 = 1.0 - 2.0 * (double)parity64((uint64_t)j2 & z);
-            double s2 = 1.0 - 2.0 * (double)parity64((uint64_t)j1 & z);
-            double pr = re[j1], pi = im[j1];
-            double qr = re[j2], qi = im[j2];
-
-            re[j1] = ar * pr - ai * pi + s1 * (kr * qr - ki * qi);
-            im[j1] = ar * pi + ai * pr + s1 * (kr * qi + ki * qr);
-            re[j2] = ar * qr - ai * qi + s2 * (kr * pr - ki * pi);
-            im[j2] = ar * qi + ai * qr + s2 * (kr * pi + ki * pr);
-        }
+    for (j = lo; j < hi; j++) {
+        double sg = 1.0 - 2.0 * (double)parity64((uint64_t)j & z);
+        double mr = ar + sg * kr, mi = ai + sg * ki;
+        double pr = re[j], pi = im[j];
+        re[j] = mr * pr - mi * pi;
+        im[j] = mr * pi + mi * pr;
     }
 }
 
-/* Grouped path. For x with top bit h >= 2, j1 = G + q (G a multiple
+static void apply_pair1(double *re, double *im, uint64_t x, uint64_t z,
+                        const double *k4, size_t lo, size_t hi)
+{
+    const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
+    unsigned h = top_bit(x);
+    size_t low = ((size_t)1 << h) - 1u, k;
+
+    for (k = lo; k < hi; k++) {
+        size_t j1 = ((k >> h) << (h + 1u)) | (k & low);
+        size_t j2 = j1 ^ (size_t)x;
+        double s1 = 1.0 - 2.0 * (double)parity64((uint64_t)j2 & z);
+        double s2 = 1.0 - 2.0 * (double)parity64((uint64_t)j1 & z);
+        double pr = re[j1], pi = im[j1];
+        double qr = re[j2], qi = im[j2];
+
+        re[j1] = ar * pr - ai * pi + s1 * (kr * qr - ki * qi);
+        im[j1] = ar * pi + ai * pr + s1 * (kr * qi + ki * qr);
+        re[j2] = ar * qr - ai * qi + s2 * (kr * pr - ki * pi);
+        im[j2] = ar * qi + ai * qr + s2 * (kr * pi + ki * pr);
+    }
+}
+
+/* Grouped paths. For x with top bit h >= 2, j1 = G + q (G a multiple
  * of 4 with bit h clear, q = 0..3) pairs with
  * j2 = j1 ^ x = G2 + (q ^ p), G2 = G ^ (x & ~3), p = x & 3. With
  * sigma(B) = (-1)^popcount(B & z) and the per-term lane pattern
@@ -148,16 +184,17 @@ static void lane_pattern(uint64_t x, uint64_t z, double pat[4])
         pat[q] = 1.0 - 2.0 * (double)parity64((q ^ (x & 3u)) & z & 3u);
 }
 
-static void apply_diag_groups(double *re, double *im, size_t dim,
-                              uint64_t z, const double *k4)
+static void apply_diag4(double *re, double *im, uint64_t z,
+                        const double *k4, size_t lo, size_t hi)
 {
     const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
     double pat[4];
-    size_t g;
+    size_t i;
     unsigned q;
 
     lane_pattern(0u, z, pat);
-    for (g = 0; g < dim; g += 4u) {
+    for (i = lo; i < hi; i++) {
+        size_t g = 4u * i;
         double sb = sigma(g, z);
         for (q = 0; q < 4u; q++) {
             double sg = sb * pat[q];
@@ -167,6 +204,14 @@ static void apply_diag_groups(double *re, double *im, size_t dim,
             im[g + q] = mr * pi + mi * pr;
         }
     }
+}
+
+/* Base of the i-th group of 4 pairs: 4i with a zero inserted at bit
+ * h (h >= 2, so the low two bits stay clear). */
+static size_t group_base(size_t i, unsigned h)
+{
+    size_t f = 4u * i;
+    return ((f >> h) << (h + 1u)) | (f & (((size_t)1 << h) - 1u));
 }
 
 #if defined(__AVX2__)
@@ -194,110 +239,279 @@ static __m256d flip_if(__m256d pat, uint64_t par)
         _mm256_set1_epi64x((long long)(par << 63))));
 }
 
-static void apply_pair_groups(double *re, double *im, size_t dim,
-                              uint64_t x, uint64_t z, const double *k4)
+/* One group of 4 pairs: lanes g..g+3 against g2..g2+3 permuted by p,
+ * with sign vectors s1 (j1 updates) and s2 (j2 updates). */
+static void pair4_group(double *re, double *im, size_t g, size_t g2,
+                        unsigned p, __m256d s1, __m256d s2, __m256d ar,
+                        __m256d ai, __m256d kr, __m256d ki)
+{
+    __m256d pr = _mm256_load_pd(re + g), pi = _mm256_load_pd(im + g);
+    __m256d qr = _mm256_load_pd(re + g2), qi = _mm256_load_pd(im + g2);
+    __m256d qrp = permute_lanes(qr, p), qip = permute_lanes(qi, p);
+    __m256d prp = permute_lanes(pr, p), pip = permute_lanes(pi, p);
+    __m256d n1r = _mm256_add_pd(
+        _mm256_sub_pd(_mm256_mul_pd(ar, pr), _mm256_mul_pd(ai, pi)),
+        _mm256_mul_pd(s1, _mm256_sub_pd(_mm256_mul_pd(kr, qrp),
+                                        _mm256_mul_pd(ki, qip))));
+    __m256d n1i = _mm256_add_pd(
+        _mm256_add_pd(_mm256_mul_pd(ar, pi), _mm256_mul_pd(ai, pr)),
+        _mm256_mul_pd(s1, _mm256_add_pd(_mm256_mul_pd(kr, qip),
+                                        _mm256_mul_pd(ki, qrp))));
+    __m256d n2r = _mm256_add_pd(
+        _mm256_sub_pd(_mm256_mul_pd(ar, qr), _mm256_mul_pd(ai, qi)),
+        _mm256_mul_pd(s2, _mm256_sub_pd(_mm256_mul_pd(kr, prp),
+                                        _mm256_mul_pd(ki, pip))));
+    __m256d n2i = _mm256_add_pd(
+        _mm256_add_pd(_mm256_mul_pd(ar, qi), _mm256_mul_pd(ai, qr)),
+        _mm256_mul_pd(s2, _mm256_add_pd(_mm256_mul_pd(kr, pip),
+                                        _mm256_mul_pd(ki, prp))));
+    _mm256_store_pd(re + g, n1r);
+    _mm256_store_pd(im + g, n1i);
+    _mm256_store_pd(re + g2, n2r);
+    _mm256_store_pd(im + g2, n2i);
+}
+
+/* Groups [lo, hi) of term x, block by block so the inner loop is a
+ * plain stride-4 walk (a flat loop over group indices cost about 5
+ * more instructions per group). */
+static void apply_pair4(double *re, double *im, uint64_t x, uint64_t z,
+                        const double *k4, size_t lo, size_t hi)
 {
     const __m256d ar = _mm256_set1_pd(k4[0]), ai = _mm256_set1_pd(k4[1]);
     const __m256d kr = _mm256_set1_pd(k4[2]), ki = _mm256_set1_pd(k4[3]);
     unsigned h = top_bit(x), p = (unsigned)(x & 3u);
-    size_t span = (size_t)1 << h, hi = (size_t)(x & ~(uint64_t)3);
-    size_t base, g;
+    size_t hi_mask = (size_t)(x & ~(uint64_t)3), left = hi - lo;
+    size_t span = (size_t)1 << h, g = group_base(lo, h);
+    size_t end = (g & ~(2u * span - 1u)) + span;
     double pat[4];
     __m256d pos;
 
     lane_pattern(x, z, pat);
     pos = _mm256_loadu_pd(pat);
-    for (base = 0; base < dim; base += 2u * span)
-        for (g = base; g < base + span; g += 4u) {
-            size_t g2 = g ^ hi;
-            __m256d s1 = flip_if(pos, (uint64_t)parity64((uint64_t)g2 & z));
-            __m256d s2 = flip_if(pos, (uint64_t)parity64((uint64_t)g & z));
-            __m256d pr = _mm256_load_pd(re + g), pi = _mm256_load_pd(im + g);
-            __m256d qr = _mm256_load_pd(re + g2);
-            __m256d qi = _mm256_load_pd(im + g2);
-            __m256d qrp = permute_lanes(qr, p), qip = permute_lanes(qi, p);
-            __m256d prp = permute_lanes(pr, p), pip = permute_lanes(pi, p);
-            __m256d n1r = _mm256_add_pd(
-                _mm256_sub_pd(_mm256_mul_pd(ar, pr), _mm256_mul_pd(ai, pi)),
-                _mm256_mul_pd(s1, _mm256_sub_pd(_mm256_mul_pd(kr, qrp),
-                                                _mm256_mul_pd(ki, qip))));
-            __m256d n1i = _mm256_add_pd(
-                _mm256_add_pd(_mm256_mul_pd(ar, pi), _mm256_mul_pd(ai, pr)),
-                _mm256_mul_pd(s1, _mm256_add_pd(_mm256_mul_pd(kr, qip),
-                                                _mm256_mul_pd(ki, qrp))));
-            __m256d n2r = _mm256_add_pd(
-                _mm256_sub_pd(_mm256_mul_pd(ar, qr), _mm256_mul_pd(ai, qi)),
-                _mm256_mul_pd(s2, _mm256_sub_pd(_mm256_mul_pd(kr, prp),
-                                                _mm256_mul_pd(ki, pip))));
-            __m256d n2i = _mm256_add_pd(
-                _mm256_add_pd(_mm256_mul_pd(ar, qi), _mm256_mul_pd(ai, qr)),
-                _mm256_mul_pd(s2, _mm256_add_pd(_mm256_mul_pd(kr, pip),
-                                                _mm256_mul_pd(ki, prp))));
-            _mm256_store_pd(re + g, n1r);
-            _mm256_store_pd(im + g, n1i);
-            _mm256_store_pd(re + g2, n2r);
-            _mm256_store_pd(im + g2, n2i);
+    while (left > 0u) {
+        size_t cnt = (end - g) / 4u < left ? (end - g) / 4u : left;
+        size_t stop = g + 4u * cnt;
+        left -= cnt;
+        for (; g < stop; g += 4u) {
+            size_t g2 = g ^ hi_mask;
+            pair4_group(re, im, g, g2, p,
+                        flip_if(pos, (uint64_t)parity64((uint64_t)g2 & z)),
+                        flip_if(pos, (uint64_t)parity64((uint64_t)g & z)),
+                        ar, ai, kr, ki);
         }
+        g += span;               /* skip the partner half */
+        end += 2u * span;
+    }
 }
 #else
-static void apply_pair_groups(double *re, double *im, size_t dim,
-                              uint64_t x, uint64_t z, const double *k4)
+/* One group of 4 pairs, scalar: the AVX2 arithmetic lane by lane. */
+static void pair4_group(double *re, double *im, size_t g, size_t g2,
+                        unsigned p, double sg1, double sg2,
+                        const double pat[4], const double *k4)
 {
     const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
-    unsigned h = top_bit(x), p = (unsigned)(x & 3u), q;
-    size_t span = (size_t)1 << h, hi = (size_t)(x & ~(uint64_t)3);
-    size_t base, g;
+    double pr[4], pi[4], qr[4], qi[4];
+    unsigned q;
+
+    for (q = 0; q < 4u; q++) {
+        pr[q] = re[g + q];
+        pi[q] = im[g + q];
+        qr[q] = re[g2 + q];
+        qi[q] = im[g2 + q];
+    }
+    for (q = 0; q < 4u; q++) {
+        double s1 = sg1 * pat[q], s2 = sg2 * pat[q];
+        unsigned r = q ^ p;
+        re[g + q] = ar * pr[q] - ai * pi[q]
+                    + s1 * (kr * qr[r] - ki * qi[r]);
+        im[g + q] = ar * pi[q] + ai * pr[q]
+                    + s1 * (kr * qi[r] + ki * qr[r]);
+        re[g2 + q] = ar * qr[q] - ai * qi[q]
+                     + s2 * (kr * pr[r] - ki * pi[r]);
+        im[g2 + q] = ar * qi[q] + ai * qr[q]
+                     + s2 * (kr * pi[r] + ki * pr[r]);
+    }
+}
+
+static void apply_pair4(double *re, double *im, uint64_t x, uint64_t z,
+                        const double *k4, size_t lo, size_t hi)
+{
+    unsigned h = top_bit(x), p = (unsigned)(x & 3u);
+    size_t hi_mask = (size_t)(x & ~(uint64_t)3), left = hi - lo;
+    size_t span = (size_t)1 << h, g = group_base(lo, h);
+    size_t end = (g & ~(2u * span - 1u)) + span;
     double pat[4];
 
     lane_pattern(x, z, pat);
-    for (base = 0; base < dim; base += 2u * span)
-        for (g = base; g < base + span; g += 4u) {
-            size_t g2 = g ^ hi;
-            double sg1 = sigma(g2, z), sg2 = sigma(g, z);
-            double pr[4], pi[4], qr[4], qi[4];
-            for (q = 0; q < 4u; q++) {
-                pr[q] = re[g + q];
-                pi[q] = im[g + q];
-                qr[q] = re[g2 + q];
-                qi[q] = im[g2 + q];
-            }
-            for (q = 0; q < 4u; q++) {
-                double s1 = sg1 * pat[q], s2 = sg2 * pat[q];
-                unsigned r = q ^ p;
-                re[g + q] = ar * pr[q] - ai * pi[q]
-                            + s1 * (kr * qr[r] - ki * qi[r]);
-                im[g + q] = ar * pi[q] + ai * pr[q]
-                            + s1 * (kr * qi[r] + ki * qr[r]);
-                re[g2 + q] = ar * qr[q] - ai * qi[q]
-                             + s2 * (kr * pr[r] - ki * pi[r]);
-                im[g2 + q] = ar * qi[q] + ai * qr[q]
-                             + s2 * (kr * pi[r] + ki * pr[r]);
-            }
+    while (left > 0u) {
+        size_t cnt = (end - g) / 4u < left ? (end - g) / 4u : left;
+        size_t stop = g + 4u * cnt;
+        left -= cnt;
+        for (; g < stop; g += 4u) {
+            size_t g2 = g ^ hi_mask;
+            pair4_group(re, im, g, g2, p, sigma(g2, z), sigma(g, z),
+                        pat, k4);
         }
+        g += span;
+        end += 2u * span;
+    }
 }
 #endif
 
-static void apply_term(double *re, double *im, size_t dim, uint64_t x,
-                       uint64_t z, const double *k4, int scalar)
+static void apply_range(int path, double *re, double *im, uint64_t x,
+                        uint64_t z, const double *k4, size_t lo,
+                        size_t hi)
 {
-    if (scalar || dim < 8u)
-        apply_term_scalar(re, im, dim, x, z, k4);
-    else if (x == 0u)
-        apply_diag_groups(re, im, dim, z, k4);
-    else if (x < 4u)
-        apply_term_scalar(re, im, dim, x, z, k4);
-    else
-        apply_pair_groups(re, im, dim, x, z, k4);
+    switch (path) {
+    case P_DIAG1:
+        apply_diag1(re, im, z, k4, lo, hi);
+        break;
+    case P_PAIR1:
+        apply_pair1(re, im, x, z, k4, lo, hi);
+        break;
+    case P_DIAG4:
+        apply_diag4(re, im, z, k4, lo, hi);
+        break;
+    default:
+        apply_pair4(re, im, x, z, k4, lo, hi);
+    }
+}
+
+/* Everything one evolution needs, shared by the threads. */
+typedef struct {
+    double *re, *im;
+    size_t dim, n, n_st, n_steps;
+    const uint64_t *x, *z;
+    const double *consts;          /* 4 per (stage, term) */
+    int scalar;
+    unsigned tile_bits;            /* 0: no tiles */
+    const unsigned char *local;    /* x < 2^tile_bits */
+    const size_t *run_end;         /* end of the local run at g */
+    const size_t *run_begin;       /* start of the local run at g */
+} drive_ctx;
+
+#if defined(_OPENMP)
+#define TK_BARRIER(T)                    \
+    do {                                 \
+        if ((T) > 1) {                   \
+            _Pragma("omp barrier")       \
+        }                                \
+    } while (0)
+#else
+#define TK_BARRIER(T) ((void)(T))
+#endif
+
+/* Thread tid of T applies its share of term g to the whole state. */
+static void term_share(const drive_ctx *c, size_t g, const double *k4,
+                       int tid, int T)
+{
+    int path = path_of(c->x[g], c->dim, c->scalar);
+    size_t u = units_of(path, c->dim), lo = 0, hi = u;
+    if (T > 1) {                 /* two divisions per term otherwise */
+        lo = u * (size_t)tid / (size_t)T;
+        hi = u * (size_t)(tid + 1) / (size_t)T;
+    }
+    apply_range(path, c->re, c->im, c->x[g], c->z[g], k4, lo, hi);
+}
+
+/* Terms [b, e) are all tile-local; thread tid of T takes its share of
+ * the tiles and applies the run to each, forward or in reverse. In a
+ * tile at offset off every sign is the whole-state sign times
+ * (-1)^popcount(off & z), which is the same as negating the term's
+ * off-diagonal constant; negation is exact, so results match the
+ * untiled evolution bit for bit. */
+static void run_tiles(const drive_ctx *c, size_t b, size_t e,
+                      const double *cs, int reverse, int tid, int T)
+{
+    size_t len = (size_t)1 << c->tile_bits, n_tiles = c->dim / len;
+    size_t t, t_lo = n_tiles * (size_t)tid / (size_t)T;
+    size_t t_hi = n_tiles * (size_t)(tid + 1) / (size_t)T;
+
+    for (t = t_lo; t < t_hi; t++) {
+        size_t off = t * len, i;
+        for (i = 0; i < e - b; i++) {
+            size_t g = reverse ? e - 1u - i : b + i;
+            const double *k4 = cs + 4u * g;
+            double kt[4];
+            int path = path_of(c->x[g], len, c->scalar);
+            if (parity64((uint64_t)off & c->z[g])) {
+                kt[0] = k4[0];
+                kt[1] = k4[1];
+                kt[2] = -k4[2];
+                kt[3] = -k4[3];
+                k4 = kt;
+            }
+            apply_range(path, c->re + off, c->im + off, c->x[g],
+                        c->z[g], k4, 0, units_of(path, len));
+        }
+    }
+}
+
+static void drive(const drive_ctx *c, int tid, int T)
+{
+    size_t step, st, g;
+
+    for (step = 0; step < c->n_steps; step++)
+        for (st = 0; st < c->n_st; st++) {
+            const double *cs = c->consts + 4u * st * c->n;
+            for (g = 0; g < c->n;) {
+                if (c->tile_bits != 0u && c->local[g]) {
+                    run_tiles(c, g, c->run_end[g], cs, 0, tid, T);
+                    g = c->run_end[g];
+                } else {
+                    term_share(c, g, cs + 4u * g, tid, T);
+                    g++;
+                }
+                TK_BARRIER(T);
+            }
+            for (g = c->n; g > 0u;) {
+                size_t last = g - 1u;
+                if (c->tile_bits != 0u && c->local[last]) {
+                    run_tiles(c, c->run_begin[last], g, cs, 1, tid, T);
+                    g = c->run_begin[last];
+                } else {
+                    term_share(c, last, cs + 4u * last, tid, T);
+                    g = last;
+                }
+                TK_BARRIER(T);
+            }
+        }
+}
+
+/* Automatic choices (n_threads = 0, tile_bits = 0), measured with
+ * bench/quick on an i7-8550U (4 cores, 2 threads each); other
+ * machines may want explicit values. Threads lost at 9 qubits (one
+ * barrier per term outweighs a 0.4 us term) and won from 11; 4
+ * threads beat 8 (hyperthreads share the SIMD units this kernel
+ * saturates); tiles of 2^(n-2) amplitudes were best at 11 and 12
+ * qubits. */
+#define TK_AUTO_MIN_QUBITS 11u
+#define TK_AUTO_MAX_THREADS 4
+
+static int auto_threads(uint32_t n_qubits)
+{
+#if defined(_OPENMP)
+    int procs = omp_get_num_procs();
+    if (n_qubits < TK_AUTO_MIN_QUBITS)
+        return 1;
+    return procs < TK_AUTO_MAX_THREADS ? procs : TK_AUTO_MAX_THREADS;
+#else
+    (void)n_qubits;
+    return 1;
+#endif
 }
 
 int tk_evolve_terms(double *psi, uint32_t n_qubits,
                     const tk_terms *terms, const tk_schedule *s,
                     int strategy, int tile_bits, int n_threads)
 {
-    size_t dim, n, n_st, g, st, step, j;
+    size_t dim, n, n_st, g, st, j;
     double *re, *im, *consts;
+    unsigned char *local = NULL;
+    size_t *run_end = NULL, *run_begin = NULL;
     const char *force = getenv("TROTTERKIT_FORCE_SCALAR");
-    int scalar = force != NULL && strcmp(force, "1") == 0;
+    drive_ctx c;
+    int T;
 
     if (psi == NULL || terms == NULL || s == NULL)
         return TK_EINVAL;
@@ -305,7 +519,14 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
         return TK_EQUBITS;
     if (strategy != TK_AUTO && strategy != TK_ONTHEFLY)
         return TK_EINVAL;
-    if (tile_bits > 0 || n_threads < 0 || n_threads > 1)
+    if (n_threads < 0)
+        return TK_EINVAL;
+#if !defined(_OPENMP)
+    if (n_threads > 1)
+        return TK_EINVAL;
+#endif
+    /* Tiles need at least 8 amplitudes and must split the state. */
+    if (tile_bits > 0 && (tile_bits < 3 || (uint32_t)tile_bits >= n_qubits))
         return TK_EINVAL;
     n = terms->n;
     n_st = s->n_stages;
@@ -318,15 +539,38 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
         if (((terms->x[g] | terms->z[g]) >> n_qubits) != 0u)
             return TK_EINVAL;
 
+    T = n_threads == 0 ? auto_threads(n_qubits) : n_threads;
+    if (tile_bits == 0)
+        tile_bits = T > 1 && n_qubits >= 5u ? (int)n_qubits - 2 : -1;
     dim = (size_t)1 << n_qubits;
     re = alloc64(dim * sizeof *re);
     im = alloc64(dim * sizeof *im);
     consts = alloc64(n_st * n * 4u * sizeof *consts);
-    if (re == NULL || im == NULL || consts == NULL) {
+    if (tile_bits > 0) {
+        local = malloc(n == 0u ? 1u : n);
+        run_end = malloc((n == 0u ? 1u : n) * sizeof *run_end);
+        run_begin = malloc((n == 0u ? 1u : n) * sizeof *run_begin);
+    }
+    if (re == NULL || im == NULL || consts == NULL
+        || (tile_bits > 0
+            && (local == NULL || run_end == NULL || run_begin == NULL))) {
         free(re);
         free(im);
         free(consts);
+        free(local);
+        free(run_end);
+        free(run_begin);
         return TK_ENOMEM;
+    }
+    if (tile_bits > 0) {
+        for (g = 0; g < n; g++)
+            local[g] = (terms->x[g] >> tile_bits) == 0u;
+        for (g = n; g-- > 0u;)
+            run_end[g] = local[g] && g + 1u < n && local[g + 1u]
+                         ? run_end[g + 1u] : g + 1u;
+        for (g = 0; g < n; g++)
+            run_begin[g] = local[g] && g > 0u && local[g - 1u]
+                           ? run_begin[g - 1u] : g;
     }
     for (st = 0; st < n_st; st++)
         for (g = 0; g < n; g++)
@@ -334,21 +578,34 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
                            terms->c_im[g],
                            popcount64(terms->x[g] & terms->z[g]) & 3,
                            consts + 4u * (st * n + g));
-
     for (j = 0; j < dim; j++) {
         re[j] = psi[2u * j];
         im[j] = psi[2u * j + 1u];
     }
-    for (step = 0; step < s->n_steps; step++)
-        for (st = 0; st < n_st; st++) {
-            const double *cs = consts + 4u * st * n;
-            for (g = 0; g < n; g++)
-                apply_term(re, im, dim, terms->x[g], terms->z[g],
-                           cs + 4u * g, scalar);
-            for (g = n; g-- > 0u;)
-                apply_term(re, im, dim, terms->x[g], terms->z[g],
-                           cs + 4u * g, scalar);
-        }
+
+    c.re = re;
+    c.im = im;
+    c.dim = dim;
+    c.n = n;
+    c.n_st = n_st;
+    c.n_steps = s->n_steps;
+    c.x = terms->x;
+    c.z = terms->z;
+    c.consts = consts;
+    c.scalar = force != NULL && strcmp(force, "1") == 0;
+    c.tile_bits = tile_bits > 0 ? (unsigned)tile_bits : 0u;
+    c.local = local;
+    c.run_end = run_end;
+    c.run_begin = run_begin;
+#if defined(_OPENMP)
+    if (T > 1) {
+#pragma omp parallel num_threads(T)
+        drive(&c, omp_get_thread_num(), omp_get_num_threads());
+    } else
+#endif
+        drive(&c, 0, 1);
+    (void)T;                     /* unused without OpenMP */
+
     for (j = 0; j < dim; j++) {
         psi[2u * j] = re[j];
         psi[2u * j + 1u] = im[j];
@@ -356,6 +613,9 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
     free(re);
     free(im);
     free(consts);
+    free(local);
+    free(run_end);
+    free(run_begin);
     return TK_OK;
 }
 

@@ -4,7 +4,8 @@
 """Compare CLI runs by cycles, interleaved, with Welch's t-test.
 
     bench/quick WORKLOAD --case NAME 'ARGS' --case NAME 'ARGS' ...
-        [--reps 5] [--cli PATH] [--cool-to C] [--dry-run]
+        [--reps 5] [--metric cycles|kernel_seconds] [--cli PATH]
+        [--cool-to C] [--dry-run]
 
 ARGS are the CLI options for that case; leading KEY=VALUE words are
 set in its environment, e.g.
@@ -16,10 +17,11 @@ until the CPU package is at or below the cooldown target. The target
 is the settled idle temperature + 5 C, measured at start; if it is
 not reached within 180 s the run stops instead of measuring a hot
 machine. Reports median and IQR of cycles, instructions and
-kernel_seconds per case, Welch's t-test of each case's cycles against
-the first case, and flags instruction counts that vary by more than
-0.1% (a harness problem, not noise). Raw results go to
-bench/results/quick-<time>.json.
+kernel_seconds per case, Welch's t-test of each case's --metric
+(cycles by default; kernel_seconds for thread scaling, since cycles
+add up across threads) against the first case, and flags
+instruction counts that vary by more than 0.1% (a harness problem,
+not noise). Raw results go to bench/results/quick-<time>.json.
 """
 
 import argparse
@@ -126,6 +128,8 @@ def main(argv=None):
     ap.add_argument("--case", nargs=2, action="append", required=True,
                     metavar=("NAME", "ARGS"))
     ap.add_argument("--reps", type=int, default=5)
+    ap.add_argument("--metric", choices=["cycles", "kernel_seconds"],
+                    default="cycles")
     ap.add_argument("--cli", default=str(DEFAULT_CLI))
     ap.add_argument("--cool-to", type=float)
     ap.add_argument("--dry-run", action="store_true")
@@ -159,7 +163,7 @@ def main(argv=None):
                   f"{r['kernel_seconds']:.4f} s", flush=True)
 
     base = cases[0][0]
-    base_cyc = [r["cycles"] for r in results[base]]
+    base_m = [r[a.metric] for r in results[base]]
     print()
     for name, _, _ in cases:
         rs = results[name]
@@ -171,9 +175,12 @@ def main(argv=None):
         line = (f"{name:>14}: cycles {c_med:.4e} (IQR {c_iqr:.2e}), "
                 f"kernel {s_med:.4f} s (IQR {s_iqr:.4f})")
         if name != base:
-            p = stats.ttest_ind(cyc, base_cyc, equal_var=False).pvalue
-            line += (f", cycles/{base} = "
-                     f"{c_med / np.median(base_cyc):.3f}, p = {p:.2g}")
+            m = [r[a.metric] for r in rs]
+            p = stats.ttest_ind(m, base_m, equal_var=False).pvalue
+            short = "cycles" if a.metric == "cycles" else "time"
+            line += (f", {short}/{base} = "
+                     f"{np.median(m) / np.median(base_m):.3f}, "
+                     f"p = {p:.2g}")
         spread = (max(ins) - min(ins)) / np.median(ins)
         if spread > 1e-3:
             line += f"  [instructions vary {100 * spread:.2f}%]"
@@ -184,6 +191,7 @@ def main(argv=None):
     path = out / f"quick-{time.strftime('%Y%m%dT%H%M%S')}.json"
     with open(path, "w") as fh:
         json.dump({"workload": str(a.workload), "cli": a.cli,
+                   "metric": a.metric,
                    "cooldown_c": target,
                    "cases": {n: {"env": e, "args": g,
                                  "runs": results[n]}

@@ -16,6 +16,9 @@ import sys
 import numpy as np
 import pytest
 
+import trotterkit
+from _systems import random_state
+
 TESTS = pathlib.Path(__file__).resolve().parent
 SCRIPT = """
 import sys
@@ -62,3 +65,34 @@ def test_each_lane_permutation(tmp_path, p):
     np.testing.assert_array_equal(
         run(tmp_path, False, 5, n_terms=len(xs), x=xs, z=zs),
         run(tmp_path, True, 5, n_terms=len(xs), x=xs, z=zs))
+
+
+def _evolve(x, z, c, n, **kw):
+    return trotterkit.evolve(random_state(n, 2), t=0.8, steps=2,
+                             order=4, terms=(x, z, c), backend="c", **kw)
+
+
+@pytest.mark.parametrize("sort_x", [False, True])
+@pytest.mark.parametrize("n_threads", [1, 2, 3, 4])
+@pytest.mark.parametrize("tile_bits", [-1, 3, 6, 9])
+def test_threads_and_tiles_match_serial(sort_x, n_threads, tile_bits):
+    # Sorted masks give long tile-local runs, as paulikit's output
+    # does; some masks are shifted down so that runs exist unsorted too.
+    n = 10
+    rng = np.random.default_rng(4)
+    x = rng.integers(0, 1 << n, size=300, dtype=np.uint64)
+    x[::7] >>= np.uint64(5)
+    x[::11] = 0
+    if sort_x:
+        x.sort()
+    z = rng.integers(0, 1 << n, size=300, dtype=np.uint64)
+    c = rng.normal(size=300) + 0.1j * rng.normal(size=300)
+    want = _evolve(x, z, c, n, n_threads=1, tile_bits=-1)
+    try:
+        got = _evolve(x, z, c, n, n_threads=n_threads,
+                      tile_bits=tile_bits)
+    except trotterkit.TrotterkitError as err:
+        if n_threads > 1 and err.code == 1:
+            pytest.skip("backend built without OpenMP")
+        raise
+    np.testing.assert_array_equal(got, want)
