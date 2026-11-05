@@ -27,7 +27,10 @@ elif [ $# -eq 2 ]; then
                 trotterkit=true
                 notebooks=true ;;
             tools/paulikit/*) paulikit=true ;;
-            tools/trotterkit/*) trotterkit=true ;;
+            tools/trotterkit/*)
+                # The N=30 notebook evolves its state with trotterkit.
+                trotterkit=true
+                notebooks=true ;;
             tutorials/*|requirements.txt) notebooks=true ;;
         esac
     done < <(git diff --name-only "$base" "$2" --)

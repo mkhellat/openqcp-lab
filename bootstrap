@@ -299,6 +299,28 @@ install_dependencies() {
 }
 
 #---------------------------------------------------------------------
+# Build tools/trotterkit into the venv (the N=30 coupled-oscillator
+# notebook evolves its state with it). Needs a C and C++ compiler;
+# without one only that notebook is affected, so this warns instead
+# of failing.
+#---------------------------------------------------------------------
+build_trotterkit() {
+    msg_checking "building tools/trotterkit" && echo
+    venv_abs=$(cd "${venv_path}" && pwd)
+    "${venv_path}/bin/pip" install meson ninja >> "${config_log}" 2>&1
+    if (PATH="${venv_abs}/bin:${PATH}" \
+        && export PATH \
+        && cd tools/trotterkit \
+        && ./configure --venv="${venv_abs}" \
+        && make build) >> "${config_log}" 2>&1; then
+        msg_note "trotterkit built and installed"
+    else
+        msg_warn "trotterkit build failed (see ${config_log}); the N=30"
+        msg_warn "coupled-oscillator notebook needs it"
+    fi
+}
+
+#---------------------------------------------------------------------
 # Generate config.mk consumed by the Makefile
 #---------------------------------------------------------------------
 generate_config_mk() {
@@ -321,6 +343,7 @@ main() {
     provision_python || exit 1
     setup_venv || exit 1
     install_dependencies
+    build_trotterkit
     generate_config_mk
 
     msg_info "Configuration Summary:"

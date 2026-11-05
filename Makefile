@@ -5,7 +5,7 @@ PYTHON     := $(VENV)/bin/python
 PIP        := $(VENV)/bin/pip
 PYTEST     := $(VENV)/bin/pytest
 
-.PHONY: help env install install-dev clean distclean test test-import test-syntax test-run test-tools docs-tools
+.PHONY: help env install install-dev trotterkit clean distclean test test-import test-syntax test-run test-tools docs-tools
 
 find_notebooks = find . -name '*.ipynb' \
 	-not -path './.git/*' \
@@ -20,6 +20,7 @@ help:
 	@echo "  make env       - Run ./bootstrap to provision venv/ (Python $(if $(REQUIRED_PYTHON_VERSION),$(REQUIRED_PYTHON_VERSION),3.12))"
 	@echo "  make install   - Install/refresh dependencies into an existing venv"
 	@echo "  make install-dev - Also install dev/profiling tools (requirements-dev.txt)"
+	@echo "  make trotterkit - Build tools/trotterkit into the venv (needed by the N=30 notebook)"
 	@echo "  make test      - Run import checks, notebook JSON checks, notebook execution, and tools/ test suites"
 	@echo "  make test-tools - Run tools/*/tests/ (e.g. tools/paulikit) - installs each in editable mode first"
 	@echo "  make docs-tools - Build Sphinx docs for every tool under tools/ that provides them"
@@ -36,6 +37,15 @@ install:
 
 install-dev: install
 	$(PIP) install -r requirements-dev.txt
+
+# tools/trotterkit built into the venv; the N=30 coupled-oscillator
+# notebook evolves its state with it.
+trotterkit:
+	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
+	$(PIP) install meson ninja
+	PATH="$(abspath $(VENV))/bin:$$PATH" && export PATH && \
+	    cd tools/trotterkit && ./configure --venv="$(abspath $(VENV))" && \
+	    $(MAKE) build
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
