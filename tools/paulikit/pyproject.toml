@@ -4,7 +4,7 @@ build-backend = "mesonpy"
 
 [project]
 name = "paulikit"
-version = "0.1.0"
+version = "0.1.0+hamiltonianfix"
 description = "Performance-engineering tools for Pauli decomposition of complex matrices"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -1,5 +1,14 @@
 # paulikit
 
+> **This is the original research copy, kept for the tutorials.** The
+> maintained package is the standalone
+> [paulikit on PyPI](https://pypi.org/project/paulikit/), which the
+> tutorials install. This copy carries one later fix, as version
+> `0.1.0+hamiltonianfix`: `build_hamiltonian` put every coupling spring
+> on oscillators 0 and 1, correct only for N=2 (fixed in the standalone
+> paulikit 0.1.4). `PLAN.md`, `bindings/README.md` and the dated
+> plans under `docs/` record measurements made on the earlier matrix.
+
 Exact Pauli decomposition of arbitrary complex matrices, at scales
 where materialising the full coefficient set is the binding
 constraint.
@@ -21,8 +30,8 @@ time.
 `paulikit` addresses that directly:
 
 - **Streaming output.** Peak resident memory is bounded by the chunk
-  size, not by the term count. A 15-qubit decomposition yielding
-  91,652,096 surviving terms completes under a 2 GB cap.
+  size, not by the term count. A 14-qubit decomposition yielding
+  90,431,488 surviving terms completes under a 2 GB cap.
 - **Exhaustive verification.** Every term is checked individually -
   not sampled - against an independently derived projection oracle.
 - **Checkpoint and restart.** A binary chunk-framed checkpoint cheap
@@ -174,14 +183,16 @@ a single module.
 
 - **Exhaustive projection.** Every term of a decomposition is checked
   individually against an independently derived projection oracle -
-  not sampled - up to 91,652,096 terms at 15 qubits. Artifacts and
+  not sampled - up to 90,431,488 terms at 14 qubits. Artifacts and
   method: [`verification/`](verification/).
 - **Cross-implementation.** Where PennyLane's `qml.pauli_decompose`
   can also run, both agree exactly on term count and on coefficients
   within tolerance. PennyLane is a test-only dependency and is never
   imported by `paulikit.algorithms`.
-- **Regression suite.** 214 tests, including crash-recovery and
-  checkpoint-format cases.
+- **Physics.** `build_hamiltonian` is checked against Newton's
+  equations (`tests/test_hamiltonian_physics.py`).
+- **Regression suite.** 338 tests (8 of them slow, run with
+  `-m slow`), including crash-recovery and checkpoint-format cases.
 
 No performance comparison is published here. Benchmark tables in a
 README go stale as either implementation changes, and any figure worth
@@ -200,7 +211,7 @@ Implemented and verified: the FWHT decomposition with a native
 label kernel, sparsity-aware coefficients, streaming output with
 bounded memory, chunked and parallel execution with cache-aware
 auto-tuning, binary checkpoint/restart, and exhaustive verification to
-91,652,096 terms.
+90,431,488 terms.
 
 Known gaps:
 

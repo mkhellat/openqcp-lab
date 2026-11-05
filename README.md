@@ -144,8 +144,11 @@ and (where applicable) benchmarked as software in their own right.
   Originated from module ( 05 )'s Hamiltonian-simulation tutorial
   hitting its symbolic decomposition's practical scaling limit
   (~N=4), but has since grown well past being tutorial-support code.
-  Install with `pip install -e tools/paulikit` and see that package's
-  own README for usage.
+  It is now maintained as a standalone package,
+  [paulikit on PyPI](https://pypi.org/project/paulikit/), which the
+  tutorials install (`requirements.txt`); `tools/paulikit` is the
+  original research copy, kept with the corrected coupled-oscillator
+  Hamiltonian as version `0.1.0+hamiltonianfix`.
 
 ## GNU GPL v3+
 

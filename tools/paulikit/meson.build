@@ -8,7 +8,7 @@
 # installable with no compiler at all.
 project(
   'paulikit',
-  version: '0.1.0',
+  version: '0.1.0+hamiltonianfix',
   license: 'GPL-3.0-or-later',
   meson_version: '>=1.1.0',
   default_options: ['cpp_std=c++17'],

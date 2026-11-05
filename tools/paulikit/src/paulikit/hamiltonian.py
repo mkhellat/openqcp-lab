@@ -7,8 +7,11 @@ paulikit's correctness fixtures and benchmarks do not depend on
 importing a notebook, and so the matrix can be built directly in
 floating point for large N without symbolic overhead.
 
-Cross-checked against the notebook's own ``prepare_hmatrix`` at N=2
-and N=4: matches to machine epsilon (~1e-16) for both.
+Checked against Newton's equations by ``tests/test_hamiltonian_physics.py``.
+Before 0.1.0+hamiltonianfix this module, and the notebook's
+``prepare_hmatrix`` it was cross-checked against, both carried the same
+wrong layout for N >= 3 (see ``build_hamiltonian``); agreeing with each
+other did not make either right.
 """
 
 from __future__ import annotations
@@ -30,12 +33,16 @@ def build_hamiltonian(
 ) -> NDArray[np.floating]:
     """Build the coupled-oscillator Hamiltonian matrix.
 
-    Reproduces the structure described in the parent repository's
-    ``coupled_harmonic_oscillators/README.md`` and implemented
-    symbolically in its tutorial notebooks: an
-    ``(N + N*(N+1)/2)``-dimensional matrix with a block-antidiagonal
-    "B" coupling block, built from a "sqrt(k/m)" encoding of the
-    physical spring constants and masses.
+    An ``(N + N*(N+1)/2)``-dimensional real symmetric matrix
+    ``H = -[[0, B], [B^T, 0]]``, following Babbush, Berry, Kothari,
+    Somma, Wiebe, Phys. Rev. X 13, 041041 (2023), arXiv:2303.13012,
+    Sec. III. ``B`` has one column per spring: the N wall springs
+    ``(i, i)`` first, then every coupling ``(j, k)`` with ``j < k`` in
+    the order ``for j in range(N), for k in range(j+1, N)``. Column
+    ``(i, i)`` holds ``sqrt(k_ii/m_i)`` in row i; column ``(j, k)``
+    holds ``sqrt(k_jk/m_j)`` in row j and ``-sqrt(k_jk/m_k)`` in row k.
+    Then ``B B^T = M^{-1/2} F M^{-1/2}``, with F the stiffness matrix of
+    Newton's equations.
 
     Args:
         n_oscillators: Number of coupled oscillators, N.
@@ -65,10 +72,11 @@ def build_hamiltonian(
         ``sparse=True``.
 
     Note:
-        Only oscillators 0 and 1 contribute coupling-block entries,
-        matching the source notebook's own ``if i < 2`` branch. This
-        is a property of the original algorithm's encoding, not a bug
-        in this reimplementation.
+        Before 0.1.0+hamiltonianfix every coupling column was placed in
+        rows 0 and 1 regardless of which oscillators the spring joins.
+        That agrees with the construction above only for N=2; for
+        N >= 3 it produced the wrong dynamics. The same fix shipped in
+        the standalone paulikit 0.1.4.
     """
     if sparse and _sp is None:
         raise ImportError(
@@ -77,51 +85,35 @@ def build_hamiltonian(
         )
 
     n = n_oscillators
-    coupling_count = n * (n + 1) // 2
-    size = n + coupling_count
+    size = n + n * (n + 1) // 2
 
-    # Column index -> (i, j) pair mapping (i < j), matching the
-    # notebook's own iteration order: for l in range(N): for m in
-    # range(l+1, N).
-    pairs = [(l, m) for l in range(n) for m in range(l + 1, n)]
-
-    if not sparse:
-        hamiltonian = np.zeros((size, size))
-        for i in range(n):
-            on_site = -np.sqrt(spring_constants[(i, i)] / masses[i])
-            hamiltonian[i, n + i] = on_site
-            hamiltonian[n + i, i] = on_site
-
-            if i < 2:
-                sign = (-1) ** i
-                for col_offset, (l, m) in enumerate(pairs):
-                    key = (l, m) if l <= m else (m, l)
-                    coupling = -sign * np.sqrt(spring_constants[key] / masses[i])
-                    hamiltonian[i, n + n + col_offset] = coupling
-                    hamiltonian[n + n + col_offset, i] = coupling
-        return hamiltonian
-
-    # Sparse path: accumulate (row, col, value) triples directly,
-    # never touching an O(size**2) dense array.
+    # (row, col, value) of the upper-right block of H = -[[0,B],[B^T,0]];
+    # the lower-left block is its transpose.
     rows: list[int] = []
     cols: list[int] = []
     values: list[float] = []
     for i in range(n):
-        on_site = -np.sqrt(spring_constants[(i, i)] / masses[i])
-        rows += [i, n + i]
-        cols += [n + i, i]
-        values += [on_site, on_site]
+        rows.append(i)
+        cols.append(n + i)
+        values.append(-np.sqrt(spring_constants[(i, i)] / masses[i]))
+    col = 2 * n
+    for j in range(n):
+        for k in range(j + 1, n):
+            kappa = spring_constants[(j, k)]
+            rows += [j, k]
+            cols += [col, col]
+            values += [-np.sqrt(kappa / masses[j]), np.sqrt(kappa / masses[k])]
+            col += 1
 
-        if i < 2:
-            sign = (-1) ** i
-            for col_offset, (l, m) in enumerate(pairs):
-                key = (l, m) if l <= m else (m, l)
-                coupling = -sign * np.sqrt(spring_constants[key] / masses[i])
-                rows += [i, n + n + col_offset]
-                cols += [n + n + col_offset, i]
-                values += [coupling, coupling]
+    if not sparse:
+        hamiltonian = np.zeros((size, size))
+        hamiltonian[rows, cols] = values
+        hamiltonian[cols, rows] = values
+        return hamiltonian
 
-    return _sp.coo_matrix((values, (rows, cols)), shape=(size, size))
+    return _sp.coo_matrix(
+        (values + values, (rows + cols, cols + rows)), shape=(size, size)
+    )
 
 
 def pad_to_power_of_two(

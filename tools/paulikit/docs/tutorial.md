@@ -135,8 +135,8 @@ console command wraps the same functionality:
 ```console
 $ paulikit decompose --n-oscillators 4 --show-terms
 N=4 oscillators, 4 qubits, 16x16 padded Hamiltonian
-Decomposition time: 0.0039s
-Nonzero Pauli terms: 56
+Decomposition time: 0.0004s
+Nonzero Pauli terms: 64
   IXII: -0.5470915958155509
   IXIZ: 0.015053558406667805
   IXZI: 0.02983035390312644
@@ -158,11 +158,11 @@ parameters for real work.
 ```console
 $ paulikit benchmark --n-oscillators 2 4 8 16 30
     N  qubits    dim    terms   time (s)
-    2       3      8       12     0.0004
-    4       4     16       56     0.0003
-    8       6     64      928     0.0018
-   16       8    256    15360     0.0286
-   30       9    512   112384     0.1451
+    2       3      8       12     0.0003
+    4       4     16       64     0.0001
+    8       6     64      832     0.0003
+   16       8    256    14464     0.0053
+   30       9    512   107008     0.0384
 ```
 
 (Timings vary run to run and by machine; term counts are the part
@@ -177,8 +177,8 @@ worth checking against your own run.)
 ```console
 $ paulikit decompose --n-oscillators 150 --chunk-size 2 --parallel
 N=150 oscillators, 14 qubits, 16384x16384 padded Hamiltonian
-Decomposition time (parallel, executor=auto): 0.9887s
-Chunks: 5595, nonzero Pauli terms: 91652096
+Decomposition time (parallel, executor=auto): 1.0227s
+Chunks: 5520, nonzero Pauli terms: 90431488
 ```
 
 Two things this path does differently, both deliberate:
@@ -331,11 +331,14 @@ The streaming design's real payoff is not the constant factor. Peak
 resident memory stays roughly flat as the problem grows, because only
 one chunk is live at a time:
 
-| qubits | terms | wall | peak RSS |
-|---|---|---|---|
-| 14 | 91,652,096 | 0.989s | 72 MiB |
-| 15 | 326,134,272 | 3.211s | 89 MiB |
-| 16 | 1,470,021,632 | 19.59s | 123 MiB |
+| N | qubits | terms | decomposition | peak RSS |
+|---|---|---|---|---|
+| 150 | 14 | 90,431,488 | 1.02s | 80 MiB |
+| 200 | 15 | 321,941,504 | 3.71s | 99 MiB |
+| 300 | 16 | 1,457,121,280 | 21.97s | 139 MiB |
+
+(`paulikit decompose --n-oscillators N --chunk-size 2 --parallel`,
+median of three runs; peak resident set of the whole process.)
 
 An implementation that requires the caller to hold the dense
 $2^n \times 2^n$ operator needs 4 GiB at 14 qubits, 16 GiB at 15 and
