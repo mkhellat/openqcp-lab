@@ -4,11 +4,11 @@
 
 import numpy as np
 
-from trotterkit import _backend, reference, schedule
+from trotterkit import _backend, bound, exact, reference, schedule
 from trotterkit._backend import TrotterkitError
 
 __version__ = "0.0.1"
-__all__ = ["TrotterkitError", "backends", "evolve"]
+__all__ = ["TrotterkitError", "backends", "bound", "evolve", "exact"]
 
 _STRATEGY = {"auto": 0, "onthefly": 1, "tables": 2}
 

@@ -67,11 +67,16 @@ def load(backend):
 
 
 def available():
+    """Native backends whose library loads and exports the full ABI.
+
+    A missing library raises OSError; one that loads but lacks a
+    symbol raises AttributeError. Either way the backend is skipped.
+    """
     found = []
     for backend in _SUFFIX:
         try:
             load(backend)
-        except OSError:
+        except (OSError, AttributeError):
             continue
         found.append(backend)
     return found

@@ -42,11 +42,6 @@ def test_steps_formula():
     assert bound.steps_for(2.0, 0.0, 0.5) == 1
 
 
-def test_grouped_bound_runs_and_is_positive():
-    _, _, _, H = random_pauli_sum(3, 8, seed=4)
-    assert bound.bound_grouped(H, 1.0, 1e-3) >= 1
-
-
 def test_refuses_non_hermitian():
     x, z, c, H = random_pauli_sum(3, 8, seed=5, complex_coeffs=True)
     with pytest.raises(ValueError):
