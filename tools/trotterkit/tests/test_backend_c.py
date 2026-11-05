@@ -6,6 +6,7 @@ import ctypes
 
 import numpy as np
 import pytest
+import scipy.sparse as sp
 
 import trotterkit
 from _systems import random_pauli_sum, random_state
@@ -96,3 +97,50 @@ def test_mismatched_term_arrays_raise_valueerror(bad):
     with pytest.raises(ValueError):
         trotterkit.evolve(random_state(3, 0), t=1.0, steps=1,
                           terms=(x, z, c), backend="c")
+
+
+@pytest.mark.parametrize("order", [2, 4])
+@pytest.mark.parametrize("complex_coeffs", [False, True])
+def test_grouped_match_reference(order, complex_coeffs):
+    _, _, _, H = random_pauli_sum(5, 20, seed=21,
+                                  complex_coeffs=complex_coeffs)
+    psi0 = random_state(5, seed=22)
+    want = reference.evolve_grouped(psi0, H, stages(0.7, 6, order), 6)
+    got = trotterkit.evolve(psi0, t=0.7, steps=6, H=sp.csr_array(H),
+                            mode="grouped", order=order, backend="c")
+    np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-13)
+
+
+def test_grouped_one_sided_blocks():
+    H = np.zeros((8, 8), dtype=complex)
+    H[1, 6] = 0.4
+    H[2, 2] = -0.3
+    psi0 = random_state(3, seed=23)
+    want = reference.evolve_grouped(psi0, H, stages(1.0, 3, 2), 3)
+    got = trotterkit.evolve(psi0, t=1.0, steps=3, H=H, mode="grouped",
+                            backend="c")
+    np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-13)
+
+
+def test_grouped_wrong_qubit_count_raises_einval():
+    lib = _backend.load("c")
+    row = np.array([0], dtype=np.uint64)
+    col = np.array([1], dtype=np.uint64)
+    v = np.array([1.0])
+    handle = ctypes.c_void_p()
+    assert lib.tk_groups_build(
+        2, row.ctypes.data_as(ctypes.c_void_p),
+        col.ctypes.data_as(ctypes.c_void_p),
+        v.ctypes.data_as(ctypes.c_void_p),
+        np.zeros(1).ctypes.data_as(ctypes.c_void_p), 1,
+        ctypes.byref(handle)) == 0
+    try:
+        psi = np.zeros(8, dtype=complex)
+        dt = np.array([0.1])
+        sched = _backend.Schedule(dt.ctypes.data_as(ctypes.c_void_p),
+                                  1, 1)
+        assert lib.tk_evolve_grouped(
+            psi.ctypes.data_as(ctypes.c_void_p), 3, handle,
+            ctypes.byref(sched), 1) == 1
+    finally:
+        lib.tk_groups_free(handle)
