@@ -76,7 +76,7 @@ enum { TK_OK = 0, TK_EINVAL = 1, TK_ENOMEM = 2, TK_EQUBITS = 3 };
  *   TK_ONTHEFLY signs and partner indices computed in the kernel.
  *   TK_TABLES   precomputed index/sign tables.
  * A backend returns TK_EINVAL for a strategy it does not support
- * (the C backend today: TK_AUTO and TK_ONTHEFLY only). */
+ * (the c, cpp and rust backends: TK_AUTO and TK_ONTHEFLY only). */
 enum { TK_AUTO = 0, TK_ONTHEFLY = 1, TK_TABLES = 2 };
 
 #define TK_MAX_QUBITS 32u
@@ -125,11 +125,12 @@ typedef struct tk_groups tk_groups;
  *              x < 2^tile_bits are applied tile by tile.
  *   n_threads  0 = auto, 1 = serial, k > 1 = k threads; < 0 invalid.
  * The result does not depend on tile_bits or n_threads. A value the
- * backend does not support returns TK_EINVAL. The C backend supports
- * strategy AUTO/ONTHEFLY, tile_bits 3..n_qubits-1 (or <= 0), and
- * n_threads > 1 only when built with OpenMP. Its auto choices are
- * measured on one machine: serial below 11 qubits, otherwise up to 4
- * threads with tiles of 2^(n_qubits-2).
+ * backend does not support returns TK_EINVAL. The c, cpp and rust
+ * backends support strategy AUTO/ONTHEFLY, tile_bits 3..n_qubits-1
+ * (or <= 0), and n_threads > 1 (c and cpp only when built with
+ * OpenMP). Their auto choices are measured on one machine: serial
+ * below 11 qubits, otherwise up to 4 threads with tiles of
+ * 2^(n_qubits-2).
  *
  * Returns TK_EINVAL if psi, terms or s is NULL, if n > 0 with a NULL
  * term array, if n_stages > 0 with dt NULL, if any x[g] or z[g] has a
@@ -179,7 +180,7 @@ int tk_groups_build(uint32_t n_qubits, const uint64_t *row,
  * dt; the handle is not modified.
  *
  * n_threads: 0 = auto, 1 = serial, k > 1 = k threads; unsupported
- * values return TK_EINVAL (C backend today: 0 or 1).
+ * values return TK_EINVAL (c, cpp and rust backends: 0 or 1).
  *
  * Returns TK_EINVAL if psi, g or s is NULL, if n_stages > 0 with dt
  * NULL, if n_qubits differs from the n_qubits g was built with
