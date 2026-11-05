@@ -16,6 +16,8 @@ build:
 	mkdir -p src/trotterkit/_lib
 	cp builddir/libtrotterkit_c.so src/trotterkit/_lib/
 	cp builddir/trotterkit-c src/trotterkit/_lib/
+	cp builddir/libtrotterkit_cpp.so builddir/trotterkit-cpp \
+	    src/trotterkit/_lib/
 	$(PIP) install -e '.[test]'
 
 check: build

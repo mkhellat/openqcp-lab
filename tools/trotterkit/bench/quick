@@ -8,8 +8,10 @@
         [--cool-to C] [--dry-run]
 
 ARGS are the CLI options for that case; leading KEY=VALUE words are
-set in its environment, e.g.
+set in its environment, except CLI=PATH, which runs that executable
+instead of --cli (to compare backends), e.g.
     --case scalar 'TROTTERKIT_FORCE_SCALAR=1 --t 1 --steps 50'
+    --case cpp 'CLI=src/trotterkit/_lib/trotterkit-cpp --t 1 --steps 50'
 
 Each rep runs every case once, rotating which goes first, under
 `perf stat -e cycles:u,instructions:u`. Before each run it waits
@@ -135,10 +137,11 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     cases = [(name, *parse_case(spec)) for name, spec in a.case]
+    clis = {name: env.pop("CLI", a.cli) for name, env, _ in cases}
 
     if a.dry_run:
         for name, env, args in cases:
-            print(name, env, a.cli, a.workload, *args)
+            print(name, env, clis[name], a.workload, *args)
         return 0
     busy = busy_processes()
     if busy:
@@ -157,7 +160,7 @@ def main(argv=None):
         order = cases[rep % len(cases):] + cases[:rep % len(cases)]
         for name, env, args in order:
             cool_to(target)
-            r = run_once(a.cli, a.workload, env, args)
+            r = run_once(clis[name], a.workload, env, args)
             results[name].append(r)
             print(f"rep {rep} {name}: {r['cycles']:.4e} cycles, "
                   f"{r['kernel_seconds']:.4f} s", flush=True)
@@ -193,7 +196,7 @@ def main(argv=None):
         json.dump({"workload": str(a.workload), "cli": a.cli,
                    "metric": a.metric,
                    "cooldown_c": target,
-                   "cases": {n: {"env": e, "args": g,
+                   "cases": {n: {"env": e, "args": g, "cli": clis[n],
                                  "runs": results[n]}
                              for n, e, g in cases}}, fh, indent=1)
     print(f"\nraw results: {path}")
