@@ -3,13 +3,15 @@
 # Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
 """Write a coupled-oscillator workload file for the CLIs.
 
-    bench/make_workload {chain,full} N OUT [--seed S]
+    bench/make_workload {chain,full} N OUT [--seed S] [--grouped-only]
 
 chain: unit masses, unit springs between neighbours only. full: the
 N=30 notebook's random case - masses 1 + U[0, 1), every spring
 abs(normal(1, 0.3)), seeded. The Hamiltonian is built and padded with
 paulikit, decomposed with its FWHT, and stored with its sparse matrix
 and psi0 = (|0> - |1>)/sqrt(2), the notebook's initial state.
+--grouped-only stores no Pauli terms (grouped mode reads only the
+matrix), which skips the decomposition at large N.
 """
 
 import argparse
@@ -42,6 +44,7 @@ def main(argv=None):
     ap.add_argument("n", type=int)
     ap.add_argument("out")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--grouped-only", action="store_true")
     a = ap.parse_args(argv)
 
     k, masses = params(a.kind, a.n, a.seed)
@@ -53,8 +56,12 @@ def main(argv=None):
     dim = 1 << n_qubits
     print(f"{a.kind} N={a.n}: {n_qubits} qubits, dim {dim}, "
           f"nnz {Hp.nnz}, psi0 {dim * 16} B", flush=True)
-    x, z, c = fwht.fwht_pauli_coefficients(
-        Hp, sparse=True, chunk_size=256, atol=1e-12)
+    if a.grouped_only:
+        x = z = np.zeros(0, dtype=np.uint64)
+        c = np.zeros(0, dtype=complex)
+    else:
+        x, z, c = fwht.fwht_pauli_coefficients(
+            Hp, sparse=True, chunk_size=256, atol=1e-12)
     psi0 = np.zeros(dim, dtype=complex)
     psi0[0], psi0[1] = 1 / np.sqrt(2), -1 / np.sqrt(2)
     workload.write(a.out, n_qubits, x, z, c, psi0, H=Hp)

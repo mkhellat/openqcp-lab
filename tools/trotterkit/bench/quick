@@ -5,7 +5,7 @@
 
     bench/quick WORKLOAD --case NAME 'ARGS' --case NAME 'ARGS' ...
         [--reps 5] [--metric cycles|kernel_seconds] [--cli PATH]
-        [--cool-to C] [--dry-run]
+        [--cool-to C] [--out FILE] [--dry-run]
 
 ARGS are the CLI options for that case; leading KEY=VALUE words are
 set in its environment, except CLI=PATH, which runs that executable
@@ -23,7 +23,8 @@ kernel_seconds per case, Welch's t-test of each case's --metric
 (cycles by default; kernel_seconds for thread scaling, since cycles
 add up across threads) against the first case, and flags
 instruction counts that vary by more than 0.1% (a harness problem,
-not noise). Raw results go to bench/results/quick-<time>.json.
+not noise). Raw results go to --out, by default
+bench/results/quick-<time>.json.
 """
 
 import argparse
@@ -134,6 +135,7 @@ def main(argv=None):
                     default="cycles")
     ap.add_argument("--cli", default=str(DEFAULT_CLI))
     ap.add_argument("--cool-to", type=float)
+    ap.add_argument("--out")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     cases = [(name, *parse_case(spec)) for name, spec in a.case]
@@ -189,9 +191,13 @@ def main(argv=None):
             line += f"  [instructions vary {100 * spread:.2f}%]"
         print(line)
 
-    out = HERE / "results"
-    out.mkdir(exist_ok=True)
-    path = out / f"quick-{time.strftime('%Y%m%dT%H%M%S')}.json"
+    if a.out:
+        path = pathlib.Path(a.out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        out = HERE / "results"
+        out.mkdir(exist_ok=True)
+        path = out / f"quick-{time.strftime('%Y%m%dT%H%M%S')}.json"
     with open(path, "w") as fh:
         json.dump({"workload": str(a.workload), "cli": a.cli,
                    "metric": a.metric,
