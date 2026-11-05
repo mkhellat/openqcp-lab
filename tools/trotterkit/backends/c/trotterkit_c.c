@@ -387,18 +387,49 @@ typedef struct {
     const unsigned char *local;    /* x < 2^tile_bits */
     const size_t *run_end;         /* end of the local run at g */
     const size_t *run_begin;       /* start of the local run at g */
+    struct spin_barrier *bar;      /* team barrier, NULL if serial */
 } drive_ctx;
 
-#if defined(_OPENMP)
-#define TK_BARRIER(T)                    \
-    do {                                 \
-        if ((T) > 1) {                   \
-            _Pragma("omp barrier")       \
-        }                                \
-    } while (0)
-#else
-#define TK_BARRIER(T) ((void)(T))
+/* Team barrier after every term or tile-local run. A spinning barrier
+ * on atomics, the same algorithm as the C++ and Rust backends: OpenMP's
+ * barrier cost 26% more wall time at 12 qubits (chain N=80, 4 threads)
+ * and the wait policy made no difference. C99 has no atomics, so this
+ * uses GCC's builtins and falls back to the OpenMP barrier elsewhere. */
+struct spin_barrier {
+    size_t arrived, gen;
+};
+
+static void team_barrier(const drive_ctx *c, int T)
+{
+    if (T <= 1)
+        return;
+#if defined(__GNUC__)
+    {
+        struct spin_barrier *b = c->bar;
+        size_t gen = __atomic_load_n(&b->gen, __ATOMIC_ACQUIRE);
+        if (__atomic_add_fetch(&b->arrived, 1, __ATOMIC_ACQ_REL)
+            == (size_t)T) {
+            /* Reset before releasing: the next phase's arrivals only
+             * start after they observe the new generation. */
+            __atomic_store_n(&b->arrived, 0, __ATOMIC_RELAXED);
+            __atomic_add_fetch(&b->gen, 1, __ATOMIC_RELEASE);
+        } else {
+            while (__atomic_load_n(&b->gen, __ATOMIC_ACQUIRE) == gen) {
+#if defined(__x86_64__) || defined(__i386__)
+                __builtin_ia32_pause();
 #endif
+            }
+        }
+    }
+#elif defined(_OPENMP)
+    (void)c;
+    {
+#pragma omp barrier
+    }
+#else
+    (void)c;
+#endif
+}
 
 /* Thread tid of T applies its share of term g to the whole state. */
 static void term_share(const drive_ctx *c, size_t g, const double *k4,
@@ -461,7 +492,7 @@ static void drive(const drive_ctx *c, int tid, int T)
                     term_share(c, g, cs + 4u * g, tid, T);
                     g++;
                 }
-                TK_BARRIER(T);
+                team_barrier(c, T);
             }
             for (g = c->n; g > 0u;) {
                 size_t last = g - 1u;
@@ -472,7 +503,7 @@ static void drive(const drive_ctx *c, int tid, int T)
                     term_share(c, last, cs + 4u * last, tid, T);
                     g = last;
                 }
-                TK_BARRIER(T);
+                team_barrier(c, T);
             }
         }
 }
@@ -596,13 +627,17 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
     c.local = local;
     c.run_end = run_end;
     c.run_begin = run_begin;
+    {
+        struct spin_barrier bar = {0, 0};
+        c.bar = &bar;
 #if defined(_OPENMP)
-    if (T > 1) {
+        if (T > 1) {
 #pragma omp parallel num_threads(T)
-        drive(&c, omp_get_thread_num(), omp_get_num_threads());
-    } else
+            drive(&c, omp_get_thread_num(), omp_get_num_threads());
+        } else
 #endif
-        drive(&c, 0, 1);
+            drive(&c, 0, 1);
+    }
     (void)T;                     /* unused without OpenMP */
 
     for (j = 0; j < dim; j++) {
