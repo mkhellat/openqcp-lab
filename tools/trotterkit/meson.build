@@ -8,6 +8,9 @@ project('trotterkit', 'c',
 
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
+# Optional: without OpenMP the backend is serial and n_threads > 1
+# returns TK_EINVAL.
+omp_dep = dependency('openmp', required: false)
 inc = include_directories('include')
 
 c_flags = ['-march=native', '-ffp-contract=off']
@@ -15,7 +18,7 @@ c_flags = ['-march=native', '-ffp-contract=off']
 lib_c = shared_library('trotterkit_c',
   'backends/c/trotterkit_c.c',
   include_directories: inc,
-  dependencies: m_dep,
+  dependencies: [m_dep, omp_dep],
   c_args: c_flags)
 
 # The CLI is copied next to the library into src/trotterkit/_lib/ and
