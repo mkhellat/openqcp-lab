@@ -50,6 +50,17 @@ def bound_terms(coeff, t, eps, order=2, atol=1e-12):
     return steps_for(alpha_from_norms(np.abs(coeff.real)), t, eps)
 
 
+def grouped_norms(H):
+    """Exact operator norm of each grouped-mode fragment, in evolution
+    order: diagonal first (if any), then XOR slices ascending."""
+    diag, frags = fragments(sp.csr_array(H, dtype=complex))
+    norms = [max(abs(d) for d in diag.values())] if diag else []
+    for blocks in frags.values():
+        norms.append(max(max(abs(a), abs(b))
+                         for a, b in blocks.values()))
+    return norms
+
+
 def bound_grouped(H, t, eps, order=2, atol=1e-12):
     """Steps for grouped mode; each slice's norm is exact: a direct
     sum of [[0, a], [b, 0]] blocks has norm max(|a|, |b|)."""
@@ -57,9 +68,4 @@ def bound_grouped(H, t, eps, order=2, atol=1e-12):
     m = sp.csr_array(H, dtype=complex)
     if abs(m - m.conj().T).max() > atol:
         raise ValueError("bound needs a Hermitian H")
-    diag, frags = fragments(m)
-    norms = [max(abs(d) for d in diag.values())] if diag else []
-    for blocks in frags.values():
-        norms.append(max(max(abs(a), abs(b))
-                         for a, b in blocks.values()))
-    return steps_for(alpha_from_norms(norms), t, eps)
+    return steps_for(alpha_from_norms(grouped_norms(m)), t, eps)

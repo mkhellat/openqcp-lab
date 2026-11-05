@@ -11,6 +11,7 @@ import pytest
 from _systems import random_pauli_sum
 from trotterkit import bound
 from trotterkit.paulis import pauli_matrix
+from trotterkit.reference import fragments
 
 
 def _exact_alpha(parts):
@@ -58,3 +59,41 @@ def test_only_order_two():
     _, _, c, _ = random_pauli_sum(3, 4, seed=6)
     with pytest.raises(NotImplementedError):
         bound.bound_terms(c, 1.0, 1e-3, order=4)
+
+
+def test_alpha_from_norms_indexing():
+    # Suffix sums are [5, 3, 0]: a suffix taken from the prefix, or a
+    # tail that includes g itself, changes this value.
+    assert bound.alpha_from_norms([1.0, 2.0, 3.0]) == pytest.approx(
+        103 / 6, rel=1e-15)
+    assert bound.alpha_from_norms([2.5]) == 0.0
+
+
+def _dense_fragments(H, n_qubits):
+    dim = 1 << n_qubits
+    diag, frags = fragments(H)
+    parts = []
+    if diag:
+        d = np.zeros((dim, dim), dtype=complex)
+        for i, v in diag.items():
+            d[i, i] = v
+        parts.append(d)
+    for x, blocks in frags.items():
+        m = np.zeros((dim, dim), dtype=complex)
+        for i, (a, b) in blocks.items():
+            m[i, i ^ x] = a
+            m[i ^ x, i] = b
+        parts.append(m)
+    return parts
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_grouped_norms_match_exact_and_dominate(seed):
+    _, _, _, H = random_pauli_sum(3, 8, seed=seed)
+    parts = _dense_fragments(H, 3)
+    norms = bound.grouped_norms(H)
+    assert len(norms) == len(parts)
+    for k, part in enumerate(parts):
+        assert norms[k] == pytest.approx(
+            np.linalg.norm(part, 2), rel=1e-12)
+    assert bound.alpha_from_norms(norms) >= _exact_alpha(parts) - 1e-12
