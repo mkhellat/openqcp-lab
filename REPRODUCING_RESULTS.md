@@ -37,6 +37,13 @@ results, which may differ slightly due to quantum measurement statistics.
 over different time spans, so execution time depends on the number of shots
 and time points. Expect several minutes for full execution.
 
+**Companion notebook:** `N_coupled_harmonic_oscillators_1_D_N_30.ipynb`
+takes the same pipeline to $N=30$ with `paulikit` and a local
+statevector simulator (no Classiq, no figures yet). It compiles
+`trotter_kernel.c` to `trotter_kernel.so` in the working directory if
+`gcc` is available; a full run then takes under a minute, most of it
+the $t=1.0$ evolution in its §6.
+
 ## Notebooks with Generated Quantum Model Files
 
 Several notebooks generate `.qmod` (quantum model) files:

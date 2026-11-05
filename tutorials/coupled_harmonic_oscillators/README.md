@@ -59,28 +59,47 @@ the full complex amplitude and reconstruct the correctly signed
 $y_i(t)$, verified against both an independent statevector calculation
 and a direct classical-ODE solution of the same physical system.
 
-The notebook in this directory performs that Pauli decomposition
-symbolically (SymPy), which is fine for small $N$ but does not scale
-past roughly $N=4$ in practice. Scaling this to larger $N$ (target
-$N=30$, stretch $N=100+$) is an active performance-engineering effort,
-developed as a standalone installable package rather than inline
-notebook code: see [`../../tools/paulikit`](../../tools/paulikit), which
-implements a fast, original Pauli decomposition algorithm (Fast
-Walsh-Hadamard Transform based, O(N² log N)) with its own correctness
-tests, benchmarks, and command-line interface. See
-[`../../tools/paulikit/PLAN.md`](../../tools/paulikit/PLAN.md) for the full
-research background and phased plan.
+The $N=2$ notebook performs that Pauli decomposition symbolically
+(SymPy), which is fine for small $N$ but does not scale past roughly
+$N=4$ in practice.
+
+## Scaling to $N=30$
+
+`N_coupled_harmonic_oscillators_1_D_N_30.ipynb` is a companion to the
+$N=2$ notebook that takes the same pipeline to $N=30$ (9 qubits):
+
+- the Hamiltonian is built and Pauli-decomposed with
+  [`paulikit`](https://pypi.org/project/paulikit/) (Fast
+  Walsh-Hadamard Transform, $O(n\cdot4^n)$ for $n$ qubits), and every
+  coefficient is checked by direct projection plus a Parseval
+  completeness check;
+- the Trotter-repetition count comes from a coefficient-only upper
+  bound on the same Childs et al. 2nd-order bound - looser, but needing
+  no per-term SVDs;
+- the evolution runs on a self-contained, matrix-free statevector
+  simulator with a small compiled C kernel (`trotter_kernel.c`,
+  compiled on first run if `gcc` is available, with a pure-Python
+  fallback) instead of Classiq.
+
+It currently stops at a verified magnitude-level evolution; trajectory
+decoding and the Hadamard-test readout at $N=30$ are listed as next
+steps at the end of that notebook.
 
 
 # Software Requirements
 
-The following Python packages are required to run this notebook:
+The following Python packages are required to run these notebooks:
 
 - `numpy`
 - `scipy`
 - `sympy`
 - `matplotlib`
-- `classiq`
+- `classiq` ($N=2$ notebook)
+- `paulikit` ($N=30$ notebook)
+
+The $N=30$ notebook also uses a C compiler (`gcc`) if one is present;
+without it, it runs the same computation in pure Python, much more
+slowly.
 
 **Note:** The `math` and `enum` modules are part of Python's standard
 library and do not require installation. All other packages listed above
