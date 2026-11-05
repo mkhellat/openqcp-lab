@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
+"""Compare CLI runs by cycles, interleaved, with Welch's t-test.
+
+    bench/quick WORKLOAD --case NAME 'ARGS' --case NAME 'ARGS' ...
+        [--reps 5] [--cli PATH] [--cool-to C] [--dry-run]
+
+ARGS are the CLI options for that case; leading KEY=VALUE words are
+set in its environment, e.g.
+    --case scalar 'TROTTERKIT_FORCE_SCALAR=1 --t 1 --steps 50'
+
+Each rep runs every case once, rotating which goes first, under
+`perf stat -e cycles:u,instructions:u`. Before each run it waits
+until the CPU package is at or below the cooldown target. The target
+is the settled idle temperature + 5 C, measured at start; if it is
+not reached within 180 s the run stops instead of measuring a hot
+machine. Reports median and IQR of cycles, instructions and
+kernel_seconds per case, Welch's t-test of each case's cycles against
+the first case, and flags instruction counts that vary by more than
+0.1% (a harness problem, not noise). Raw results go to
+bench/results/quick-<time>.json.
+"""
+
+import argparse
+import glob
+import json
+import os
+import pathlib
+import shlex
+import subprocess
+import sys
+import time
+
+import numpy as np
+from scipy import stats
+
+HERE = pathlib.Path(__file__).resolve().parent
+DEFAULT_CLI = HERE.parent / "src" / "trotterkit" / "_lib" / "trotterkit-c"
+
+
+def pkg_temp():
+    for zone in glob.glob("/sys/class/thermal/thermal_zone*"):
+        with open(zone + "/type") as fh:
+            if fh.read().strip() == "x86_pkg_temp":
+                with open(zone + "/temp") as fh2:
+                    return int(fh2.read()) / 1000.0
+    return None
+
+
+def settled_idle(seconds=30):
+    """Lowest temperature seen while idling for `seconds`."""
+    low = pkg_temp()
+    end = time.time() + seconds
+    while time.time() < end:
+        time.sleep(1)
+        low = min(low, pkg_temp())
+    return low
+
+
+def cool_to(target, limit=180):
+    t0 = time.time()
+    while pkg_temp() > target:
+        if time.time() - t0 > limit:
+            sys.exit(f"quick: package still above {target} C after "
+                     f"{limit} s; cooldown target unreachable, stopping")
+        time.sleep(1)
+
+
+def busy_processes():
+    """Other processes using > 50% of a CPU over one second."""
+    def ticks():
+        out = {}
+        for d in glob.glob("/proc/[0-9]*"):
+            try:
+                with open(d + "/stat") as fh:
+                    f = fh.read().rsplit(")", 1)[1].split()
+                out[d] = int(f[11]) + int(f[12])
+            except (OSError, IndexError):
+                pass
+        return out
+    a = ticks()
+    time.sleep(1)
+    b = ticks()
+    hz = os.sysconf("SC_CLK_TCK")
+    me = f"/proc/{os.getpid()}"
+    return [d for d in b if d != me and b[d] - a.get(d, b[d]) > hz / 2]
+
+
+def parse_case(spec):
+    words = shlex.split(spec)
+    env = {}
+    while words and "=" in words[0] and not words[0].startswith("-"):
+        key, value = words.pop(0).split("=", 1)
+        env[key] = value
+    return env, words
+
+
+def run_once(cli, workload, env, args):
+    cmd = ["perf", "stat", "-x", ",", "-e", "cycles:u,instructions:u",
+           "--", str(cli), str(workload), *args]
+    res = subprocess.run(cmd, capture_output=True, text=True,
+                         env={**os.environ, **env})
+    if res.returncode != 0:
+        sys.exit(f"quick: {' '.join(cmd)} failed:\n{res.stderr}")
+    counts = {}
+    for line in res.stderr.splitlines():
+        f = line.split(",")
+        if len(f) > 2 and f[2] in ("cycles:u", "instructions:u"):
+            counts[f[2].split(":")[0]] = float(f[0])
+    info = json.loads(res.stdout)
+    return {"cycles": counts["cycles"],
+            "instructions": counts["instructions"],
+            "kernel_seconds": info["kernel_seconds"],
+            "norm2": info["norm2"]}
+
+
+def summary(values):
+    q1, med, q3 = np.percentile(values, [25, 50, 75])
+    return med, q3 - q1
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("workload")
+    ap.add_argument("--case", nargs=2, action="append", required=True,
+                    metavar=("NAME", "ARGS"))
+    ap.add_argument("--reps", type=int, default=5)
+    ap.add_argument("--cli", default=str(DEFAULT_CLI))
+    ap.add_argument("--cool-to", type=float)
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args(argv)
+    cases = [(name, *parse_case(spec)) for name, spec in a.case]
+
+    if a.dry_run:
+        for name, env, args in cases:
+            print(name, env, a.cli, a.workload, *args)
+        return 0
+    busy = busy_processes()
+    if busy:
+        sys.exit(f"quick: other CPU-bound processes running: {busy}")
+    if a.cool_to is not None:
+        target = a.cool_to
+    else:
+        print("quick: measuring settled idle temperature (30 s)...",
+              flush=True)
+        target = settled_idle() + 5.0
+    print(f"quick: cooldown target {target:.1f} C", flush=True)
+    cool_to(target)
+
+    results = {name: [] for name, _, _ in cases}
+    for rep in range(a.reps):
+        order = cases[rep % len(cases):] + cases[:rep % len(cases)]
+        for name, env, args in order:
+            cool_to(target)
+            r = run_once(a.cli, a.workload, env, args)
+            results[name].append(r)
+            print(f"rep {rep} {name}: {r['cycles']:.4e} cycles, "
+                  f"{r['kernel_seconds']:.4f} s", flush=True)
+
+    base = cases[0][0]
+    base_cyc = [r["cycles"] for r in results[base]]
+    print()
+    for name, _, _ in cases:
+        rs = results[name]
+        cyc = [r["cycles"] for r in rs]
+        ins = [r["instructions"] for r in rs]
+        sec = [r["kernel_seconds"] for r in rs]
+        c_med, c_iqr = summary(cyc)
+        s_med, s_iqr = summary(sec)
+        line = (f"{name:>14}: cycles {c_med:.4e} (IQR {c_iqr:.2e}), "
+                f"kernel {s_med:.4f} s (IQR {s_iqr:.4f})")
+        if name != base:
+            p = stats.ttest_ind(cyc, base_cyc, equal_var=False).pvalue
+            line += (f", cycles/{base} = "
+                     f"{c_med / np.median(base_cyc):.3f}, p = {p:.2g}")
+        spread = (max(ins) - min(ins)) / np.median(ins)
+        if spread > 1e-3:
+            line += f"  [instructions vary {100 * spread:.2f}%]"
+        print(line)
+
+    out = HERE / "results"
+    out.mkdir(exist_ok=True)
+    path = out / f"quick-{time.strftime('%Y%m%dT%H%M%S')}.json"
+    with open(path, "w") as fh:
+        json.dump({"workload": str(a.workload), "cli": a.cli,
+                   "cooldown_c": target,
+                   "cases": {n: {"env": e, "args": g,
+                                 "runs": results[n]}
+                             for n, e, g in cases}}, fh, indent=1)
+    print(f"\nraw results: {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
