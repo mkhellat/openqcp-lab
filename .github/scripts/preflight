@@ -54,11 +54,12 @@ if [ -n "$internal" ]; then
     echo "$internal"
 fi
 
-# 4. shellcheck on touched shell scripts (by shebang, any extension).
-# Contents come from <head-ref>, not the working tree, so the result
-# does not depend on what is checked out.
+# Contents of touched files come from <head-ref>, not the working
+# tree, so the result does not depend on what is checked out.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+
+# 4. shellcheck on touched shell scripts (by shebang, any extension).
 scripts=()
 while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -73,6 +74,35 @@ if [ ${#scripts[@]} -gt 0 ]; then
     echo "== shellcheck: ${scripts[*]}"
     (cd "$tmp" && shellcheck -S warning "${scripts[@]}") \
         || fail "shellcheck reported warnings"
+fi
+
+# 5. Touched notebooks are valid nbformat documents (needs nbformat).
+notebooks=()
+while IFS= read -r f; do
+    case "$f" in
+        *.ipynb)
+            mkdir -p "$tmp/$(dirname "$f")"
+            git show "$head:$f" > "$tmp/$f"
+            notebooks+=("$f") ;;
+    esac
+done <<< "$touched"
+if [ ${#notebooks[@]} -gt 0 ]; then
+    echo "== nbformat: ${notebooks[*]}"
+    (cd "$tmp" && python3 - "${notebooks[@]}" <<'PY') \
+        || fail "invalid notebook structure"
+import sys
+
+import nbformat
+
+bad = 0
+for path in sys.argv[1:]:
+    try:
+        nbformat.validate(nbformat.read(path, as_version=4))
+    except Exception as exc:  # report every notebook, not just one
+        print(f"{path}: {exc}")
+        bad = 1
+sys.exit(bad)
+PY
 fi
 
 if [ "$status" -eq 0 ]; then
