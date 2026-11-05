@@ -12,7 +12,7 @@ Status: in development inside openqcp-lab; not published.
 | Backend | Per-term | Grouped | SIMD / tiles / threads |
 |---|---|---|---|
 | python (reference) | yes | yes | - |
-| c | yes | yes | not yet (Plan 2) |
+| c | yes | yes | not yet |
 | cpp, rust | not yet | not yet | - |
 
 Usage:
@@ -26,7 +26,7 @@ Usage:
 `x`, `z`, `coeff` are paulikit's symplectic arrays
 (`fwht_pauli_coefficients(..., sparse=True, chunk_size=...)`).
 `trotterkit.bound.bound_terms` / `bound_grouped` give a step count
-for a target error (Hermitian H, order 2).
+for a target error (the bound requires a Hermitian H; order 2 only).
 
 Related work: HamSim (Chundury et al., arXiv:2606.16959) also
 exploits diagonal sparsity for classical Hamiltonian simulation, but
@@ -39,3 +39,5 @@ into XOR-offset fragments or use Trotter-Suzuki product formulas.
     ./configure
     make build
     make check
+
+`make check` also runs `shellcheck`, so it must be installed.
