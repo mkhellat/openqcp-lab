@@ -72,6 +72,16 @@ bool operator!=(const Aligned<T> &, const Aligned<U> &) { return false; }
 
 using dvec = std::vector<double, Aligned<double>>;
 
+// a * b * c, throwing std::bad_alloc (returned as TK_ENOMEM) when it
+// overflows size_t instead of wrapping to a small allocation.
+std::size_t size_mul(std::size_t a, std::size_t b, std::size_t c)
+{
+    constexpr std::size_t max = static_cast<std::size_t>(-1);
+    if ((b != 0 && a > max / b) || (c != 0 && a * b > max / c))
+        throw std::bad_alloc();
+    return a * b * c;
+}
+
 // exp(-i theta c P) = a I - i b P, a = cos(theta c), b = sin(theta c):
 // (a_re, a_im, k_re, k_im), k = -i b phase(x, z).
 void term_constants(double theta, double c_re, double c_im,
@@ -526,7 +536,7 @@ int evolve_terms(double *psi, std::uint32_t n_qubits, const tk_terms *t,
                         ? static_cast<int>(n_qubits) - 2 : -1;
     const std::size_t dim = std::size_t{1} << n_qubits;
 
-    dvec re(dim), im(dim), consts(n_st * n * 4u);
+    dvec re(dim), im(dim), consts(size_mul(n_st, n, 4u));
     std::vector<unsigned char> local;
     std::vector<std::size_t> run_end, run_begin;
     if (tile_bits > 0) {
@@ -758,7 +768,8 @@ int evolve_grouped(double *psi, std::uint32_t n_qubits,
     const std::size_t dim = std::size_t{1} << n_qubits;
     const std::size_t n_diag = g->diag_i.size(), n_blk = g->blk_i.size();
     const std::size_t n_frag = g->frag_off.size() - 1u;
-    dvec re(dim), im(dim), dm(n_st * n_diag * 2u), bm(n_st * n_blk * 6u);
+    dvec re(dim), im(dim), dm(size_mul(n_st, n_diag, 2u)),
+        bm(size_mul(n_st, n_blk, 6u));
     for (std::size_t st = 0; st < n_st; st++) {
         double theta = 0.5 * s->dt[st];
         for (std::size_t d = 0; d < n_diag; d++) {

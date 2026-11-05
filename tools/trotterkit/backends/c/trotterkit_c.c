@@ -62,6 +62,19 @@ static unsigned top_bit(uint64_t v)
     return h;
 }
 
+/* *out = a * b * c; 0 if that overflows size_t (the header promises
+ * TK_ENOMEM for sizes that overflow, never a wrapped allocation). */
+static int size_mul(size_t *out, size_t a, size_t b, size_t c)
+{
+    if (b != 0u && a > SIZE_MAX / b)
+        return 0;
+    a *= b;
+    if (c != 0u && a > SIZE_MAX / c)
+        return 0;
+    *out = a * c;
+    return 1;
+}
+
 static void *alloc64(size_t bytes)
 {
     void *p = NULL;
@@ -577,6 +590,7 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
     double *re, *im, *consts;
     unsigned char *local = NULL;
     size_t *run_end = NULL, *run_begin = NULL;
+    size_t consts_bytes, runs_bytes;
     const char *force = getenv("TROTTERKIT_FORCE_SCALAR");
     drive_ctx c;
     int T;
@@ -611,13 +625,16 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
     if (tile_bits == 0)
         tile_bits = T > 1 && n_qubits >= 5u ? (int)n_qubits - 2 : -1;
     dim = (size_t)1 << n_qubits;
+    if (!size_mul(&consts_bytes, n_st, n, 4u * sizeof *consts)
+        || !size_mul(&runs_bytes, n == 0u ? 1u : n, sizeof *run_end, 1u))
+        return TK_ENOMEM;
     re = alloc64(dim * sizeof *re);
     im = alloc64(dim * sizeof *im);
-    consts = alloc64(n_st * n * 4u * sizeof *consts);
+    consts = alloc64(consts_bytes);
     if (tile_bits > 0) {
         local = malloc(n == 0u ? 1u : n);
-        run_end = malloc((n == 0u ? 1u : n) * sizeof *run_end);
-        run_begin = malloc((n == 0u ? 1u : n) * sizeof *run_begin);
+        run_end = malloc(runs_bytes);
+        run_begin = malloc(runs_bytes);
     }
     if (re == NULL || im == NULL || consts == NULL
         || (tile_bits > 0
@@ -766,7 +783,7 @@ int tk_groups_build(uint32_t n_qubits, const uint64_t *row,
                     const uint64_t *col, const double *v_re,
                     const double *v_im, size_t nnz, tk_groups **out)
 {
-    size_t dim, e, m = 0, n_diag = 0, n_blk = 0, n_frag = 0;
+    size_t dim, e, m = 0, n_diag = 0, n_blk = 0, n_frag = 0, ent_bytes;
     tk_entry *ent;
     tk_groups *g;
 
@@ -779,7 +796,9 @@ int tk_groups_build(uint32_t n_qubits, const uint64_t *row,
                      || v_im == NULL))
         return TK_EINVAL;
     dim = (size_t)1 << n_qubits;
-    ent = malloc(at_least_one(nnz) * sizeof *ent);
+    if (!size_mul(&ent_bytes, at_least_one(nnz), sizeof *ent, 1u))
+        return TK_ENOMEM;
+    ent = malloc(ent_bytes);
     if (ent == NULL)
         return TK_ENOMEM;
     for (e = 0; e < nnz; e++) {
@@ -988,7 +1007,7 @@ int tk_evolve_grouped(double *psi, uint32_t n_qubits,
                       const tk_groups *g, const tk_schedule *s,
                       int n_threads)
 {
-    size_t dim, n_st, st, step, j, d, b, f;
+    size_t dim, n_st, st, step, j, d, b, f, dm_bytes, bm_bytes;
     double *re, *im, *dm, *bm;
 
     if (psi == NULL || g == NULL || s == NULL)
@@ -999,10 +1018,13 @@ int tk_evolve_grouped(double *psi, uint32_t n_qubits,
     if (n_st > 0u && s->dt == NULL)
         return TK_EINVAL;
     dim = (size_t)1 << n_qubits;
+    if (!size_mul(&dm_bytes, n_st, g->n_diag, 2u * sizeof *dm)
+        || !size_mul(&bm_bytes, n_st, g->n_blk, 6u * sizeof *bm))
+        return TK_ENOMEM;
     re = alloc64(dim * sizeof *re);
     im = alloc64(dim * sizeof *im);
-    dm = alloc64(n_st * g->n_diag * 2u * sizeof *dm);
-    bm = alloc64(n_st * g->n_blk * 6u * sizeof *bm);
+    dm = alloc64(dm_bytes);
+    bm = alloc64(bm_bytes);
     if (re == NULL || im == NULL || dm == NULL || bm == NULL) {
         free(re);
         free(im);
