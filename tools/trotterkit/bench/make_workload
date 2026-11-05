@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
+"""Write a coupled-oscillator workload file for the CLIs.
+
+    bench/make_workload {chain,full} N OUT [--seed S]
+
+chain: unit masses, unit springs between neighbours only. full: the
+N=30 notebook's random case - masses 1 + U[0, 1), every spring
+abs(normal(1, 0.3)), seeded. The Hamiltonian is built and padded with
+paulikit, decomposed with its FWHT, and stored with its sparse matrix
+and psi0 = (|0> - |1>)/sqrt(2), the notebook's initial state.
+"""
+
+import argparse
+import sys
+
+import numpy as np
+from paulikit.algorithms import fwht
+from paulikit.hamiltonian import build_hamiltonian, pad_to_power_of_two
+
+from trotterkit import workload
+
+
+def params(kind, n, seed):
+    if kind == "chain":
+        k = {(i, j): 1.0 if j == i + 1 else 0.0
+             for i in range(n) for j in range(i, n)}
+        return k, [1.0] * n
+    rng = np.random.default_rng(seed)
+    masses = (1.0 + rng.random(n)).tolist()
+    k = {}
+    for i in range(n):
+        for j in range(i, n):
+            k[(i, j)] = float(abs(rng.normal(loc=1.0, scale=0.3)))
+    return k, masses
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("kind", choices=["chain", "full"])
+    ap.add_argument("n", type=int)
+    ap.add_argument("out")
+    ap.add_argument("--seed", type=int, default=0)
+    a = ap.parse_args(argv)
+
+    k, masses = params(a.kind, a.n, a.seed)
+    H = build_hamiltonian(a.n, k, masses, sparse=True)
+    Hp, n_qubits = pad_to_power_of_two(H, sparse=True)
+    # build_hamiltonian stores the zero springs as explicit entries.
+    Hp = Hp.tocsr()
+    Hp.eliminate_zeros()
+    dim = 1 << n_qubits
+    print(f"{a.kind} N={a.n}: {n_qubits} qubits, dim {dim}, "
+          f"nnz {Hp.nnz}, psi0 {dim * 16} B", flush=True)
+    x, z, c = fwht.fwht_pauli_coefficients(
+        Hp, sparse=True, chunk_size=256, atol=1e-12)
+    psi0 = np.zeros(dim, dtype=complex)
+    psi0[0], psi0[1] = 1 / np.sqrt(2), -1 / np.sqrt(2)
+    workload.write(a.out, n_qubits, x, z, c, psi0, H=Hp)
+    size = 64 + len(x) * 32 + Hp.nnz * 32 + dim * 16
+    print(f"{len(x)} terms -> {a.out} ({size / 2**20:.2f} MiB)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
