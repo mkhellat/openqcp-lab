@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
+"""Markdown tables from bench/results/campaign/*.json.
+
+    bench/tables [RESULTS_DIR]
+
+Per experiment: median of the metric per case, and for every case
+after the first its ratio to the first case as a ratio of geometric
+means with a 95% confidence interval and Welch's p-value, both
+computed on log values (ratios of positive times are log-symmetric).
+A difference is called significant at p < 0.05; otherwise the table
+says there is none. "single" experiments (n = 1) report the time
+only, never a ratio.
+"""
+
+import json
+import pathlib
+import sys
+
+import numpy as np
+from scipy import stats
+
+HERE = pathlib.Path(__file__).resolve().parent
+
+
+def ratio_ci(a, b):
+    """Geometric-mean ratio a/b, its 95% CI and Welch's p (log scale)."""
+    la, lb = np.log(a), np.log(b)
+    va, vb = la.var(ddof=1) / len(la), lb.var(ddof=1) / len(lb)
+    diff = la.mean() - lb.mean()
+    se = np.sqrt(va + vb)
+    df = (va + vb) ** 2 / (va ** 2 / (len(la) - 1)
+                           + vb ** 2 / (len(lb) - 1))
+    q = stats.t.ppf(0.975, df)
+    p = stats.ttest_ind(la, lb, equal_var=False).pvalue
+    return np.exp(diff), np.exp(diff - q * se), np.exp(diff + q * se), p
+
+
+def table(name, d):
+    if d.get("kind") == "single":
+        rows = [f"| {lang} | {r['kernel_seconds']:.1f} s | "
+                f"{r['steps']} steps |"
+                for lang, r in d["cases"].items()]
+        return (f"### {name}\n\nOne run each (n = 1, no ratio).\n\n"
+                "| backend | kernel time | |\n|---|---|---|\n"
+                + "\n".join(rows) + "\n")
+    metric = d.get("metric", "cycles")
+    unit = "cycles" if metric == "cycles" else "s"
+    cases = list(d["cases"])
+    base = np.array([r[metric] for r in d["cases"][cases[0]]["runs"]])
+    lines = [f"### {name}\n",
+             f"Metric: {metric}, {len(base)} interleaved reps; ratio to "
+             f"{cases[0]} (geometric means, 95% CI).\n",
+             f"| case | median ({unit}) | ratio to {cases[0]} | 95% CI "
+             "| p | |", "|---|---|---|---|---|---|"]
+    for c in cases:
+        v = np.array([r[metric] for r in d["cases"][c]["runs"]])
+        med = np.median(v)
+        cell = f"{med:.4e}" if metric == "cycles" else f"{med:.4f}"
+        if c == cases[0]:
+            lines.append(f"| {c} | {cell} | 1 | | | |")
+            continue
+        r, lo, hi, p = ratio_ci(v, base)
+        verdict = "significant" if p < 0.05 else "no significant difference"
+        lines.append(f"| {c} | {cell} | {r:.3f} | {lo:.3f}-{hi:.3f} "
+                     f"| {p:.2g} | {verdict} |")
+    return "\n".join(lines) + "\n"
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    rdir = pathlib.Path(argv[0]) if argv else HERE / "results" / "campaign"
+    for f in sorted(rdir.glob("*.json")):
+        print(table(f.stem, json.loads(f.read_text())))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

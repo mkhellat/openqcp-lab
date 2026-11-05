@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
+"""Run the C / C++ / Rust benchmark campaign (see METHODOLOGY.md).
+
+    bench/campaign WORKLOAD_DIR --list
+    bench/campaign WORKLOAD_DIR EXPERIMENT... [--reps 5]
+        [--clang-cli PATH]
+
+Each experiment is one bench/quick invocation (cases interleaved,
+cooldown, Welch's t-test) whose raw results go to
+bench/results/campaign/<experiment>.json; "single" experiments run
+each CLI once and record its JSON line. Workload files are made with
+bench/make_workload; the names below are expected in WORKLOAD_DIR:
+chain{30,40,50,80,100}.tkwl, full30.tkwl, chain{100,150}g.tkwl
+(--grouped-only).
+"""
+
+import argparse
+import json
+import pathlib
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+LIB = HERE.parent / "src" / "trotterkit" / "_lib"
+OUT = HERE / "results" / "campaign"
+LANGS = [("c", "trotterkit-c"), ("cpp", "trotterkit-cpp"),
+         ("rust", "trotterkit-rs")]
+
+# Steps chosen so one run takes about a second on the reference
+# machine (per-term) or about a million grouped block updates' worth.
+TERMS_1T = {"chain30": 50, "chain50": 4, "chain80": 1, "full30": 12}
+TERMS_AUTO = {"chain40": 20, "chain50": 4, "chain80": 1, "chain100": 1}
+GROUPED = {"chain30": 1000000, "chain50": 600000, "chain80": 350000,
+           "chain100g": 250000, "chain150g": 150000, "full30": 60000}
+# The N=30 notebook's full run: t = 10.762932 needs 22,058 Strang
+# steps for its target error.
+LONG_T, LONG_STEPS = "10.762932", 22058
+
+
+def experiments(clang_cli):
+    ex = {}
+    for w, n in TERMS_1T.items():
+        ex[f"terms-1t-{w}"] = ("cycles", w, [
+            (lang, f"CLI={LIB / cli} --t 1 --steps {n} --threads 1")
+            for lang, cli in LANGS])
+    for w, n in TERMS_AUTO.items():
+        ex[f"terms-auto-{w}"] = ("kernel_seconds", w, [
+            (lang, f"CLI={LIB / cli} --t 1 --steps {n}")
+            for lang, cli in LANGS])
+    for lang, cli in LANGS:
+        ex[f"scaling-{lang}-chain80"] = ("kernel_seconds", "chain80", [
+            (f"{lang}-T{t}", f"CLI={LIB / cli} --t 1 --steps 1 "
+                             f"--threads {t}" + (" --tile-bits 10"
+                                                 if t > 1 else ""))
+            for t in (1, 2, 4)])
+    for w, n in GROUPED.items():
+        ex[f"grouped-{w}"] = ("cycles", w, [
+            (lang, f"CLI={LIB / cli} --mode grouped --t 1 --steps {n}")
+            for lang, cli in LANGS])
+    if clang_cli:
+        for w in ("chain30", "chain50"):
+            n = TERMS_1T[w]
+            ex[f"ablation-clang-{w}"] = ("cycles", w, [
+                ("c-gcc", f"CLI={LIB / 'trotterkit-c'} --t 1 --steps {n} "
+                          "--threads 1"),
+                ("c-clang", f"CLI={clang_cli} --t 1 --steps {n} "
+                            "--threads 1"),
+                ("rust", f"CLI={LIB / 'trotterkit-rs'} --t 1 --steps {n} "
+                         "--threads 1")])
+    for lang, cli in LANGS:
+        ex[f"long-{lang}-chain30"] = ("single", "chain30", [
+            (lang, [str(LIB / cli), "--t", LONG_T, "--steps",
+                    str(LONG_STEPS)])])
+    return ex
+
+
+def run(name, spec, wdir, reps):
+    metric, w, cases = spec
+    path = pathlib.Path(wdir) / f"{w}.tkwl"
+    out = OUT / f"{name}.json"
+    if metric == "single":
+        (lang, argv), = cases
+        res = subprocess.run([argv[0], str(path), *argv[1:]],
+                             capture_output=True, text=True, check=True)
+        OUT.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"kind": "single", "workload": str(path),
+                                   "cases": {lang: json.loads(res.stdout)}},
+                                  indent=1))
+        print(res.stdout.strip())
+        return
+    argv = [sys.executable, str(HERE / "quick"), str(path), "--reps",
+            str(reps), "--cool-to", "60", "--metric", metric, "--out",
+            str(out)]
+    for case, args in cases:
+        argv += ["--case", case, args]
+    subprocess.run(argv, check=True)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("workload_dir")
+    ap.add_argument("experiment", nargs="*")
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--reps", type=int, default=5)
+    ap.add_argument("--clang-cli")
+    a = ap.parse_args(argv)
+    ex = experiments(a.clang_cli)
+    if a.list or not a.experiment:
+        for name, (metric, w, cases) in ex.items():
+            print(f"{name:28s} {metric:15s} {w:10s} {len(cases)} cases")
+        return 0
+    for name in a.experiment:
+        if name not in ex:
+            sys.exit(f"campaign: unknown experiment {name}")
+        print(f"== {name}", flush=True)
+        run(name, ex[name], a.workload_dir, a.reps)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
