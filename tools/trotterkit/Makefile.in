@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Generated from Makefile.in by ./configure; edit Makefile.in.
+# Portable across GNU and POSIX make: no GNU-only constructs.
+
+VENV   = @VENV@
+PYTHON = $(VENV)/bin/python
+PIP    = $(PYTHON) -m pip
+PYTEST = $(VENV)/bin/pytest
+MESON  = @MESON@
+
+all: build
+
+build:
+	$(PIP) install -e '.[test]'
+
+check: build
+	$(PYTEST)
+
+test: check
+
+clean:
+	rm -rf builddir src/trotterkit/_lib
+
+.PHONY: all build check test clean
