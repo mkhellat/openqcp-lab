@@ -1,30 +1,45 @@
 name: paulikit tests
 
-# Runs the suite on every push and pull request touching the package.
+# Runs the suite on pull requests touching the package, and on manual
+# dispatch. Nothing runs on push: every change goes through a pull
+# request, and the matrix starts only after a reviewer approves the
+# `ci` environment deployment (the `approve` job below). Preflight and
+# the DCO app give the first feedback before that.
 #
-# The only pre-existing workflow (paulikit-wheels.yml) triggers on
-# release tags and workflow_dispatch, so nothing exercised the test
-# suite between releases and the declared Python 3.10-3.13 support was
-# unverified until a tag was pushed. Automated tests that visibly run
+# The only other workflow (paulikit-wheels.yml) triggers on release
+# tags and workflow_dispatch, so without this one nothing exercised
+# the test suite between releases. Automated tests that visibly run
 # are also a review criterion for software-paper venues.
 on:
-  push:
-    branches: ["**"]
-    paths:
-      - "tools/paulikit/**"
-      - ".github/workflows/paulikit-tests.yml"
   pull_request:
     paths:
       - "tools/paulikit/**"
       - ".github/workflows/paulikit-tests.yml"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: tools/paulikit
 
 jobs:
+  approve:
+    # Waits until a required reviewer of the `ci` environment approves
+    # the run ("Review deployments" on the run page).
+    name: "reviewer approval"
+    runs-on: ubuntu-latest
+    environment: ci
+    defaults:
+      run:
+        # No checkout in this job, so tools/paulikit does not exist.
+        working-directory: .
+    steps:
+      - run: echo "CI approved for ${{ github.sha }}"
+
   test:
+    needs: approve
     name: "py${{ matrix.python-version }} / ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
     strategy:
