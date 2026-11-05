@@ -82,8 +82,13 @@ guidelines to help you get started.
    - Commit your changes with a clear and descriptive message:
      ```bash
      git add .
-     git commit
+     git commit -s
      ```
+   - Every commit needs a `Signed-off-by:` line (`git commit -s`),
+     certifying the Developer Certificate of Origin
+     (https://developercertificate.org/). The sign-off email must
+     match the commit's author email; the DCO check on pull requests
+     fails otherwise.
    - It would be quite helpful if your commit messages are
      comprehensive and explanatory of what has been done and adhere
      to the following format with line breaks at 70 characters:
@@ -114,6 +119,21 @@ guidelines to help you get started.
       git pull (--rebase) origin main
       git branch -D feature/your-feature-name
       ```
+
+## Review and CI
+
+Every change, including the maintainers' own, goes through a pull
+request. Two checks give first feedback as soon as it is opened:
+
+- **DCO** - every commit carries a matching `Signed-off-by:` line.
+- **preflight** (`.github/scripts/preflight`) - commit messages carry
+  no AI-tool attribution lines, added lines contain no machine-local
+  details (local proxy commands or addresses), no internal planning
+  documents (`plans/`, `superpowers/`) are added, and touched shell
+  scripts pass `shellcheck -S warning`. Run it locally before pushing:
+  ```bash
+  .github/scripts/preflight origin/main HEAD
+  ```
 
 ## Code Style and Guidelines
 
