@@ -18,6 +18,7 @@ build:
 	$(PIP) install -e '.[test]'
 
 check: build
+	shellcheck -s sh configure
 	$(PYTEST)
 
 test: check

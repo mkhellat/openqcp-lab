@@ -149,6 +149,11 @@ and (where applicable) benchmarked as software in their own right.
   tutorials install (`requirements.txt`); `tools/paulikit` is the
   original research copy, kept with the corrected coupled-oscillator
   Hamiltonian as version `0.1.0+hamiltonianfix`.
+- [`trotterkit`](tools/trotterkit) — product-formula (Trotter-Suzuki)
+  evolution of Pauli-sum Hamiltonians: per-term (as a circuit runs)
+  and grouped exact exponentials of XOR-offset slices. In
+  development: Python reference and a C backend today; C++ and Rust
+  backends and a measured comparison of the three to follow.
 
 ## GNU GPL v3+
 
