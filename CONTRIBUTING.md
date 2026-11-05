@@ -129,8 +129,11 @@ request. Two checks give first feedback as soon as it is opened:
 - **preflight** (`.github/scripts/preflight`) - commit messages carry
   no AI-tool attribution lines, added lines contain no machine-local
   details (local proxy commands or addresses), no internal planning
-  documents (`plans/`, `superpowers/`) are added, and touched shell
-  scripts pass `shellcheck -S warning`. Run it locally before pushing:
+  documents (`plans/`, `superpowers/`) are added, touched shell
+  scripts pass `shellcheck -S warning`, and touched notebooks are
+  valid nbformat documents. Run it locally before pushing (the
+  notebook check needs `nbformat`, which the tutorial environment
+  has):
   ```bash
   .github/scripts/preflight origin/main HEAD
   ```
