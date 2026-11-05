@@ -138,12 +138,28 @@ request. Two checks give first feedback as soon as it is opened:
   .github/scripts/preflight origin/main HEAD
   ```
 
-The test matrix does not start on its own. A reviewer approves each
-run: on the workflow run page, "Review deployments", select `ci`,
-"Approve and deploy". Any of the repository's reviewers (the `ci`
-environment's approvers) can approve, including on their own pull
-requests. Pushing new commits starts a new run that needs approval
-again.
+The tests (`.github/workflows/ci.yml`) run only for the parts a pull
+request touches:
+
+- `tools/paulikit/` - its test suite on Python 3.10-3.13 (Linux),
+  plus macOS and Windows;
+- `tools/trotterkit/` - `./configure` and `make check` on Linux;
+- `tutorials/` or `requirements.txt` - the notebooks are executed
+  with nbmake against `requirements.txt`, except those that use
+  Classiq, whose synthesis needs a Classiq cloud account
+  (`.github/scripts/runnable-notebooks` lists the ones that run).
+
+A change to the CI itself runs everything. The tests do not start on
+their own: a reviewer approves each run on the workflow run page,
+"Review deployments", select `ci`, "Approve and deploy". Any of the
+repository's reviewers (the `ci` environment's approvers) can
+approve, including on their own pull requests. Pushing new commits
+starts a new run that needs approval again. A pull request that
+touches none of the above needs no approval. The `ci-result` check
+summarises the run and is the one required for merging.
+
+The full test set also runs weekly on `main`, to catch breakage from
+new releases of unpinned dependencies.
 
 These checks run on the GitHub mirror,
 https://github.com/mkhellat/openqcp-lab.
