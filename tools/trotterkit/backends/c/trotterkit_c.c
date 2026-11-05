@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 Mohammadreza Khellat <mkhellat@beavernets.com>
  *
- * trotterkit C backend (C99): scalar, serial, on-the-fly strategy.
- * SIMD, cache blocking and threads are not implemented yet; options
- * that would request them return TK_EINVAL.
+ * trotterkit C backend (C99), on-the-fly strategy.
+ *
+ * Per-term mode processes amplitudes in aligned groups of 4 (AVX2
+ * when available, otherwise the same arithmetic in scalar code), with
+ * a scalar loop for small masks. Cache blocking and threads are not
+ * implemented yet; options that would request them return TK_EINVAL.
  */
 #define _POSIX_C_SOURCE 200112L
 
@@ -13,6 +16,10 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 
 static int parity64(uint64_t v)
 {
@@ -80,8 +87,11 @@ static void term_constants(double theta, double c_re, double c_im,
     out[3] = -p_re;
 }
 
-static void apply_term(double *re, double *im, size_t dim, uint64_t x,
-                       uint64_t z, const double *k4)
+/* Reference path, one pair (or one element) at a time. Used for
+ * masks below 4, states below 8 amplitudes, and when
+ * TROTTERKIT_FORCE_SCALAR=1 (tests compare the paths). */
+static void apply_term_scalar(double *re, double *im, size_t dim,
+                              uint64_t x, uint64_t z, const double *k4)
 {
     const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
     size_t j;
@@ -116,12 +126,178 @@ static void apply_term(double *re, double *im, size_t dim, uint64_t x,
     }
 }
 
+/* Grouped path. For x with top bit h >= 2, j1 = G + q (G a multiple
+ * of 4 with bit h clear, q = 0..3) pairs with
+ * j2 = j1 ^ x = G2 + (q ^ p), G2 = G ^ (x & ~3), p = x & 3. With
+ * sigma(B) = (-1)^popcount(B & z) and the per-term lane pattern
+ * pat[q] = (-1)^popcount((q ^ p) & z & 3):
+ *   s(G + q)  = sigma(G2) pat[q]   (sign for the j1 update)
+ *   s(G2 + r) = sigma(G)  pat[r]   (sign for the j2 update)
+ * so each group costs two parities, and the partner group is one
+ * load plus a fixed lane permutation. The arithmetic per element is
+ * the scalar path's, in the same order, so results are identical. */
+static double sigma(size_t b, uint64_t z)
+{
+    return 1.0 - 2.0 * (double)parity64((uint64_t)b & z);
+}
+
+static void lane_pattern(uint64_t x, uint64_t z, double pat[4])
+{
+    unsigned q;
+    for (q = 0; q < 4u; q++)
+        pat[q] = 1.0 - 2.0 * (double)parity64((q ^ (x & 3u)) & z & 3u);
+}
+
+static void apply_diag_groups(double *re, double *im, size_t dim,
+                              uint64_t z, const double *k4)
+{
+    const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
+    double pat[4];
+    size_t g;
+    unsigned q;
+
+    lane_pattern(0u, z, pat);
+    for (g = 0; g < dim; g += 4u) {
+        double sb = sigma(g, z);
+        for (q = 0; q < 4u; q++) {
+            double sg = sb * pat[q];
+            double mr = ar + sg * kr, mi = ai + sg * ki;
+            double pr = re[g + q], pi = im[g + q];
+            re[g + q] = mr * pr - mi * pi;
+            im[g + q] = mr * pi + mi * pr;
+        }
+    }
+}
+
+#if defined(__AVX2__)
+/* v[q ^ p] for each lane q. */
+static __m256d permute_lanes(__m256d v, unsigned p)
+{
+    switch (p) {
+    case 1:
+        return _mm256_permute_pd(v, 0x5);
+    case 2:
+        return _mm256_permute4x64_pd(v, 0x4E);
+    case 3:
+        return _mm256_permute4x64_pd(v, 0x1B);
+    default:
+        return v;
+    }
+}
+
+/* pat with every lane's sign flipped when par (0 or 1) is 1:
+ * branch-free, by XOR-ing the sign bit (a select on the parity
+ * mispredicts about half the time and cost 32% more cycles). */
+static __m256d flip_if(__m256d pat, uint64_t par)
+{
+    return _mm256_xor_pd(pat, _mm256_castsi256_pd(
+        _mm256_set1_epi64x((long long)(par << 63))));
+}
+
+static void apply_pair_groups(double *re, double *im, size_t dim,
+                              uint64_t x, uint64_t z, const double *k4)
+{
+    const __m256d ar = _mm256_set1_pd(k4[0]), ai = _mm256_set1_pd(k4[1]);
+    const __m256d kr = _mm256_set1_pd(k4[2]), ki = _mm256_set1_pd(k4[3]);
+    unsigned h = top_bit(x), p = (unsigned)(x & 3u);
+    size_t span = (size_t)1 << h, hi = (size_t)(x & ~(uint64_t)3);
+    size_t base, g;
+    double pat[4];
+    __m256d pos;
+
+    lane_pattern(x, z, pat);
+    pos = _mm256_loadu_pd(pat);
+    for (base = 0; base < dim; base += 2u * span)
+        for (g = base; g < base + span; g += 4u) {
+            size_t g2 = g ^ hi;
+            __m256d s1 = flip_if(pos, (uint64_t)parity64((uint64_t)g2 & z));
+            __m256d s2 = flip_if(pos, (uint64_t)parity64((uint64_t)g & z));
+            __m256d pr = _mm256_load_pd(re + g), pi = _mm256_load_pd(im + g);
+            __m256d qr = _mm256_load_pd(re + g2);
+            __m256d qi = _mm256_load_pd(im + g2);
+            __m256d qrp = permute_lanes(qr, p), qip = permute_lanes(qi, p);
+            __m256d prp = permute_lanes(pr, p), pip = permute_lanes(pi, p);
+            __m256d n1r = _mm256_add_pd(
+                _mm256_sub_pd(_mm256_mul_pd(ar, pr), _mm256_mul_pd(ai, pi)),
+                _mm256_mul_pd(s1, _mm256_sub_pd(_mm256_mul_pd(kr, qrp),
+                                                _mm256_mul_pd(ki, qip))));
+            __m256d n1i = _mm256_add_pd(
+                _mm256_add_pd(_mm256_mul_pd(ar, pi), _mm256_mul_pd(ai, pr)),
+                _mm256_mul_pd(s1, _mm256_add_pd(_mm256_mul_pd(kr, qip),
+                                                _mm256_mul_pd(ki, qrp))));
+            __m256d n2r = _mm256_add_pd(
+                _mm256_sub_pd(_mm256_mul_pd(ar, qr), _mm256_mul_pd(ai, qi)),
+                _mm256_mul_pd(s2, _mm256_sub_pd(_mm256_mul_pd(kr, prp),
+                                                _mm256_mul_pd(ki, pip))));
+            __m256d n2i = _mm256_add_pd(
+                _mm256_add_pd(_mm256_mul_pd(ar, qi), _mm256_mul_pd(ai, qr)),
+                _mm256_mul_pd(s2, _mm256_add_pd(_mm256_mul_pd(kr, pip),
+                                                _mm256_mul_pd(ki, prp))));
+            _mm256_store_pd(re + g, n1r);
+            _mm256_store_pd(im + g, n1i);
+            _mm256_store_pd(re + g2, n2r);
+            _mm256_store_pd(im + g2, n2i);
+        }
+}
+#else
+static void apply_pair_groups(double *re, double *im, size_t dim,
+                              uint64_t x, uint64_t z, const double *k4)
+{
+    const double ar = k4[0], ai = k4[1], kr = k4[2], ki = k4[3];
+    unsigned h = top_bit(x), p = (unsigned)(x & 3u), q;
+    size_t span = (size_t)1 << h, hi = (size_t)(x & ~(uint64_t)3);
+    size_t base, g;
+    double pat[4];
+
+    lane_pattern(x, z, pat);
+    for (base = 0; base < dim; base += 2u * span)
+        for (g = base; g < base + span; g += 4u) {
+            size_t g2 = g ^ hi;
+            double sg1 = sigma(g2, z), sg2 = sigma(g, z);
+            double pr[4], pi[4], qr[4], qi[4];
+            for (q = 0; q < 4u; q++) {
+                pr[q] = re[g + q];
+                pi[q] = im[g + q];
+                qr[q] = re[g2 + q];
+                qi[q] = im[g2 + q];
+            }
+            for (q = 0; q < 4u; q++) {
+                double s1 = sg1 * pat[q], s2 = sg2 * pat[q];
+                unsigned r = q ^ p;
+                re[g + q] = ar * pr[q] - ai * pi[q]
+                            + s1 * (kr * qr[r] - ki * qi[r]);
+                im[g + q] = ar * pi[q] + ai * pr[q]
+                            + s1 * (kr * qi[r] + ki * qr[r]);
+                re[g2 + q] = ar * qr[q] - ai * qi[q]
+                             + s2 * (kr * pr[r] - ki * pi[r]);
+                im[g2 + q] = ar * qi[q] + ai * qr[q]
+                             + s2 * (kr * pi[r] + ki * pr[r]);
+            }
+        }
+}
+#endif
+
+static void apply_term(double *re, double *im, size_t dim, uint64_t x,
+                       uint64_t z, const double *k4, int scalar)
+{
+    if (scalar || dim < 8u)
+        apply_term_scalar(re, im, dim, x, z, k4);
+    else if (x == 0u)
+        apply_diag_groups(re, im, dim, z, k4);
+    else if (x < 4u)
+        apply_term_scalar(re, im, dim, x, z, k4);
+    else
+        apply_pair_groups(re, im, dim, x, z, k4);
+}
+
 int tk_evolve_terms(double *psi, uint32_t n_qubits,
                     const tk_terms *terms, const tk_schedule *s,
                     int strategy, int tile_bits, int n_threads)
 {
     size_t dim, n, n_st, g, st, step, j;
     double *re, *im, *consts;
+    const char *force = getenv("TROTTERKIT_FORCE_SCALAR");
+    int scalar = force != NULL && strcmp(force, "1") == 0;
 
     if (psi == NULL || terms == NULL || s == NULL)
         return TK_EINVAL;
@@ -168,10 +344,10 @@ int tk_evolve_terms(double *psi, uint32_t n_qubits,
             const double *cs = consts + 4u * st * n;
             for (g = 0; g < n; g++)
                 apply_term(re, im, dim, terms->x[g], terms->z[g],
-                           cs + 4u * g);
+                           cs + 4u * g, scalar);
             for (g = n; g-- > 0u;)
                 apply_term(re, im, dim, terms->x[g], terms->z[g],
-                           cs + 4u * g);
+                           cs + 4u * g, scalar);
         }
     for (j = 0; j < dim; j++) {
         psi[2u * j] = re[j];
