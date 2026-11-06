@@ -38,7 +38,11 @@ run. https://codeberg.org/mkhellat/openqcp-lab is a mirror of `main`.
      python3.12 -m venv venv
      . venv/bin/activate
      pip install -r requirements.txt
+     make tools    # builds tools/trotterkit into the venv
      ```
+   - To refresh an existing environment, run `make install`
+     (requirements, then tools); after pulling changes under
+     `tools/`, `make tools` is enough.
    - Activate the environment:
      ```bash
      . venv/bin/activate

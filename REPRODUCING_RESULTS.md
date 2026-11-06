@@ -8,7 +8,9 @@ notebooks in this repository.
 Before reproducing results, ensure you have:
 
 1. Set up the Python environment as described in the main `README.md`
-2. Installed all required dependencies from `requirements.txt`
+2. Installed all required dependencies from `requirements.txt` and
+   built the repository's tools (`make install` does both; `./bootstrap`
+   does it for a new environment)
 3. For notebooks that generate figures with LaTeX rendering, ensure you have
    a working LaTeX installation and the `cm-super` package
 
@@ -40,7 +42,9 @@ and time points. Expect several minutes for full execution.
 **Companion notebook:** `N_coupled_harmonic_oscillators_1_D_N_30.ipynb`
 takes the same pipeline to $N=30$ with `paulikit` and a local
 statevector simulator (no Classiq, no figures yet). It evolves with
-the repository's `trotterkit` package (built by `./bootstrap`); a
+the repository's `trotterkit` package (built by `./bootstrap` or
+`make install`; run `make tools` again after pulling changes under
+`tools/trotterkit`); a
 full run then takes about 10 seconds, most of it the $t=1.0$
 evolution in its §6.
 
@@ -106,7 +110,8 @@ If `.qmod` files are not created:
 
 If notebooks fail to execute:
 
-1. Verify all dependencies are installed: `pip install -r requirements.txt`
+1. Verify all dependencies are installed and the tools are built:
+   `make install`, then `make test-import`
 2. Check that you're using the correct Python version (3.9+ recommended)
 3. Ensure you're running from the correct working directory
 4. For Classiq notebooks, verify API authentication is set up

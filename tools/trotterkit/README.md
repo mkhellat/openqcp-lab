@@ -90,7 +90,8 @@ comparison fair, and what the comparison found are in
     make check
 
 `make build` installs the package with pip, so it needs network
-access. `make check` also runs `shellcheck`, so it must be installed.
+access. Inside openqcp-lab, `make tools` from the repository root runs
+`./configure` and `make build` for the tutorial environment. `make check` also runs `shellcheck`, so it must be installed.
 OpenMP is optional; without it the C and C++ backends are serial.
 The Rust backend is built when `cargo` is installed (no crates are
 downloaded).

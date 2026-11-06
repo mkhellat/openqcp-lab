@@ -5,7 +5,7 @@ PYTHON     := $(VENV)/bin/python
 PIP        := $(VENV)/bin/pip
 PYTEST     := $(VENV)/bin/pytest
 
-.PHONY: help env install install-dev trotterkit clean distclean test test-import test-syntax test-run test-tools docs-tools
+.PHONY: help env install install-requirements install-dev tools trotterkit clean distclean test test-import test-syntax test-run test-tools docs-tools
 
 find_notebooks = find . -name '*.ipynb' \
 	-not -path './.git/*' \
@@ -18,8 +18,10 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  make env       - Run ./bootstrap to provision venv/ (Python $(if $(REQUIRED_PYTHON_VERSION),$(REQUIRED_PYTHON_VERSION),3.12))"
-	@echo "  make install   - Install/refresh dependencies into an existing venv"
+	@echo "  make install   - Install/refresh requirements and build the tools into an existing venv"
+	@echo "  make install-requirements - Only install/refresh requirements.txt"
 	@echo "  make install-dev - Also install dev/profiling tools (requirements-dev.txt)"
+	@echo "  make tools     - Build every tool the tutorials need (run again after pulling tool changes)"
 	@echo "  make trotterkit - Build tools/trotterkit into the venv (needed by the N=30 notebook)"
 	@echo "  make test      - Run import checks, notebook JSON checks, notebook execution, and tools/ test suites"
 	@echo "  make test-tools - Run tools/*/tests/ (e.g. tools/paulikit) - installs each in editable mode first"
@@ -30,13 +32,22 @@ help:
 env:
 	./bootstrap
 
-install:
+# The tools build after the requirements, never alongside them (both
+# use the venv's pip), so this stays correct under make -j.
+install: install-requirements
+	$(MAKE) tools
+
+install-requirements:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
 
 install-dev: install
 	$(PIP) install -r requirements-dev.txt
+
+# The tools the tutorials import, built into the venv. A tool's build
+# is incremental, so running this again after a pull is quick.
+tools: trotterkit
 
 # tools/trotterkit built into the venv; the N=30 coupled-oscillator
 # notebook evolves its state with it.
@@ -69,6 +80,9 @@ test-import:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	@echo "Checking core package imports..."
 	$(PYTHON) -c "import numpy, scipy, sympy, matplotlib, pennylane, classiq; print('All core packages imported successfully.')"
+	@echo "Checking the tools the tutorials import..."
+	@$(PYTHON) -c "import trotterkit; print('trotterkit backends:', ', '.join(trotterkit.backends()))" \
+	    || { echo "trotterkit is missing or broken - run 'make tools'." >&2; exit 1; }
 
 test-syntax:
 	@echo "Checking notebook JSON structure..."
