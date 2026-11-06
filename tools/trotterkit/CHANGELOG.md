@@ -34,3 +34,5 @@
   OpenMP's barrier); C fixes the lane permutation at compile time;
   automatic threads re-measured: serial below 10 qubits, 2 at 10, up
   to 4 from 11.
+- The C backend stays the default, chosen from a measured comparison
+  of the three backends (see the README).
