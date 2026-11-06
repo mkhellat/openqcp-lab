@@ -76,6 +76,11 @@ run. https://codeberg.org/mkhellat/openqcp-lab is a mirror of `main`.
      ```
    - If modifying notebooks, verify they have valid JSON structure
      and can be opened in Jupyter.
+   - CI cannot run the notebooks that use Classiq (they need a
+     Classiq cloud account). If your change touches one of them, or
+     `requirements.txt`, run the affected Classiq notebooks top to
+     bottom yourself and name them in the commit's `Verified:`
+     paragraph (step 8); a reviewer will ask if that is missing.
    - If modifying a tool under `tools/`, install it in editable mode
      with its test extras and run its test suite, e.g.:
      ```bash
@@ -164,11 +169,13 @@ request touches:
 
 - `tools/paulikit/` - its test suite on Python 3.10-3.13 (Linux),
   plus macOS and Windows;
-- `tools/trotterkit/` - `./configure` and `make check` on Linux;
+- `tools/trotterkit/` - `./configure` and `make check` on Linux,
+  and the notebooks (the N=30 tutorial uses trotterkit);
 - `tutorials/` or `requirements.txt` - the notebooks are executed
   with nbmake against `requirements.txt`, except those that use
   Classiq, whose synthesis needs a Classiq cloud account
   (`.github/scripts/runnable-notebooks` lists the ones that run).
+  Those are run locally by the contributor instead (see step 7).
 
 A change to the CI itself runs everything. The tests do not start on
 their own: a reviewer approves each run on the workflow run page,
