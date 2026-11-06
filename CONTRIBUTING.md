@@ -189,6 +189,15 @@ summarises the run and is the one required for merging.
 The full test set also runs weekly on `main`, to catch breakage from
 new releases of unpinned dependencies.
 
+A logic review (`.github/workflows/bot-review.yml`) can be run on a
+pull request by the repository owner only, by hand; it never runs on
+its own. It is
+a code review (it builds and runs nothing), picks Haiku or Sonnet by
+the size and kind of change, and posts one comment with its verdict
+and findings, as the bot or as the owner. It cannot push or approve,
+and its verdict is advice: the review that counts is a person's.
+Treat its findings like any reviewer's: fix them, or reply why not.
+
 ## Code Style and Guidelines
 
 - **Python Code:** Follow PEP 8 style guidelines where applicable
