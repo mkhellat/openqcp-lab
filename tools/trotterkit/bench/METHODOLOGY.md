@@ -93,4 +93,31 @@ chain N=40, 50, 80, 100); thread scaling 1/2/4 at chain N=80 per
 language; grouped mode (cycles; chain N=30 to 150, fully coupled
 N=30); the Clang ablation; and the N=30 notebook's full run
 (t = 10.762932, 22,058 steps), one run per language. Raw results are
-kept in `bench/results/campaign/`.
+written to `bench/results/campaign/`, which is not tracked: measurement
+reports are kept outside the repository.
+
+## The 2026-11-06 comparison
+
+A subset of the campaign was run to choose the default backend:
+per-term mode on 1 thread (cycles, 3 reps; chain N=30, 50, 80),
+per-term mode with automatic threads (wall time, 5 reps; N=50, 80) and
+grouped mode (cycles, 3 reps; N=30, 150). Three reps suffice for
+cycles, whose run-to-run spread was under 4% (under 1% in most
+cases) against differences of several percent; wall time keeps 5.
+
+| Ratio to C, 95% CI | C++ | Rust |
+|---|---|---|
+| per-term, 1 thread, N=30 | 0.960 (0.956-0.963) | 0.934 (0.897-0.972) |
+| per-term, 1 thread, N=50 | 1.007 (0.992-1.022) | 0.939 (0.937-0.942) |
+| per-term, 1 thread, N=80 | 1.025 (0.942-1.116) | 0.975 (0.926-1.027) |
+| per-term, 4 threads, N=50 | 0.977 (0.911-1.049) | 0.929 (0.880-0.981) |
+| per-term, 4 threads, N=80 | 0.970 (0.909-1.035) | 0.821 (0.802-0.840) |
+| grouped, N=30 | 1.144 (1.130-1.158) | 1.420 (1.401-1.439) |
+| grouped, N=150 | 1.105 (1.095-1.114) | 1.257 (1.250-1.264) |
+
+Intervals that contain 1 mean no significant difference. C is the
+default: fastest in grouped mode, the mode that scales to large N,
+and needing only a C compiler; Rust is the faster choice for large
+threaded per-term runs. Why Rust is slower in grouped mode was not
+isolated (bounds-checked slice indexing in its grouped loop is the
+untested suspect).

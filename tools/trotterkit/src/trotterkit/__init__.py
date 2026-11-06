@@ -31,7 +31,9 @@ def evolve(psi0, *, t, steps, terms=None, H=None, mode="terms",
            n_threads=0):
     """Evolve psi0 to time t with `steps` repetitions of the order-2
     or order-4 product formula. mode='terms' needs terms=(x, z,
-    coeff); mode='grouped' needs the matrix H. Returns a new array."""
+    coeff); mode='grouped' needs the matrix H. backend is 'c' (the
+    default), 'cpp', 'rust' or 'python' (the reference); all native
+    backends give identical results. Returns a new array."""
     psi0 = np.asarray(psi0, dtype=complex)
     n_qubits = _n_qubits(psi0)
     dts = schedule.stages(t, steps, order)
