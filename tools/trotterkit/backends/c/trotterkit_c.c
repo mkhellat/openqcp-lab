@@ -573,7 +573,7 @@ static int auto_threads(uint32_t n_qubits)
 #if defined(_OPENMP)
     int procs = omp_get_num_procs();
     int want = n_qubits == TK_AUTO_MIN_QUBITS ? 2 : TK_AUTO_MAX_THREADS;
-    if (n_qubits < TK_AUTO_MIN_QUBITS)
+    if (n_qubits <= TK_AUTO_MIN_QUBITS)
         return 1;
     return procs < want ? procs : want;
 #else
