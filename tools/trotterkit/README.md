@@ -19,8 +19,18 @@ Status: in development inside openqcp-lab; not published.
 All three implement one C ABI (`include/trotterkit.h`) with the same
 algorithm and the same operations in the same order, without FMA
 contraction, so every backend and every path (SIMD or scalar, tiles,
-any thread count) gives the same final state to the bit. A measured
-comparison of the three is the next step.
+any thread count) gives the same final state to the bit.
+
+**The default backend is `c`.** A comparison on an Intel i7-8550U
+(cycles for one thread, wall time for several; 3-5 interleaved reps,
+95% confidence intervals; method in `bench/METHODOLOGY.md`) found no
+backend best everywhere. In grouped mode, the one that scales to large
+N, C was fastest (C++ 10-14% and Rust 26-42% more cycles). In per-term
+mode Rust was fastest: 6-7% fewer cycles on one thread at 9-11 qubits
+and 7% / 18% less time with 4 threads at 11 / 12 qubits, while C++ did
+not differ significantly from C. C also needs only a C compiler. For
+large threaded per-term runs, `backend="rust"` is worth trying; other
+hardware may order the backends differently.
 
 Usage:
 
