@@ -63,10 +63,14 @@ The $N=2$ notebook performs that Pauli decomposition symbolically
 (SymPy), which is fine for small $N$ but does not scale past roughly
 $N=4$ in practice.
 
-## Scaling to $N=30$
+## Scaling to arbitrary $N$ (default $N=30$)
 
-`N_coupled_harmonic_oscillators_1_D_N_30.ipynb` is a companion to the
-$N=2$ notebook that takes the same pipeline to $N=30$ (9 qubits):
+`N_coupled_harmonic_oscillators_1_D_arbitrary_N.ipynb` is a companion
+to the $N=2$ notebook that takes the same pipeline to any number of
+oscillators $N\ge2$. $N$ is set in one parameter cell near the top
+(`N = 30` by default, which is what CI runs; the cell is tagged
+`parameters`, so papermill can set it too), and every other cell
+derives from it. The pipeline:
 
 - the Hamiltonian is built and Pauli-decomposed with
   [`paulikit`](https://pypi.org/project/paulikit/) (Fast
@@ -75,24 +79,34 @@ $N=2$ notebook that takes the same pipeline to $N=30$ (9 qubits):
   completeness check;
 - the Trotter-repetition count comes from a coefficient-only upper
   bound on the same Childs et al. 2nd-order bound that counts only the
-  term pairs that anticommute - no per-term SVDs, and 15,493 steps to
-  $t \approx 10.76$ instead of the closed form's 22,058;
+  term pairs that anticommute - no per-term SVDs, and (at $N=30$)
+  15,493 steps to $t \approx 10.76$ instead of the closed form's
+  22,058;
 - the evolution runs on the repository's `trotterkit` statevector
   simulator (matrix-free, native C backend by default, with a
   progress tracker on long runs) instead of Classiq;
 - the trajectories are decoded from the evolved state and checked
-  against the classical solution (largest position error about
-  $2\times10^{-7}$ over the whole window; total momentum, conserved for
-  the free-ended chain, drifts by about $1.5\times10^{-7}$);
+  against the classical solution (at $N=30$: largest position error
+  about $2\times10^{-7}$ over the whole window; total momentum,
+  conserved for the free-ended chain, drifts by about
+  $1.5\times10^{-7}$);
 - signs and phases come from our own Hadamard test, also without
-  Classiq: the controlled evolution on 10 qubits is checked against
+  Classiq: the controlled evolution on $n+1$ qubits ($n$ system
+  qubits plus an ancilla; 10 at $N=30$) is checked against
   the uncontrolled one, measurement is emulated with shot noise (the
   error falls as $1/\sqrt{\text{shots}}$), and the exact circuit size is
   counted from our own gate list (400,128 CNOTs per controlled Trotter
-  step).
+  step at $N=30$).
 
-A full run takes about 4 minutes on a laptop, most of it the
-trajectory evolution.
+Cost grows quickly with $N$ (qubits, Pauli terms and Trotter steps
+all grow). Before any long cell, a cost-preview cell (§4.1) times a
+few evolution steps at the chosen $N$ and prints the qubit counts, the
+number of Pauli terms, the Trotter steps of the trajectory, and the
+estimated run time of the remaining cells. If that estimate exceeds
+about 15 minutes the notebook stops with an error saying how long it
+would take; set `ALLOW_LONG_RUN = True` in the parameter cell to run
+it anyway. At the default $N=30$ a full run takes about 3 to 4
+minutes on a laptop, most of it the trajectory evolution.
 
 
 # Software Requirements
@@ -104,8 +118,8 @@ The following Python packages are required to run these notebooks:
 - `sympy`
 - `matplotlib`
 - `classiq` ($N=2$ notebook)
-- `paulikit` ($N=30$ notebook)
-- `trotterkit` ($N=30$ notebook), built from `tools/trotterkit`
+- `paulikit` (arbitrary-$N$ notebook)
+- `trotterkit` (arbitrary-$N$ notebook), built from `tools/trotterkit`
 
 **Note:** The `math` and `enum` modules are part of Python's standard
 library and do not require installation. The other packages except
