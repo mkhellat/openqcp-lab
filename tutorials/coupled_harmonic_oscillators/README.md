@@ -76,10 +76,9 @@ $N=2$ notebook that takes the same pipeline to $N=30$ (9 qubits):
 - the Trotter-repetition count comes from a coefficient-only upper
   bound on the same Childs et al. 2nd-order bound - looser, but needing
   no per-term SVDs;
-- the evolution runs on a self-contained, matrix-free statevector
-  simulator with a small compiled C kernel (`trotter_kernel.c`,
-  compiled on first run if `gcc` is available, with a pure-Python
-  fallback) instead of Classiq.
+- the evolution runs on the repository's `trotterkit` statevector
+  simulator (matrix-free, native C backend by default, with a
+  progress tracker on long runs) instead of Classiq.
 
 It currently stops at a verified magnitude-level evolution; trajectory
 decoding and the Hadamard-test readout at $N=30$ are listed as next
