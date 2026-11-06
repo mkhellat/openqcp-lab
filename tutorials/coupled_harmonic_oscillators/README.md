@@ -95,15 +95,15 @@ The following Python packages are required to run these notebooks:
 - `matplotlib`
 - `classiq` ($N=2$ notebook)
 - `paulikit` ($N=30$ notebook)
-
-The $N=30$ notebook also uses a C compiler (`gcc`) if one is present;
-without it, it runs the same computation in pure Python, much more
-slowly.
+- `trotterkit` ($N=30$ notebook), built from `tools/trotterkit`
 
 **Note:** The `math` and `enum` modules are part of Python's standard
-library and do not require installation. All other packages listed above
-are included in the top-level `requirements.txt`. If you have set up the
-base environment as described in the main README, no additional
+library and do not require installation. The other packages except
+`trotterkit` are in the top-level `requirements.txt`; `trotterkit` is
+built into the environment by `./bootstrap` or `make install` (or on
+its own with `make tools`, which needs a C compiler). Run `make tools`
+again after pulling changes under `tools/trotterkit`. If you have set
+up the environment as described in the main README, no additional
 installation is needed.
 
 Apart from the above Python modules, since we have used `r''` formatting

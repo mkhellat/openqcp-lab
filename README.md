@@ -25,7 +25,8 @@ your system's default Python is newer.
 The provided `bootstrap` script provisions a Python 3.12 interpreter
 (via [uv](https://docs.astral.sh/uv/) by default, with automatic
 fallback to pyenv or building from source) and creates `venv/` with
-all dependencies installed:
+all dependencies installed and the repository's tools that the
+tutorials use (`tools/trotterkit`) built into it:
 
 ```bash
 ./bootstrap
@@ -44,6 +45,17 @@ make env
 This runs `./bootstrap` under the hood. See `make help` for other
 targets, including `make test` for running the test suite.
 
+To refresh an existing environment, for example after pulling or when
+a notebook reports a missing package:
+
+```bash
+make install   # requirements.txt, then the tools
+make tools     # only the tools; run it after pulling changes under tools/
+```
+
+`make test` checks that the tools import, so a missing or broken build
+shows up there before any notebook runs.
+
 ### Manual setup
 
 If you already have a Python 3.12 interpreter available, you can set
@@ -54,6 +66,7 @@ python3.12 -m venv venv
 . venv/bin/activate  # On Windows: venv\\Scripts\\activate
 pip install --upgrade pip
 pip install -r requirements.txt
+make tools     # builds tools/trotterkit into the venv (needs a C compiler)
 ```
 
 ## Run
@@ -87,9 +100,9 @@ that kernel from the corresponding Jupyter web-portal. Also, to run
 different types of codes within a single notebook, one could take
 advantage of _magic_.
 
-**Note:** If you have installed the dependencies from `requirements.txt`,
-the notebooks should run without requiring additional package
-installations. Each notebook's README also documents its specific
+**Note:** If you have installed the dependencies from `requirements.txt`
+and built the tools (`make install` does both), the notebooks should
+run without requiring additional package installations. Each notebook's README also documents its specific
 software requirements for reference.
 
 For information on reproducing figures and results from the notebooks,
