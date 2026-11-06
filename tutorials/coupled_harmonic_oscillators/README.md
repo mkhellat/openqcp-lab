@@ -74,15 +74,25 @@ $N=2$ notebook that takes the same pipeline to $N=30$ (9 qubits):
   coefficient is checked by direct projection plus a Parseval
   completeness check;
 - the Trotter-repetition count comes from a coefficient-only upper
-  bound on the same Childs et al. 2nd-order bound - looser, but needing
-  no per-term SVDs;
+  bound on the same Childs et al. 2nd-order bound that counts only the
+  term pairs that anticommute - no per-term SVDs, and 15,493 steps to
+  $t \approx 10.76$ instead of the closed form's 22,058;
 - the evolution runs on the repository's `trotterkit` statevector
   simulator (matrix-free, native C backend by default, with a
-  progress tracker on long runs) instead of Classiq.
+  progress tracker on long runs) instead of Classiq;
+- the trajectories are decoded from the evolved state and checked
+  against the classical solution (largest position error about
+  $2\times10^{-7}$ over the whole window; total momentum, conserved for
+  the free-ended chain, drifts by about $1.5\times10^{-7}$);
+- signs and phases come from our own Hadamard test, also without
+  Classiq: the controlled evolution on 10 qubits is checked against
+  the uncontrolled one, measurement is emulated with shot noise (the
+  error falls as $1/\sqrt{\text{shots}}$), and the exact circuit size is
+  counted from our own gate list (400,128 CNOTs per controlled Trotter
+  step).
 
-It currently stops at a verified magnitude-level evolution; trajectory
-decoding and the Hadamard-test readout at $N=30$ are listed as next
-steps at the end of that notebook.
+A full run takes about 4 minutes on a laptop, most of it the
+trajectory evolution.
 
 
 # Software Requirements

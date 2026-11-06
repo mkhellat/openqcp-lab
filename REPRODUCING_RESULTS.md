@@ -40,13 +40,14 @@ over different time spans, so execution time depends on the number of shots
 and time points. Expect several minutes for full execution.
 
 **Companion notebook:** `N_coupled_harmonic_oscillators_1_D_N_30.ipynb`
-takes the same pipeline to $N=30$ with `paulikit` and a local
-statevector simulator (no Classiq, no figures yet). It evolves with
-the repository's `trotterkit` package (built by `./bootstrap` or
-`make install`; run `make tools` again after pulling changes under
-`tools/trotterkit`); a
-full run then takes about 10 seconds, most of it the $t=1.0$
-evolution in its §6.
+takes the same pipeline to $N=30$ with `paulikit` and the repository's
+own `trotterkit` statevector simulator, with no Classiq: Pauli
+decomposition, Trotter bound, evolution, trajectory readout (§7) and
+its own Hadamard test (§8). `trotterkit` is built into the environment
+by `./bootstrap` or `make install`; after pulling changes under
+`tools/trotterkit`, run `make tools` again. A full run takes about 4
+minutes on a laptop, most of it the trajectory evolution in §7
+(about 160 s; it shows a progress line with an ETA).
 
 ## Notebooks with Generated Quantum Model Files
 
@@ -112,7 +113,8 @@ If notebooks fail to execute:
 
 1. Verify all dependencies are installed and the tools are built:
    `make install`, then `make test-import`
-2. Check that you're using the correct Python version (3.9+ recommended)
+2. Check that you're using Python 3.12 (classiq has no wheels for newer
+   versions yet)
 3. Ensure you're running from the correct working directory
 4. For Classiq notebooks, verify API authentication is set up
 
