@@ -25,7 +25,7 @@ help:
 	@echo "  install-dev           install, plus requirements-dev.txt"
 	@echo "  tools                 Build every tool the tutorials import; run"
 	@echo "                        again after pulling changes under tools/"
-	@echo "  trotterkit            Build tools/trotterkit only (N=30 notebook)"
+	@echo "  trotterkit            Build tools/trotterkit only (arbitrary-N notebook)"
 	@echo ""
 	@echo "Tests:"
 	@echo "  test                  Run all of the test-* targets below"
@@ -59,8 +59,8 @@ install-dev: install
 # is incremental, so running this again after a pull is quick.
 tools: trotterkit
 
-# tools/trotterkit built into the venv; the N=30 coupled-oscillator
-# notebook evolves its state with it.
+# tools/trotterkit built into the venv; the arbitrary-N
+# coupled-oscillator notebook evolves its state with it.
 trotterkit:
 	@test -x "$(PYTHON)" || { echo "No venv found at $(VENV) - run 'make env' first." >&2; exit 1; }
 	$(PIP) install meson ninja

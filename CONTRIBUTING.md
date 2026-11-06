@@ -174,7 +174,7 @@ request touches:
 - `tools/paulikit/` - its test suite on Python 3.10-3.13 (Linux),
   plus macOS and Windows;
 - `tools/trotterkit/` - `./configure` and `make check` on Linux,
-  and the notebooks (the N=30 tutorial uses trotterkit);
+  and the notebooks (the arbitrary-N tutorial uses trotterkit);
 - `tutorials/` or `requirements.txt` - the notebooks are executed
   with nbmake against `requirements.txt`, except those that use
   Classiq, whose synthesis needs a Classiq cloud account

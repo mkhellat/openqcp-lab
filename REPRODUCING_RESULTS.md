@@ -39,15 +39,20 @@ results, which may differ slightly due to quantum measurement statistics.
 over different time spans, so execution time depends on the number of shots
 and time points. Expect several minutes for full execution.
 
-**Companion notebook:** `N_coupled_harmonic_oscillators_1_D_N_30.ipynb`
-takes the same pipeline to $N=30$ with `paulikit` and the repository's
+**Companion notebook:** `N_coupled_harmonic_oscillators_1_D_arbitrary_N.ipynb`
+takes the same pipeline to any $N\ge2$ (set in its parameter cell;
+default $N=30$) with `paulikit` and the repository's
 own `trotterkit` statevector simulator, with no Classiq: Pauli
 decomposition, Trotter bound, evolution, trajectory readout (§7) and
 its own Hadamard test (§8). `trotterkit` is built into the environment
 by `./bootstrap` or `make install`; after pulling changes under
-`tools/trotterkit`, run `make tools` again. A full run takes about 4
-minutes on a laptop, most of it the trajectory evolution in §7
-(about 160 s; it shows a progress line with an ETA).
+`tools/trotterkit`, run `make tools` again. At the default $N=30$ a
+full run takes about 3 to 4 minutes on a laptop, most of it the
+trajectory evolution in §7 (about 160 s; it shows a progress line
+with an ETA). Larger $N$ costs more: a cost-preview cell (§4.1) times
+a few steps at the chosen $N$, prints the estimated run time, and
+stops above about 15 minutes unless `ALLOW_LONG_RUN = True` is set in
+the parameter cell.
 
 ## Notebooks with Generated Quantum Model Files
 

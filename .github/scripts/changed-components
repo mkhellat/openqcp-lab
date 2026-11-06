@@ -28,7 +28,7 @@ elif [ $# -eq 2 ]; then
                 notebooks=true ;;
             tools/paulikit/*) paulikit=true ;;
             tools/trotterkit/*)
-                # The N=30 notebook evolves its state with trotterkit.
+                # The arbitrary-N notebook evolves its state with trotterkit.
                 trotterkit=true
                 notebooks=true ;;
             tutorials/*|requirements.txt) notebooks=true ;;
