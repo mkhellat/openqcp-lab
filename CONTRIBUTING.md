@@ -102,7 +102,22 @@ run. https://codeberg.org/mkhellat/openqcp-lab is a mirror of `main`.
      [COMMIT MSG TITLE]
 
      [COMMIT BODY]
+
+     Verified: [what you checked and how, and what you did not]
+
+     Signed-off-by: ...
      ```
+   - Every commit needs a paragraph starting with `Verified:` (the
+     preflight check fails without one). Say what you actually
+     checked, with numbers where there are any, and what you did not
+     check, for example:
+     ```
+     Verified: the paulikit suite passes on Python 3.12 (354
+     passed); the notebook runs top to bottom with nbmake in 41 s.
+     Not run on macOS or Windows.
+     ```
+     For a typo fix, `Verified: rendered the page; no code changed.`
+     is enough. A bare `Verified: n/a` will be sent back in review.
 
 9. **Push Your Changes:**
    - Push your changes to your fork:
@@ -133,13 +148,13 @@ request. Two checks give first feedback as soon as it is opened:
 
 - **DCO** - every commit carries a matching `Signed-off-by:` line.
 - **preflight** (`.github/scripts/preflight`) - commit messages carry
-  no AI-tool attribution lines, added lines contain no machine-local
-  details (local proxy commands or addresses), no internal planning
-  documents (`plans/`, `superpowers/`) are added, touched shell
-  scripts pass `shellcheck -S warning`, and touched notebooks are
-  valid nbformat documents. Run it locally before pushing (the
-  notebook check needs `nbformat`, which the tutorial environment
-  has):
+  no AI-tool attribution lines and each has a `Verified:` paragraph
+  (see step 8), added lines contain no machine-local details (local
+  proxy commands or addresses), no internal planning documents
+  (`plans/`, `superpowers/`) are added, touched shell scripts pass
+  `shellcheck -S warning`, and touched notebooks are valid nbformat
+  documents. Run it locally before pushing (the notebook check needs
+  `nbformat`, which the tutorial environment has):
   ```bash
   .github/scripts/preflight origin/main HEAD
   ```
