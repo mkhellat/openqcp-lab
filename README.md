@@ -152,7 +152,8 @@ and (where applicable) benchmarked as software in their own right.
   evolution of Pauli-sum Hamiltonians: per-term (as a circuit runs)
   and grouped exact exponentials of XOR-offset slices. In
   development: Python reference plus C, C++ and Rust backends that
-  agree to the bit; a measured comparison of the three to follow.
+  agree to the bit; C is the default, chosen from a measured
+  comparison of the three.
 
 ## Contributing
 

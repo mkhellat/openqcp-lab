@@ -2,5 +2,4 @@
 /config.log
 /builddir/
 /src/trotterkit/_lib/
-/bench/results/*
-!/bench/results/campaign/
+/bench/results/
