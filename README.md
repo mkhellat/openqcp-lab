@@ -138,6 +138,11 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   Simulate the dynamics of coupled classical harmonic oscillators using
   quantum Hamiltonian simulation with exponential speedup.
 
+- [Foundations - Smooth manifolds, Lie groups, and the exponential map](tutorials/manifolds_lie_groups_quantum)  
+  Charts and \(C^\infty\) transitions, Lie algebras, and the matrix
+  exponential, with Tier A/B/C applications (Bloch sphere through
+  PQC off-ramp). Mathematical prerequisite for module ( 05 ).
+
 ## Tools
 
 Standalone, installable Python packages, kept separate from the
