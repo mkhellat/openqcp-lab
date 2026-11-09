@@ -2,6 +2,8 @@
 """Build the foundations notebook (run once; commit the .ipynb)."""
 from __future__ import annotations
 
+import re
+
 import nbformat as nbf
 from pathlib import Path
 
@@ -10,8 +12,26 @@ OUT = Path(__file__).with_name(
 )
 
 
+def fix_math(source: str) -> str:
+    """Use $ / $$ like the rest of openqcp-lab (MathJax-reliable)."""
+    # Display math first
+    source = re.sub(
+        r"\\\[(.*?)\\\]",
+        lambda m: "$$" + m.group(1) + "$$",
+        source,
+        flags=re.S,
+    )
+    source = re.sub(
+        r"\\\((.*?)\\\)",
+        lambda m: "$" + m.group(1) + "$",
+        source,
+        flags=re.S,
+    )
+    return source
+
+
 def md(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_markdown_cell(source.strip() + "\n")
+    return nbf.v4.new_markdown_cell(fix_math(source.strip() + "\n"))
 
 
 def code(source: str) -> nbf.NotebookNode:
@@ -132,30 +152,52 @@ infinitely differentiable.
 cells.append(md(r"""
 ## 2. Charts, atlases, and transition maps
 
-Let \(M\) be a Hausdorff, second-countable topological space. A
-**chart** is a pair \((U,\varphi)\) where \(U\subset M\) is open and
-\(\varphi:U\to\varphi(U)\subset\mathbb{R}^d\) is a homeomorphism onto
-an open set. An **atlas** is a collection of charts whose domains cover
-\(M\).
+Let $M$ be a Hausdorff, second-countable topological space (the usual
+mild assumptions so sequences and countable covers behave well). A
+**chart** is a pair $(U,\varphi)$ where $U\subset M$ is open and
+$\varphi:U\to\varphi(U)\subset\mathbb{R}^d$ is a continuous bijection
+with continuous inverse (a homeomorphism) onto an open set of
+flat Euclidean space. An **atlas** is a collection of charts whose
+domains cover $M$.
 
-Whenever \(U_\alpha\cap U_\beta\neq\emptyset\), the **transition map**
+Whenever two chart domains overlap, $U_\alpha\cap U_\beta\neq\emptyset$,
+the **transition map**
 
-\[
+$$
 \psi_{\beta\alpha}
-  =\varphi_\beta\circ\varphi_\alpha^{-1}
+  \equiv \varphi_\beta\circ\varphi_\alpha^{-1}
   :\varphi_\alpha(U_\alpha\cap U_\beta)
   \longrightarrow
   \varphi_\beta(U_\alpha\cap U_\beta)
-\]
+$$
 
-translates coordinates from one Euclidean open set to another. The
-atlas is **smooth** when every transition map (and its inverse) is
-\(C^\infty\): all partial derivatives of all orders exist and are
-continuous. Then “\(f:M\to\mathbb{R}\) is smooth” is unambiguous —
-check \(f\circ\varphi^{-1}\) in *any* chart.
+translates coordinates $\mathbf{x}=(x^1,\dots,x^d)$ from one open
+subset of $\mathbb{R}^d$ to another via $d$ component functions
 
-We start with the circle \(S^1=\{(x,y):x^2+y^2=1\}\), dimension \(d=1\),
-with two angle charts that omit a cut.
+$$
+\psi_{\beta\alpha}(\mathbf{x})
+  =\bigl(\psi_{\beta\alpha}^1(\mathbf{x}),\dots,
+         \psi_{\beta\alpha}^d(\mathbf{x})\bigr).
+$$
+
+The atlas is **smooth** when every transition map and its inverse are
+infinitely differentiable ($C^\infty$). Explicitly: for every order
+$k\ge 1$, every component $i\in\{1,\dots,d\}$, and all indices
+$j_1,\dots,j_k\in\{1,\dots,d\}$, the partial derivatives
+
+$$
+\frac{\partial^k \psi_{\beta\alpha}^i}
+     {\partial x^{j_1}\,\partial x^{j_2}\cdots\partial x^{j_k}}
+(\mathbf{x})
+$$
+
+exist and are continuous on
+$\varphi_\alpha(U_\alpha\cap U_\beta)$. By the multivariable chain
+rule, this is exactly what makes “$f:M\to\mathbb{R}$ is smooth” a
+chart-independent statement: check $f\circ\varphi^{-1}$ in any chart.
+
+We start with the circle $S^1=\{(x,y):x^2+y^2=1\}$, dimension $d=1$,
+with two angle charts that each omit one cut point.
 """))
 
 cells.append(code(r"""
@@ -213,35 +255,61 @@ circle does not depend on which chart we use.
 cells.append(md(r"""
 ## 3. Tangent vectors and the exponential map (geometric idea)
 
-Around a point \(p\in M\), the manifold looks like
-\(\mathbb{R}^d\). The **tangent space** \(T_p M\) is the vector space
-of initial velocities of smooth curves \(\gamma\) with
-\(\gamma(0)=p\). Pick a rule that extends each initial velocity \(v\)
-to a preferred smooth curve (geodesic, one-parameter subgroup, …).
-Travel for time \(1\) along that curve; the endpoint is
-\(\operatorname{exp}_p(v)\). That is the geometric **exponential map**.
+Around a point $p\in M$, every chart makes $M$ look like an open set
+in $\mathbb{R}^d$. A smooth curve $\gamma:(-\varepsilon,\varepsilon)\to M$
+with $\gamma(0)=p$ has an **initial velocity**
+$\gamma'(0)\in T_p M$. The **tangent space** $T_p M$ is the real
+vector space of all such initial velocities (dimension $d$).
 
-We will make this completely concrete for **matrix Lie groups**, where
-the preferred curves are one-parameter subgroups and the exponential
-is the power series.
+Given a consistent rule that extends each $v\in T_p M$ to a preferred
+smooth curve $\gamma_v$ with $\gamma_v(0)=p$ and $\gamma_v'(0)=v$
+(geodesic, one-parameter subgroup, …), the **exponential map** at $p$
+is
+
+$$
+\operatorname{exp}_p:T_p M\supset\mathcal{U}\to M,\qquad
+\operatorname{exp}_p(v)=\gamma_v(1),
+$$
+
+i.e. travel for one unit of time along that preferred curve. We make
+this completely concrete for **matrix Lie groups**, where the preferred
+curves are one-parameter subgroups and $\operatorname{exp}$ is the
+matrix power series.
 """))
 
 cells.append(md(r"""
 ## 4. Lie groups and Lie algebras
 
-A **Lie group** \(G\) is a smooth manifold that is also a group, with
-smooth multiplication and inversion. Left translation
-\(g\mapsto T^{-1}g\) moves a neighbourhood of any \(T\) to a
-neighbourhood of the identity \(\mathbf{I}\). So the whole group's
-local linear structure is encoded in the **tangent space at
-\(\mathbf{I}\)**: the **Lie algebra** \(\mathfrak{g}=T_{\mathbf{I}}G\).
+A **Lie group** $G$ is a smooth manifold that is also a group, with
+smooth multiplication $G\times G\to G$ and smooth inversion
+$G\to G$. For any fixed transformation $T\in G$, left translation
 
-The **Lie bracket** \([X,Y]=XY-YX\) (for matrix groups) measures the
-failure of two infinitesimal transformations to commute.
+$$
+g\;\longmapsto\; T^{-1}g
+$$
 
-**One-parameter subgroups** are smooth homomorphisms
-\(\gamma:\mathbb{R}\to G\), \(\gamma(t+s)=\gamma(t)\gamma(s)\). For
-matrix groups, \(\gamma(t)=\exp(tX)\) with \(X=\gamma'(0)\).
+is a smooth diffeomorphism sending a neighbourhood of $T$ to a
+neighbourhood of the identity $\mathbf{I}$. Therefore the whole group's
+local linear structure is encoded in the single vector space
+$T_{\mathbf{I}}G$: the **Lie algebra** $\mathfrak{g}=T_{\mathbf{I}}G$.
+
+For matrix groups the Lie **bracket** is the commutator
+
+$$
+[\mathbf{X},\mathbf{Y}]=\mathbf{X}\mathbf{Y}-\mathbf{Y}\mathbf{X},
+$$
+
+which vanishes if and only if $\mathbf{X}$ and $\mathbf{Y}$ commute.
+
+**One-parameter subgroups** are smooth group homomorphisms
+$\gamma:\mathbb{R}\to G$,
+
+$$
+\gamma(t+s)=\gamma(t)\,\gamma(s),\qquad \gamma(0)=\mathbf{I}.
+$$
+
+Writing $\mathbf{X}=\gamma'(0)\in\mathfrak{g}$, the exponential map of
+the Lie group recovers the subgroup as $\gamma(t)=\exp(t\mathbf{X})$.
 
 > **Further reading.** B. C. Hall, *Lie Groups, Lie Algebras, and
 > Representations*, 2nd ed., Springer, 2015, Ch. 1–3 (matrix Lie
@@ -250,34 +318,80 @@ matrix groups, \(\gamma(t)=\exp(tX)\) with \(X=\gamma'(0)\).
 """))
 
 cells.append(md(r"""
-## 5. The general linear group \(\mathrm{GL}(n,\mathbb{C})\)
+## 5. The general linear group $\mathrm{GL}(n,\mathbb{C})$
 
-\(\mathrm{GL}(n,\mathbb{C})\) is the set of invertible \(n\times n\)
-complex matrices. Matrix multiplication and inversion are smooth
-(rational in the entries, away from \(\det=0\)), so it is a Lie group.
-It sits as an **open** subset of the flat vector space
-\(M_n(\mathbb{C})\cong\mathbb{C}^{n^2}\) of *all* matrices, because
-\(\det\) is continuous and \(\mathrm{GL}=\{\det\neq 0\}\).
+$\mathrm{GL}(n,\mathbb{C})$ is the set of all invertible
+$n\times n$ complex matrices. Matrix multiplication and inversion are
+smooth operations on that set, so $\mathrm{GL}(n,\mathbb{C})$ is a Lie
+group. It sits as an **open** subset of the flat vector space
+$M_n(\mathbb{C})\cong\mathbb{C}^{n^2}$ of *all* matrices, because the
+determinant is continuous and
+$\mathrm{GL}(n,\mathbb{C})=\{A:\det A\neq 0\}$.
 
-Its Lie algebra \(\mathfrak{gl}(n,\mathbb{C})\) is **all**
-\(n\times n\) complex matrices (no invertibility). In quantum
-mechanics, Hamiltonians — Hermitian or not, including singular ones —
-live in this Lie algebra; their exponentials land in the Lie group
-whenever we use the series below (always convergent for matrices).
+Its Lie algebra $\mathfrak{gl}(n,\mathbb{C})$ is the vector space of
+**all** $n\times n$ complex matrices (no invertibility requirement).
+In quantum mechanics, Hamiltonians — Hermitian or not, including those
+with zero eigenvalues — live in this Lie algebra. Their time evolution
+operators are obtained by the exponential map into the Lie group.
 
-Differentiating \(\gamma(t+s)=\gamma(t)\gamma(s)\) and setting \(s=0\)
-gives the linear ODE
+Because $\mathrm{GL}$ is open in a flat matrix space, any smooth curve
+$\gamma:\mathbb{R}\to\mathrm{GL}(n,\mathbb{C})$ can be differentiated
+entry by entry. The exponential map is defined by a curve satisfying
 
-\[
-\frac{\mathrm{d}}{\mathrm{d}t}\gamma(t)=\gamma(t)\,X,\qquad
-\gamma(0)=\mathbf{I},\quad X=\gamma'(0).
-\]
+$$
+\exp(t\mathbf{X})=\gamma(t),\qquad
+\gamma(0)=\mathbf{I},\qquad
+\left.\frac{\mathrm{d}\gamma}{\mathrm{d}t}\right|_{t=0}=\mathbf{X}.
+$$
 
-The unique solution is the **matrix exponential**
+A one-parameter subgroup also obeys the homomorphism rule
 
-\[
-\exp(tX)=\sum_{m=0}^\infty\frac{t^m}{m!}X^m. \tag{1}
-\]
+$$
+\gamma(t+s)=\gamma(t)\cdot\gamma(s).
+$$
+
+Differentiating both sides (entry by entry) gives
+
+$$
+\mathrm{d}\gamma(t+s)
+  =\gamma'(t+s)\,(\mathrm{d}t+\mathrm{d}s)
+  =\gamma'(t)\cdot\gamma(s)\,\mathrm{d}t
+   +\gamma(t)\cdot\gamma'(s)\,\mathrm{d}s.
+$$
+
+Holding $t+s$ fixed ($\mathrm{d}t+\mathrm{d}s=0$) forces
+$\gamma'(t)\cdot\gamma(s)=\gamma(t)\cdot\gamma'(s)$. Setting $s=0$
+and writing $\mathbf{X}=\gamma'(0)$ yields the matrix ODE
+
+$$
+\frac{\mathrm{d}\gamma(t)}{\mathrm{d}t}
+  =\gamma(t)\cdot\mathbf{X},\qquad
+\gamma(0)=\mathbf{I}.
+$$
+
+For matrices, the unique entire solution is the power series
+(always convergent in any matrix norm)
+
+$$
+\exp(t\mathbf{X})
+  \equiv\gamma(t)
+  =\sum_{m=0}^{\infty}\frac{t^m}{m!}\,\mathbf{X}^m. \tag{1}
+$$
+
+Useful identities that follow from the series (or the ODE):
+
+$$
+\exp(\mathbf{0})=\mathbf{I},\qquad
+\exp(t\mathbf{X})^{-1}=\exp(-t\mathbf{X}),\qquad
+\frac{\mathrm{d}}{\mathrm{d}t}\exp(t\mathbf{X})
+  =\mathbf{X}\,\exp(t\mathbf{X})
+  =\exp(t\mathbf{X})\,\mathbf{X}.
+$$
+
+If $\mathbf{A}$ and $\mathbf{B}$ commute ($\mathbf{A}\mathbf{B}=\mathbf{B}\mathbf{A}$),
+then $\exp(\mathbf{A}+\mathbf{B})=\exp(\mathbf{A})\exp(\mathbf{B})$.
+When they do **not** commute, the product formula / BCH expansion
+corrects the difference — that is the bridge to Trotter in Part III.
 """))
 
 cells.append(code(r"""
@@ -331,27 +445,47 @@ cells.append(md(r"""
 """))
 
 cells.append(md(r"""
-## A1. The Bloch sphere (\(\mathbb{CP}^{1}\))
+## A1. The Bloch sphere ($\mathbb{CP}^{1}$)
 
-A pure qubit state is a unit vector \(|\psi\rangle\in\mathbb{C}^2\) up
-to global phase — equivalently a point of the complex projective line
-\(\mathbb{CP}^{1}\). As a real manifold, \(\mathbb{CP}^{1}\cong S^2\):
-the **Bloch sphere**. Write
+A pure qubit state is a unit vector $|\psi\rangle\in\mathbb{C}^2$ up to
+a nonzero complex factor: $|\psi\rangle\sim\lambda|\psi\rangle$ for
+$\lambda\in\mathbb{C}\setminus\{0\}$. The space of such rays is the
+complex projective line $\mathbb{CP}^{1}$. As a real smooth manifold,
 
-\[
+$$
+\mathbb{CP}^{1}\;\cong\; S^2
+$$
+
+— the **Bloch sphere**. In the computational basis one may write
+
+$$
 |\psi\rangle
-  =\cos(\theta/2)|0\rangle
-  +e^{i\phi}\sin(\theta/2)|1\rangle,
-\]
+  =\cos\frac{\theta}{2}\,|0\rangle
+  +e^{i\phi}\sin\frac{\theta}{2}\,|1\rangle,
+\qquad
+\theta\in[0,\pi],\quad \phi\in[0,2\pi),
+$$
 
-with polar angle \(\theta\in[0,\pi]\) and azimuth \(\phi\in[0,2\pi)\).
-The Bloch vector \(\mathbf{r}=(\sin\theta\cos\phi,\sin\theta\sin\phi,
-\cos\theta)\) lies on the unit sphere.
+and the Bloch vector
 
-Evolution under a Hamiltonian \(H=\mathbf{n}\cdot\boldsymbol{\sigma}\)
-(unit \(\mathbf{n}\)) is a rotation of \(\mathbf{r}\) about
-\(\mathbf{n}\) — implemented by the unitary
-\(U(t)=\exp(-i t H)\) on the Lie group \(\mathrm{U}(2)\).
+$$
+\mathbf{r}
+  =(\sin\theta\cos\phi,\;\sin\theta\sin\phi,\;\cos\theta)
+  \in S^2\subset\mathbb{R}^3
+$$
+
+satisfies $r_i=\langle\psi|\sigma_i|\psi\rangle$ with Pauli matrices
+$\sigma_x,\sigma_y,\sigma_z$.
+
+A Hamiltonian $H=\mathbf{n}\cdot\boldsymbol{\sigma}$ with
+$|\mathbf{n}|=1$ generates the unitary one-parameter group
+
+$$
+U(t)=\exp(-i t H)\in\mathrm{U}(2),
+$$
+
+which rotates $\mathbf{r}(t)$ about the axis $\mathbf{n}$ at angular
+speed $2$ (in units $\hbar=1$).
 """))
 
 cells.append(code(r"""
@@ -924,22 +1058,33 @@ OQS + RFCs.
 cells.append(md(r"""
 # Part III — Bridge to product formulas (module 05)
 
-Hamiltonian simulation writes a unitary (or invertible) evolution as a
-product of simpler exponentials. That only makes sense once
-\(\exp(tX)\) is defined on a matrix Lie algebra and lands in a matrix
-Lie group — Part I. The **Lie–Trotter** and **Suzuki** product
-formulas approximate \(\exp(t(A+B))\) by products of
-\(\exp(tA/r)\) and \(\exp(tB/r)\); error bounds (e.g. Childs et al.,
-*Phys. Rev. X* **11**, 011020 (2021)) quantify the remainder.
+Hamiltonian simulation writes an evolution operator as a **product of
+simpler exponentials**. That only makes sense once $\exp(t\mathbf{X})$
+is defined on a matrix Lie algebra and lands in a matrix Lie group —
+Part I.
 
-In the coupled‑oscillator notebooks, §5.1 of the \(N=2\) tutorial keeps
-a *thin* reminder of this exponential map and then moves to Pauli
+If $[\mathbf{A},\mathbf{B}]=0$, then
+$\exp(t(\mathbf{A}+\mathbf{B}))=\exp(t\mathbf{A})\exp(t\mathbf{B})$.
+If not, the **Lie product formula** still recovers the sum in the limit
+
+$$
+\exp\bigl(t(\mathbf{A}+\mathbf{B})\bigr)
+  =\lim_{r\to\infty}
+   \Bigl(\exp\frac{t\mathbf{A}}{r}\,\exp\frac{t\mathbf{B}}{r}\Bigr)^{r}.
+$$
+
+Finite $r$ gives a Trotter step of order $O(t^2/r)$ (and higher-order
+Suzuki formulae improve the power of $1/r$). Rigorous remainder bounds
+in terms of nested commutators are in Childs et al., *Phys. Rev. X*
+**11**, 011020 (2021).
+
+In the coupled-oscillator notebooks, §5.1 of the $N=2$ tutorial keeps a
+*thin* reminder of the exponential map and then moves to Pauli
 decomposition and Trotter. This foundations notebook is the place for
 the geometry; module 05 is the place for the simulation pipeline.
 
-> **Further reading.** Hall, Ch. on BCH. M. Suzuki, “General theory of
-> fractal path integrals with applications to many‑body theories and
-> statistical physics,” *J. Math. Phys.* **32** (1991) 400–407.
+> **Further reading.** Hall (BCH chapter). M. Suzuki, “General theory
+> of fractal path integrals…,” *J. Math. Phys.* **32** (1991) 400–407.
 > A. M. Childs et al., “Theory of Trotter error with commutator
 > scaling,” *Phys. Rev. X* **11** (2021) 011020,
 > [arXiv:1912.08854](https://arxiv.org/abs/1912.08854).
