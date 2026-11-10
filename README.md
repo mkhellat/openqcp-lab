@@ -139,9 +139,11 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   quantum Hamiltonian simulation with exponential speedup.
 
 - [Foundations - Smooth manifolds, Lie groups, and the exponential map](tutorials/manifolds_lie_groups_quantum)  
-  Charts and \(C^\infty\) transitions, Lie algebras, and the matrix
+  Charts and $C^\infty$ transitions, Lie algebras, and the matrix
   exponential, with Tier A/B/C applications (Bloch sphere through
-  PQC off-ramp). Mathematical prerequisite for module ( 05 ).
+  PQC off-ramp). Foundations for the geometry of states,
+  transformations, and parameters across the lab; Part III bridges
+  to product formulas in module ( 05 ).
 
 ## Tools
 

@@ -36,9 +36,9 @@ where it shows up**, then code or a reading off-ramp.
 
 | Tier | Topics | Code depth |
 |------|--------|------------|
-| A | Bloch / \(\mathbb{CP}^{1}\); \(\mathbb{CP}^{d-1}\) & density operators; \(\mathrm{U}(2^{n})\); \(\mathrm{Sp}(2n,\mathbb{R})\); statistical manifolds | Full labs |
-| B | Lorentzian Minkowski; \(U(1)\) bundles / Berry phase | Light code |
-| C | Calabi–Yau; \(G_{2}\); twistors; elliptic curves & lattices | Prose + schematics; PQC/crypto off-ramp |
+| A | Bloch / $\mathbb{CP}^{1}$; $\mathbb{CP}^{d-1}$ & density operators; $\mathrm{U}(2^{n})$; $\mathrm{Sp}(2n,\mathbb{R})$; statistical manifolds | Full labs |
+| B | Lorentzian Minkowski; $U(1)$ bundles / Berry phase | Light code |
+| C | Calabi–Yau; $G_{2}$; twistors; elliptic curves & lattices | Prose + schematics; PQC/crypto off-ramp |
 
 **Graduation:** PQC / cryptology (and other topics that outgrow a
 vignette) are meant for **dedicated** follow-on notebooks using RFCs
