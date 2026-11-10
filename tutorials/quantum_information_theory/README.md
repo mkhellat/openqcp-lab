@@ -37,8 +37,9 @@ These are in the top-level `requirements.txt`. No Classiq, no
 | IV | Bridges to manifolds (Fisher) and the wider lab | Short |
 
 **Graduation:** NIST PQC standards, RFCs, and Open Quantum Safe
-(`liboqs`, `oqs-provider`) belong in a **dedicated PQC / cryptology**
-notebook — not in this file.
+(`liboqs`, `oqs-provider`) continue in
+[`../post_quantum_cryptography`](../post_quantum_cryptography/) —
+not in this file.
 
 
 # Further reading (primary)
