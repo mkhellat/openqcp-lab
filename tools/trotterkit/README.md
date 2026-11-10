@@ -51,6 +51,22 @@ stores conventional diagonals and builds a single whole-H propagator
 by Taylor expansion with scaling and squaring; it does not split H
 into XOR-offset fragments or use Trotter-Suzuki product formulas.
 
+## References
+
+Product formulas and the step-count bound used here:
+
+- M. Suzuki, “General theory of fractal path integrals with
+  applications to many-body theories and statistical physics,”
+  *J. Math. Phys.* **32**, 400–407 (1991),
+  https://doi.org/10.1063/1.529425
+- A. M. Childs, Y. Su, M. C. Tran, N. Wiebe, and S. Zhu, “Theory of
+  Trotter Error with Commutator Scaling,” *Phys. Rev. X* **11**,
+  011020 (2021), https://doi.org/10.1103/PhysRevX.11.011020
+  (arXiv:1912.08854)
+
+HamSim is related classical simulation work only (see above); it is
+not a source for the product-formula algorithms in this package.
+
 ## Command line and workload files
 
 Each backend has a command-line program that reads a workload file
