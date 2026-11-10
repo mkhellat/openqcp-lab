@@ -30,6 +30,9 @@ These are in the top-level `requirements.txt`. No Classiq, no
 
 # Depth map (applications)
 
+Each case is written as **background → geometry (with equations) →
+where it shows up**, then code or a reading off-ramp.
+
 | Tier | Topics | Code depth |
 |------|--------|------------|
 | A | Bloch / \(\mathbb{CP}^{1}\); \(\mathbb{CP}^{d-1}\) & density operators; \(\mathrm{U}(2^{n})\); \(\mathrm{Sp}(2n,\mathbb{R})\); statistical manifolds | Full labs |
