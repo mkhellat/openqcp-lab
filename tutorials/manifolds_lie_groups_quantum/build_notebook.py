@@ -85,9 +85,10 @@ cells.append(md(r"""
    and \(\mathfrak{u}(n)\).
 4. Work through Tier‑A applications (Bloch sphere, projective state
    space, unitaries, symplectic Gaussians, statistical manifolds) with
-   executable checks.
-5. Read Tier‑B/C vignettes with enough geometry to know *what* the
-   manifold is and where to go next (including a PQC/crypto off‑ramp).
+   background, equations, executable checks, and application notes.
+5. Read Tier‑B/C vignettes with enough background *and* geometry to know
+   *what* the manifold is, *why it matters*, and where to go next
+   (including a PQC/crypto off‑ramp).
 """))
 
 cells.append(md(r"""
@@ -438,25 +439,39 @@ generally, invertible.
 cells.append(md(r"""
 # Part II‑A — Application labs (full code)
 
+Each lab below has the same shape: **why the object shows up**, the
+**equations** that make it precise, a **coded check**, and a short
+**takeaway** tying manifold / Lie group / exponential together.
+
 > **Further reading (QI geometry).** I. Bengtsson and K. Życzkowski,
 > *Geometry of Quantum States: An Introduction to Quantum
 > Entanglement*, 2nd ed., Cambridge University Press, 2017. Chapter 4
-> treats complex projective spaces; the Bloch sphere is \(\mathbb{CP}^1\).
+> treats complex projective spaces; the Bloch sphere is $\mathbb{CP}^1$.
 """))
 
 cells.append(md(r"""
 ## A1. The Bloch sphere ($\mathbb{CP}^{1}$)
 
-A pure qubit state is a unit vector $|\psi\rangle\in\mathbb{C}^2$ up to
-a nonzero complex factor: $|\psi\rangle\sim\lambda|\psi\rangle$ for
-$\lambda\in\mathbb{C}\setminus\{0\}$. The space of such rays is the
-complex projective line $\mathbb{CP}^{1}$. As a real smooth manifold,
+### Background
+
+A **qubit** is the simplest quantum system with two levels (spin‑1/2,
+ground/excited states of a superconducting circuit, polarisation of a
+photon, …). Its pure states are unit vectors
+$|\psi\rangle\in\mathbb{C}^2$, but physics does not care about an
+overall complex factor: $|\psi\rangle$ and $\lambda|\psi\rangle$
+($\lambda\neq 0$) describe the same ray. The space of such rays is the
+complex projective line $\mathbb{CP}^{1}$. As a real smooth manifold
+that space is ordinary $S^2$ — the **Bloch sphere**. That is why every
+textbook picture of a qubit is a point on a sphere, not a vector in
+$\mathbb{C}^2$.
+
+### Geometry
 
 $$
-\mathbb{CP}^{1}\;\cong\; S^2
+\mathbb{CP}^{1}\;\cong\; S^2.
 $$
 
-— the **Bloch sphere**. In the computational basis one may write
+In the computational basis one may write
 
 $$
 |\psi\rangle
@@ -485,7 +500,20 @@ U(t)=\exp(-i t H)\in\mathrm{U}(2),
 $$
 
 which rotates $\mathbf{r}(t)$ about the axis $\mathbf{n}$ at angular
-speed $2$ (in units $\hbar=1$).
+speed $2$ (in units $\hbar=1$). So the **Lie algebra** (Hermitian
+generators / anti‑Hermitian $X=-iH$) drives motion on the **manifold**
+of states via the **exponential** in the **Lie group** $\mathrm{U}(2)$.
+
+### Where it shows up
+
+- **Single‑qubit gates** are rotations of $\mathbf{r}$ (or of the
+  sphere itself under $\mathrm{SU}(2)$).
+- **State tomography** recovers $\mathbf{r}$ from Pauli expectation
+  values $\langle\sigma_i\rangle$.
+- **NMR / ESR / superconducting control** design microwave pulses that
+  steer $\mathbf{r}$ along chosen paths.
+- **Decoherence** (not modelled in the pure‑state code below) pulls
+  $\mathbf{r}$ inside the ball — which is the mixed‑state story of A2.
 """))
 
 cells.append(code(r"""
@@ -563,17 +591,56 @@ Exponential: \(U(t)=\exp(-iHt)\).
 """))
 
 cells.append(md(r"""
-## A2. \(\mathbb{CP}^{d-1}\) and density operators
+## A2. $\mathbb{CP}^{d-1}$ and density operators
 
-Pure states of a \(d\)-level system are points of
-\(\mathbb{CP}^{d-1}\). Mixed states are density operators
-\(\rho=\rho^\dagger\geq 0\), \(\operatorname{Tr}\rho=1\). The set of
-density operators is a **convex body** in the real vector space of
-Hermitian matrices of trace one; its extreme points are the pure
-states (rank‑one projectors). The relative interior of fixed-rank
-strata are smooth manifolds; the full set has corners (a manifold
-*with corners* / stratified space). We check the geometry numerically
-for a qubit (Bloch ball) and a qutrit purity slice.
+### Background
+
+Not every quantum system is a qubit, and not every state is pure.
+A $d$-level system (qutrit, qudit, truncated oscillator, …) has pure
+states that are rays in $\mathbb{C}^d$ — points of the complex
+projective space $\mathbb{CP}^{d-1}$. When the system is entangled with
+an environment, or we simply lack full knowledge, the correct object is
+a **density operator** $\rho$: a Hermitian, positive‑semidefinite
+matrix with $\operatorname{Tr}\rho=1$. Pure states sit at the extreme
+points ($\rho=|\psi\rangle\langle\psi|$); everything else is a
+statistical mixture.
+
+### Geometry
+
+Pure states of a $d$-level system are points of $\mathbb{CP}^{d-1}$.
+The set of all density operators is a **convex body** in the real
+vector space of Hermitian matrices of trace one. Its extreme points
+are the pure states (rank‑one projectors). Fixed‑rank subsets are
+smooth manifolds in the relative interior; the full set has corners
+(a stratified space / manifold with corners). For $d=2$ that body is
+the **Bloch ball** $|\mathbf{r}|\le 1$; the sphere $|\mathbf{r}|=1$ is
+exactly A1.
+
+A useful scalar invariant is the **purity**
+
+$$
+\mathcal{P}(\rho)=\operatorname{Tr}(\rho^2),
+\qquad
+\frac{1}{d}\le\mathcal{P}(\rho)\le 1,
+$$
+
+with $\mathcal{P}=1$ if and only if $\rho$ is pure.
+
+### Where it shows up
+
+- **Open quantum systems** and noise channels act as maps on $\rho$,
+  typically shrinking purity.
+- **Quantum information geometry** (Bures metric, quantum Fisher
+  information) lives on full‑rank density operators — distances that
+  quantify how distinguishable two states are.
+- **Tomography and certification** reconstruct $\rho$ or check that a
+  prepared state is close to a target pure state.
+- **Entanglement** for bipartite systems is diagnosed on the joint
+  $\rho_{AB}$; reduced states $\rho_A=\operatorname{Tr}_B\rho_{AB}$
+  are generically mixed even when $\rho_{AB}$ is pure.
+
+We check the geometry numerically for a qubit (Bloch ball) and a
+qutrit purity slice.
 """))
 
 cells.append(code(r"""
@@ -641,13 +708,49 @@ see Bengtsson–Życzkowski for the Riemannian picture.
 """))
 
 cells.append(md(r"""
-## A3. Unitary gates \(\mathrm{U}(n)\) and Hermitian generators
+## A3. Unitary gates $\mathrm{U}(n)$ and Hermitian generators
 
-\(\mathrm{U}(n)=\{U:U^\dagger U=I\}\) is a compact Lie group. Its Lie
-algebra consists of **anti‑Hermitian** matrices \(X^\dagger=-X\). Writing
-\(X=-iH\) with \(H=H^\dagger\), every one-parameter subgroup is
-\(U(t)=\exp(-i t H)\). Quantum computation's gate set sits here
-(\(n=2^k\) for \(k\) qubits).
+### Background
+
+Closed quantum evolution preserves inner products: if
+$|\psi(0)\rangle$ is normalised, so is $|\psi(t)\rangle$, and relative
+phases between components are the entire dynamical content. The maps
+that do that are **unitary** matrices. Every gate in a digital quantum
+circuit, and every continuous drive under a time‑dependent
+Hamiltonian, is (ideally) an element of $\mathrm{U}(n)$ — or of the
+special unitary group $\mathrm{SU}(n)$ once an irrelevant global phase
+is fixed. For $k$ qubits one takes $n=2^k$.
+
+### Geometry
+
+$$
+\mathrm{U}(n)=\{U\in\mathrm{M}_n(\mathbb{C}):U^\dagger U=I\}
+$$
+
+is a compact Lie group of real dimension $n^2$. Its Lie algebra
+$\mathfrak{u}(n)$ consists of **anti‑Hermitian** matrices
+$X^\dagger=-X$. Writing $X=-iH$ with $H=H^\dagger$, every one-parameter
+subgroup is
+
+$$
+U(t)=\exp(-i t H).
+$$
+
+The traceless subalgebra $\mathfrak{su}(n)$ (dimension $n^2-1$)
+generates $\mathrm{SU}(n)$. Controllability questions in quantum
+control ask which subgroup you can reach by switching among a finite
+list of Hamiltonians — a Lie‑algebra generation problem.
+
+### Where it shows up
+
+- **Gate synthesis / compilation:** approximate a target $U_*$ by a
+  product of native exponentials $\exp(-i t_j H_j)$.
+- **Hamiltonian simulation** (module 05): write
+  $\exp(-i t(A+B+\cdots))$ as a product of simpler exponentials
+  (Trotter–Suzuki) — only after the exponential map of Part I is in
+  place.
+- **Pulse‑level control:** shaped microwave / laser drives implement
+  time‑ordered exponentials of $H(t)$.
 """))
 
 cells.append(code(r"""
@@ -677,13 +780,47 @@ Hermitian matrices. Exponential: time evolution / gate synthesis.
 """))
 
 cells.append(md(r"""
-## A4. The symplectic group \(\mathrm{Sp}(2n,\mathbb{R})\)
+## A4. The symplectic group $\mathrm{Sp}(2n,\mathbb{R})$
 
-Phase space \(\mathbb{R}^{2n}\) carries the standard symplectic matrix
-\(J\) (\(J^\top=-J\), \(J^2=-I\)). A real matrix \(S\) is **symplectic**
-when \(S^\top J S=J\). These transformations are the linear canonical
-transformations of classical mechanics and the Gaussian (linear optics)
-transformations of continuous-variable quantum information.
+### Background
+
+Position and momentum $(q_1,p_1,\ldots,q_n,p_n)$ live in a $2n$‑dimensional
+**phase space**. Classical Hamiltonian mechanics cares about more than
+ordinary volumes: it cares about the **symplectic** area form that
+makes Hamilton's equations covariant. Linear maps that preserve that
+form are the **symplectic** matrices. The same group appears in
+quantum optics and continuous‑variable (CV) quantum information: beam
+splitters, phase shifters, and squeezers act as Gaussian unitaries
+whose classical shadow on means and covariances is exactly a
+symplectic transformation.
+
+### Geometry
+
+Phase space $\mathbb{R}^{2n}$ carries the standard symplectic matrix
+$J$ ($J^\top=-J$, $J^2=-I$). A real matrix $S$ is **symplectic** when
+
+$$
+S^\top J S = J.
+$$
+
+The set of all such $S$ is the Lie group $\mathrm{Sp}(2n,\mathbb{R})$.
+For $n=1$ one has $\mathrm{Sp}(2,\mathbb{R})\cong\mathrm{SL}(2,\mathbb{R})$.
+Quadratic Hamiltonians generate one‑parameter subgroups by the matrix
+exponential in the Lie algebra $\mathfrak{sp}(2n,\mathbb{R})$.
+
+A Gaussian state's covariance matrix $\Sigma$ transforms as
+$\Sigma\mapsto S\Sigma S^\top$. Physical states obey an uncertainty
+relation that can be written, with $\hbar=1$, as
+$\Sigma+\mathrm{i}J/2\ge 0$.
+
+### Where it shows up
+
+- **Classical mechanics:** linear canonical transformations; small
+  oscillations; stability of fixed points.
+- **Quantum optics / CV QI:** squeezing, two‑mode entanglement
+  (EPR‑type states), Gaussian boson sampling backends.
+- **Metrology:** squeezed vacuum improves phase sensitivity beyond
+  shot noise within the Gaussian sector.
 
 > **Further reading.** M. de Gosson, *Symplectic Geometry and Quantum
 > Mechanics*, Birkhäuser, 2006, Ch. 2 (the symplectic group).
@@ -746,19 +883,50 @@ unitaries' classical shadow.
 cells.append(md(r"""
 ## A5. Statistical manifolds and the Fisher metric
 
-A smooth family of probability densities \(\{p_\theta\}\) parametrised
-by \(\theta\in\Theta\subset\mathbb{R}^m\) is a **statistical manifold**.
+### Background
+
+Estimation problems ask: given samples from a probability distribution
+that depends on an unknown parameter $\theta$, how accurately can
+$\theta$ be recovered? Differential geometry enters because the family
+of distributions itself is a curved space, and there is a natural
+notion of distance that matches statistical distinguishability.
+
+### Geometry
+
+A smooth family of probability densities $\{p_\theta\}$ parametrised
+by $\theta\in\Theta\subset\mathbb{R}^m$ is a **statistical manifold**.
 The **Fisher information matrix**
 
-\[
+$$
 g_{ij}(\theta)
   =\mathbb{E}_\theta
    \bigl[\partial_i\log p_\theta\;\partial_j\log p_\theta\bigr]
-\]
+$$
 
-is a Riemannian metric on \(\Theta\) (Rao, 1945). Geodesics and
-distances derived from \(g\) organise asymptotic statistics and, in
-quantum form, metrology.
+is a Riemannian metric on $\Theta$ (Rao, 1945). The Cramér–Rao bound
+says that the covariance of an unbiased estimator is at least
+$g(\theta)^{-1}$: more Fisher information means tighter possible
+error bars. Geodesics and distances derived from $g$ organise
+asymptotic statistics.
+
+For a Bernoulli random variable with success probability $p\in(0,1)$,
+
+$$
+g(p)=\frac{1}{p(1-p)},
+$$
+
+which blows up at the endpoints — extreme probabilities are easier to
+tell apart from their neighbours than $p\approx 1/2$ is.
+
+### Where it shows up
+
+- **Classical statistics:** asymptotic efficiency, exponential families,
+  natural gradients in machine learning (Amari).
+- **Quantum metrology:** the **quantum Fisher information** on density
+  operators bounds how well a phase or field can be estimated; squeezed
+  and entangled probes aim to raise that information per resource.
+- **Thermodynamics / inference:** geometries on spaces of Gibbs states
+  connect to response and fluctuation formulae.
 
 > **Further reading.** C. R. Rao, “Information and the accuracy
 > attainable in the estimation of statistical parameters,” *Bull.
@@ -812,13 +980,48 @@ Ch. on quantum systems).
 cells.append(md(r"""
 # Part II‑B — Light labs
 
+Same three‑part shape as Tier A (background → geometry → applications),
+with shorter code.
+
 ## B1. Minkowski spacetime as a smooth manifold
 
-\(\mathbb{R}^{1,3}\) with metric \(\eta=\mathrm{diag}(-1,1,1,1)\) (or
-the opposite sign convention) is a smooth manifold diffeomorphic to
-ordinary \(\mathbb{R}^4\), but the **metric** distinguishes timelike,
-null, and spacelike vectors. Lorentz transformations are the Lie group
-\(\mathrm{O}(1,3)\) preserving \(\eta\).
+### Background
+
+Special relativity is not “Euclidean geometry with an extra
+coordinate.” Events form a four‑dimensional continuum, and the
+physically meaningful notion of length is the **Minkowski** interval,
+which treats time differently from space. Light rays sit on the
+boundary between travel that is possible for massive particles and
+travel that is not.
+
+### Geometry
+
+$\mathbb{R}^{1,3}$ with metric $\eta=\mathrm{diag}(-1,1,1,1)$ (or the
+opposite sign convention) is a smooth manifold diffeomorphic to
+ordinary $\mathbb{R}^4$, but the **metric** distinguishes timelike,
+null, and spacelike vectors:
+
+$$
+v\cdot v = \eta_{\mu\nu}v^\mu v^\nu
+  \quad
+  \begin{cases}
+  <0 & \text{timelike (massive worldlines)},\\
+  =0 & \text{null (light rays)},\\
+  >0 & \text{spacelike}.
+  \end{cases}
+$$
+
+Lorentz transformations are the Lie group $\mathrm{O}(1,3)$ preserving
+$\eta$; adjoining translations gives the Poincaré group.
+
+### Where it shows up
+
+- **Particle kinematics:** energy–momentum relations, decay thresholds,
+  collider frame changes.
+- **Field theory:** causal structure of wave equations; light cones
+  bound signal propagation.
+- **General relativity:** curved spacetime is a Lorentzian manifold;
+  Minkowski space is the flat local model (Wald, Carroll).
 
 > **Further reading.** S. Carroll, *Spacetime and Geometry*, Addison
 > Wesley / Cambridge reprint, Ch. 1–2. R. Wald, *General Relativity*,
@@ -861,18 +1064,46 @@ metric. Isometry Lie group: Lorentz / Poincaré.
 """))
 
 cells.append(md(r"""
-## B2. \(U(1)\) bundles and Berry phase (sketch with code)
+## B2. $U(1)$ bundles and Berry phase (sketch with code)
 
-A **principal \(U(1)\) bundle** over a base \(M\) assigns a circle's
-worth of phases to each point of \(M\), glued consistently. In quantum
-mechanics, a normalised eigenstate \(|n(\mathbf{R})\rangle\) depending
-on slow parameters \(\mathbf{R}\) defines a line bundle; transporting
-the state around a closed loop in \(\mathbf{R}\)-space accumulates a
+### Background
+
+If you slowly cycle the knobs of a Hamiltonian and return them to the
+start, the quantum state need not return with only the usual dynamical
+phase $e^{-iEt/\hbar}$. An extra **geometric** phase can remain — it
+depends on the *path* in parameter space, not on how fast you traverse
+it (in the adiabatic idealisation). Berry’s insight was that this phase
+is the holonomy of a natural connection on the bundle of eigenstates.
+
+### Geometry
+
+A **principal $U(1)$ bundle** over a base $M$ assigns a circle's worth
+of phases to each point of $M$, glued consistently. In quantum
+mechanics, a normalised eigenstate $|n(\mathbf{R})\rangle$ depending on
+slow parameters $\mathbf{R}$ defines a line bundle over the parameter
+manifold; transporting the state around a closed loop accumulates a
 geometric **Berry phase**.
 
-For a spin‑1/2 in a magnetic field \(\mathbf{B}=B\,\hat{\mathbf{n}}\),
-a loop of \(\hat{\mathbf{n}}\) on the Bloch sphere enclosing solid
-angle \(\Omega\) gives Berry phase \(-\Omega/2\) for the ground state.
+For a spin‑1/2 in a magnetic field $\mathbf{B}=B\,\hat{\mathbf{n}}$, a
+loop of $\hat{\mathbf{n}}$ on the Bloch sphere enclosing solid angle
+$\Omega$ gives Berry phase
+
+$$
+\gamma = -\frac{\Omega}{2}
+$$
+
+for the ground state (monopole curvature of strength $1/2$ at the
+origin of $\mathbf{B}$‑space).
+
+### Where it shows up
+
+- **Molecular / condensed‑matter physics:** electronic states that pick
+  up Berry phases when nuclear coordinates cycle; anomalous velocity
+  terms in solids.
+- **Quantum control:** holonomic gates that encode computation in
+  geometric phases, aiming for robustness to timing noise.
+- **Topology:** Chern numbers and related invariants are integrals of
+  Berry curvature — the same geometry at a global scale.
 
 > **Further reading.** M. Nakahara, *Geometry, Topology and Physics*,
 > 2nd ed., Taylor & Francis, 2003, Ch. 9–10 (bundles, connections,
@@ -933,24 +1164,42 @@ curvature → solid angle / monopole.
 cells.append(md(r"""
 # Part II‑C — Map, schematics, and reading paths
 
-These topics are too rich for a full lab here. Each subsection states
-**what the manifold is**, why physicists or cryptographers care, and
-where to read. Dedicated follow‑on notebooks can graduate from these
-entries.
+These topics are too rich for a full lab here. Each entry still gives
+**background**, the **geometric object**, and **where it is used**,
+then stops at a reading path. Dedicated follow‑on notebooks can
+graduate from these entries.
 """))
 
 cells.append(md(r"""
 ## C1. Calabi–Yau manifolds
 
-A **Calabi–Yau** \(m\)-fold is (in the physicist's working sense) a
-compact Kähler manifold with vanishing first Chern class, equivalently
-one admitting a Ricci‑flat Kähler metric with holonomy in
-\(\mathrm{SU}(m)\) (Yau's solution of the Calabi conjecture). In
-string theory, the extra spatial dimensions are often modelled as a
-Calabi–Yau threefold; the topology controls the low‑energy particle
-spectrum.
+### Background
+
+String theory needs more spatial dimensions than the three we see.
+Those extra directions are usually taken to be small and curled into a
+compact space whose shape affects which particles and couplings appear
+at low energy. The spaces that preserve enough supersymmetry to be
+phenomenologically useful are **Calabi–Yau** manifolds.
+
+### Geometry
+
+A Calabi–Yau $m$-fold is (in the physicist's working sense) a compact
+Kähler manifold with vanishing first Chern class — equivalently, one
+that admits a Ricci‑flat Kähler metric with holonomy in $\mathrm{SU}(m)$
+(Yau's solution of the Calabi conjecture). Threefolds ($m=3$) are the
+standard choice for heterotic / type‑II compactifications: Hodge numbers
+and cycles control generations of particles and moduli fields.
 
 We do **not** attempt to construct Ricci‑flat metrics in code here.
+
+### Where it shows up
+
+- **String compactifications:** linking topology of the internal space
+  to four‑dimensional effective field theory.
+- **Mirror symmetry:** pairs of Calabi–Yau spaces with exchanged Hodge
+  data; a major bridge between geometry and physics.
+- **Mathematical interest:** existence and moduli of Ricci‑flat metrics
+  independent of any string interpretation.
 
 > **Further reading.** D. Joyce, *Compact Manifolds with Special
 > Holonomy*, OUP, 2000, Ch. on Calabi–Yau. S.‑T. Yau, “On the Ricci
@@ -963,28 +1212,62 @@ We do **not** attempt to construct Ricci‑flat metrics in code here.
 """))
 
 cells.append(md(r"""
-## C2. \(G_2\) manifolds
+## C2. $G_2$ manifolds
 
-\(G_2\) is an exceptional Lie group; a Riemannian 7‑manifold with
-holonomy \(G_2\) is Ricci‑flat and carries a parallel 3‑form. Such
-spaces appear in M‑theory compactifications. Compact examples were
-constructed by Joyce in the 1990s.
+### Background
+
+M‑theory is formulated in eleven dimensions. Compactifying on a
+7‑dimensional internal space while keeping some supersymmetry selects
+manifolds whose holonomy is the exceptional Lie group $G_2$, not
+$\mathrm{SU}(3)$.
+
+### Geometry
+
+$G_2$ is an exceptional simple Lie group of dimension $14$. A
+Riemannian 7‑manifold with holonomy $G_2$ is Ricci‑flat and carries a
+parallel 3‑form $\varphi$ that determines the metric. Compact examples
+with holonomy exactly $G_2$ were constructed by Joyce in the 1990s.
+
+### Where it shows up
+
+- **M‑theory compactifications** to four dimensions with $\mathcal{N}=1$
+  supersymmetry.
+- **Exceptional holonomy geometry** as a research area in its own
+  right (alongside $\mathrm{Spin}(7)$ in eight dimensions).
 
 > **Further reading.** Joyce, *Compact Manifolds with Special
-> Holonomy*, OUP, 2000, Part II (\(G_2\) and \(\mathrm{Spin}(7)\)).
+> Holonomy*, OUP, 2000, Part II ($G_2$ and $\mathrm{Spin}(7)$).
 
 **Off‑ramp:** graduate with the CY notebook or a dedicated exceptional
 holonomy note.
 """))
 
 cells.append(md(r"""
-## C3. Twistor space \(\mathbb{CP}^{3}\)
+## C3. Twistor space $\mathbb{CP}^{3}$
 
-**Twistor theory** (Penrose) encodes points and null structure of
-Minkowski spacetime in complex projective geometry. A basic dictionary:
-points of \(\mathbb{CP}^{3}\) correspond to null lines in (complexified)
-Minkowski space; spacetime points correspond to lines
-(\(\mathbb{CP}^{1}\)s) in twistor space.
+### Background
+
+Penrose's twistor programme asks whether spacetime geometry — especially
+its **null** (light‑ray) structure — is better organised in a complex
+projective space than in $\mathbb{R}^{1,3}$ itself. Massless fields and
+some integrable systems become cleaner in that language.
+
+### Geometry
+
+**Twistor space** for complexified Minkowski space is $\mathbb{CP}^{3}$.
+A basic dictionary: points of $\mathbb{CP}^{3}$ correspond to null lines
+in (complexified) Minkowski space; spacetime points correspond to lines
+($\mathbb{CP}^{1}$s) in twistor space. Incidence relations replace some
+metric calculations with projective geometry.
+
+### Where it shows up
+
+- **Classical relativity / massless fields:** contour‑integral formulae
+  for solutions of helicity field equations.
+- **Scattering amplitudes** (modern descendants): twistor and
+  momentum‑twistor variables in gauge‑theory amplitude methods.
+- **Integrable systems:** several soliton equations have natural
+  twistor constructions.
 
 > **Further reading.** R. Penrose, “Twistor algebra,” *J. Math. Phys.*
 > **8** (1967) 345–366. R. Penrose and W. Rindler, *Spinors and
@@ -997,27 +1280,44 @@ equations).
 cells.append(md(r"""
 ## C4. Elliptic curves, lattices, and PQC (off‑ramp)
 
-An **elliptic curve** over a field (e.g. \(\mathbb{F}_p\)) is a smooth
-genus‑one curve with a chosen point; its points form an abelian group
-used in elliptic‑curve cryptography. Modularally, isomorphism classes
-of elliptic curves over \(\mathbb{C}\) are parametrised by the quotient
-of the upper half‑plane by \(\mathrm{SL}_2(\mathbb{Z})\) — a
-foundational orbifold / stacky manifold picture.
+### Background
 
-**Lattices** \(\Lambda\subset\mathbb{R}^n\) are discrete subgroups; the
-quotient tori \(\mathbb{R}^n/\Lambda\) are smooth manifolds, and hard
-problems on lattices underpin much of **post‑quantum cryptography
-(PQC)**.
+Public‑key cryptography needs hard problems with an easy “trapdoor”
+direction. For decades that meant factoring and discrete logarithms —
+including discrete logs on **elliptic curves**, which give smaller keys
+than multiplicative groups of finite fields. Large quantum computers
+break those via Shor's algorithm, so **post‑quantum cryptography
+(PQC)** shifts to problems believed harder for quantum adversaries,
+notably on **lattices**.
+
+### Geometry
+
+An **elliptic curve** over a field (e.g. $\mathbb{F}_p$) is a smooth
+genus‑one curve with a chosen point; its points form an abelian group
+used in elliptic‑curve cryptography (ECDH, ECDSA, …). Over $\mathbb{C}$,
+isomorphism classes of elliptic curves are parametrised by the quotient
+of the upper half‑plane by $\mathrm{SL}_2(\mathbb{Z})$ — a foundational
+orbifold / stacky manifold picture that links complex analysis to the
+moduli of curves.
+
+**Lattices** $\Lambda\subset\mathbb{R}^n$ are discrete subgroups; the
+quotient tori $\mathbb{R}^n/\Lambda$ are smooth manifolds. Short‑vector
+and related problems on lattices underpin much of NIST's PQC portfolio.
+
+### Where it shows up
+
+- **Classical ECC** in TLS, SSH, blockchains (still widely deployed).
+- **PQC standards:** ML‑KEM, ML‑DSA, SLH‑DSA, … for encryption and
+  signatures meant to survive quantum adversaries.
+- **Protocol engineering:** hybrid key exchange in TLS and related
+  RFCs / Internet‑Drafts; the **Open Quantum Safe** stack
+  ([`liboqs`](https://github.com/open-quantum-safe/liboqs),
+  [`oqs-provider`](https://github.com/open-quantum-safe/oqs-provider))
+  for real implementations — **not** the schematic plot below.
 
 This foundations notebook stops at the geometric invitation. A
-**dedicated PQC / cryptology notebook** should use:
-
-- NIST PQC standards (ML‑KEM, ML‑DSA, SLH‑DSA, …);
-- **RFCs** and Internet‑Drafts for protocol integration (e.g. hybrid
-  key exchange in TLS 1.3 — see RFC 9954 and related documents);
-- the **Open Quantum Safe** stack:
-  [`liboqs`](https://github.com/open-quantum-safe/liboqs) and
-  [`oqs-provider`](https://github.com/open-quantum-safe/oqs-provider).
+**dedicated PQC / cryptology notebook** should use NIST standards, RFCs,
+and OQS rather than re‑implementing crypto here.
 
 > **Further reading (geometry / ECC).** J. H. Silverman, *The
 > Arithmetic of Elliptic Curves*, 2nd ed., Springer, 2009. J. H.
