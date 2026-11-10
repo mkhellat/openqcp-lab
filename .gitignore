@@ -82,3 +82,4 @@ tools/paulikit/PRIVATE_PERF_PLAN.md
 plans/
 docs/superpowers/
 **/superpowers/
+SESSION_CHECKPOINT_*.md
