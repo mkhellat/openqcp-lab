@@ -149,7 +149,13 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   Shannon and von Neumann entropies, relative entropy, channels,
   fidelity and trace distance, with a bridge toward code-based PQC
   (HQC named as destination). Complements the manifolds notebook;
-  defers NIST/OQS implementation to a dedicated cryptology module.
+  continues in the PQC / cryptology module for NIST and OQS.
+
+- [Foundations - Post-quantum cryptography and cryptology](tutorials/post_quantum_cryptography)  
+  NIST PQC portfolio (ML-KEM, ML-DSA, SLH-DSA; HQC as second KEM),
+  KEM/signature interfaces and sizes, soft-gated Open Quantum Safe
+  labs, and hybrid TLS / `oqs-provider` off-ramp. Consumes the QI
+  coding bridge and manifolds Tier‑C geometric invitation.
 
 ## Tools
 

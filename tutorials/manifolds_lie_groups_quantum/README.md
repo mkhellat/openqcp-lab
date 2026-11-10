@@ -40,10 +40,10 @@ where it shows up**, then code or a reading off-ramp.
 | B | Lorentzian Minkowski; $U(1)$ bundles / Berry phase | Light code |
 | C | Calabi–Yau; $G_{2}$; twistors; elliptic curves & lattices | Prose + schematics; PQC/crypto off-ramp |
 
-**Graduation:** PQC / cryptology (and other topics that outgrow a
-vignette) are meant for **dedicated** follow-on notebooks using RFCs
-and Open Quantum Safe (`liboqs`, `oqs-provider`), not for deep crypto
-implementation inside this foundations file.
+**Graduation:** PQC / cryptology continues in
+[`../post_quantum_cryptography`](../post_quantum_cryptography/)
+(NIST FIPS, hybrid TLS RFCs, soft-gated Open Quantum Safe). This
+foundations file stays the geometric invitation only.
 
 
 # Further reading (primary)
