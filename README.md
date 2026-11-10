@@ -145,6 +145,12 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   transformations, and parameters across the lab; Part III bridges
   to product formulas in module ( 05 ).
 
+- [Foundations - Quantum information and information theory](tutorials/quantum_information_theory)  
+  Shannon and von Neumann entropies, relative entropy, channels,
+  fidelity and trace distance, with a bridge toward code-based PQC
+  (HQC named as destination). Complements the manifolds notebook;
+  defers NIST/OQS implementation to a dedicated cryptology module.
+
 ## Tools
 
 Standalone, installable Python packages, kept separate from the
