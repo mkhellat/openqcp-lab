@@ -57,7 +57,11 @@ readout can only ever plot $|y_i(t)|$, not the true signed trajectory.
 This notebook additionally implements a Hadamard-test circuit to recover
 the full complex amplitude and reconstruct the correctly signed
 $y_i(t)$, verified against both an independent statevector calculation
-and a direct classical-ODE solution of the same physical system.
+and a direct classical-ODE solution of the same physical system. The
+Hadamard test for estimating $\operatorname{Re}/\operatorname{Im}$ of
+an amplitude is used as described in Aharonov, Jones, and Landau, “A
+Polynomial Quantum Algorithm for Approximating the Jones Polynomial,”
+STOC 2006 (arXiv:quant-ph/0511096).
 
 The $N=2$ notebook performs that Pauli decomposition symbolically
 (SymPy), which is fine for small $N$ but does not scale past roughly
