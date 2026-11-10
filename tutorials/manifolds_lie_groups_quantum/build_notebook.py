@@ -184,11 +184,13 @@ $$
 
 The examples below are sets for which those operations on *points*
 either leave the set, depend on arbitrary choices, or are not the
-combination law actually used. That shows they are not vector spaces
-of points. Each is a domain of points on which local differential
-structure is needed; §2 attaches ordinary calculus in $\mathbb{R}^d$
-to that domain by charts. The examples use only linear algebra and
-(for physics) undergraduate quantum mechanics.
+combination law actually used — so they are not vector spaces of
+points. We state that briefly where it is obvious, and spend the space
+on the **differential** fact: curves and functions on the set still
+admit ordinary calculus once velocities live in tangent spaces and
+coordinates are local. §2 packages that pattern as charts on a general
+manifold. The examples use only linear algebra and (for physics)
+undergraduate quantum mechanics.
 
 ### 1.1 Mathematics examples
 
@@ -201,31 +203,87 @@ S^2
   =\bigl\{(x,y,z)\in\mathbb{R}^3:x^2+y^2+z^2=1\bigr\}.
 $$
 
-This is a perfectly smooth surface (you can draw curves on it and
-differentiate them), but it is **not** a vector subspace of
-$\mathbb{R}^3$.
+This set is **not** a vector subspace of $\mathbb{R}^3$: the north and
+south poles $N=(0,0,1)$ and $S=(0,0,-1)$ lie on $S^2$, but
+$(N+S)/2=\mathbf{0}\notin S^2$, and $2N\notin S^2$. Addition and
+scaling of ambient vectors are simply the wrong operations on points of
+$S^2$. What matters is that $S^2$ still carries **ordinary calculus**
+locally — that is what we prove next.
 
-Take the north and south poles
+**Constraint $\Rightarrow$ tangent plane.** Let
+$\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ be a $C^1$ curve
+that stays on $S^2$, so
 
 $$
-N=(0,0,1),\qquad S=(0,0,-1).
+\gamma(t)\cdot\gamma(t)=1
+\qquad\text{for all }t.
 $$
 
-Both lie on $S^2$, yet their midpoint
+Differentiate both sides with the product rule:
 
 $$
-\frac{N+S}{2}=(0,0,0)
+\frac{d}{dt}\bigl(\gamma(t)\cdot\gamma(t)\bigr)
+  =2\,\gamma(t)\cdot\gamma'(t)=0.
 $$
 
-has squared length $0\neq 1$, so $\tfrac{N+S}{2}\notin S^2$. Scaling
-fails the same way: $2N=(0,0,2)$ has squared length $4\neq 1$, so
-$2N\notin S^2$. The only vector-space operations that stay on $S^2$
-for a generic point $p\in S^2$ are the trivial ones that happen to
-preserve the constraint $p\cdot p=1$.
+Hence at every point $p=\gamma(t)$ the velocity is orthogonal to the
+position,
 
-So: $S^2\subset\mathbb{R}^3$ inherits coordinates from $\mathbb{R}^3$,
-but **addition and scaling of points are the wrong operations** on
-$S^2$.
+$$
+\gamma'(t)\perp\gamma(t).
+$$
+
+The set of all such velocities at a fixed $p\in S^2$ is the
+**tangent plane**
+
+$$
+T_p S^2
+  =\bigl\{v\in\mathbb{R}^3:p\cdot v=0\bigr\},
+$$
+
+a $2$-dimensional real vector space. Differentiating a curve on $S^2$
+does **not** produce another point of $S^2$; it produces a vector in
+$T_p S^2$.
+
+**Local coordinates $\Rightarrow$ $C^\infty$ calculus.** Away from the
+poles, spherical coordinates
+
+$$
+\begin{aligned}
+x&=\sin\theta\cos\phi,\\
+y&=\sin\theta\sin\phi,\\
+z&=\cos\theta,
+\end{aligned}
+\qquad
+\theta\in(0,\pi),\quad
+\phi\in(0,2\pi),
+$$
+
+give a chart
+$\varphi:U\subset S^2\to\mathbb{R}^2$,
+$\varphi(x,y,z)=(\theta,\phi)$, whose inverse
+$\varphi^{-1}$ is $C^\infty$ as a map into $\mathbb{R}^3$ (each component
+is a composition of sines and cosines). A real function
+$f:S^2\to\mathbb{R}$ is smooth on $U$ precisely when
+$f\circ\varphi^{-1}$ is a smooth function of $(\theta,\phi)$ in the
+usual multivariable sense. Along a curve written in these coordinates
+as $(\theta(t),\phi(t))$, the chain rule gives
+
+$$
+\frac{d}{dt}(f\circ\gamma)(t)
+  =\partial_\theta(f\circ\varphi^{-1})\,\theta'(t)
+  +\partial_\phi(f\circ\varphi^{-1})\,\phi'(t),
+$$
+
+so derivatives on $S^2$ are ordinary $\mathbb{R}^2$ derivatives in the
+chart. (Charts that cover the poles, and $C^\infty$ transitions on
+overlaps, are the atlas story of §2; the sphere is the same idea in
+dimension $2$.)
+
+**Punchline.** $S^2$ is not closed under ambient $+/\cdot$, but it is a
+domain on which curves have well-defined derivatives in the tangent
+planes $T_p S^2$, and on which scalar functions are differentiated by
+ordinary calculus in local coordinates.
 
 #### (M2) Directions in the plane (rays through the origin)
 
@@ -377,15 +435,16 @@ moving on $S^2$, which returns us to (M1) with a physical reading.
 ### 1.3 What we need next
 
 Each example is a set of points that is not a vector space under
-addition, and that set is a domain for local differential geometry
-(and, in the physics cases, for local physical dependence on the
-point). A **smooth manifold** covers the set with overlapping patches,
-each identified with an open set in $\mathbb{R}^d$, with infinitely
-differentiable change-of-coordinate maps on overlaps — so ordinary
-calculus applies patch by patch. Differentiating a curve at a point
-$p$ then yields an element of the vector space $T_pM$ (the tangent
-space), not a sum of points of the set. Section 2 turns this into
-definitions and a worked example on the circle.
+addition. The important structure is local and differential — as in
+(M1), where differentiating the constraint produced the tangent planes
+$T_p S^2$ and spherical coordinates reduced derivatives to ordinary
+$\mathbb{R}^2$ calculus. A **smooth manifold** covers such a set with
+overlapping patches, each identified with an open set in
+$\mathbb{R}^d$, with infinitely differentiable change-of-coordinate maps
+on overlaps. Differentiating a curve at a point $p$ yields an element
+of the vector space $T_pM$ (the tangent space), not a sum of points of
+the set. Section 2 turns this into definitions and a worked example on
+the circle.
 
 > **Further reading.** J. M. Lee, *Introduction to Smooth Manifolds*,
 > 2nd ed., Springer, 2013, Ch. 1 (smooth manifolds and smooth maps).
@@ -394,15 +453,39 @@ definitions and a worked example on the circle.
 """))
 
 cells.append(code(r"""
-# Concrete checks for §1: sphere midpoint, ray equivalence, SO(3) sum vs product
+# Concrete checks for §1: S^2 calculus, ray equivalence, SO(3) sum vs product
 
-# (M1) Midpoint of north and south poles leaves S^2
+# (M1) Differentiating the constraint: great-circle velocity is tangent
+# gamma(t) = (cos t, sin t, 0) lies on S^2; gamma'(t) = (-sin t, cos t, 0)
+# satisfies gamma(t) · gamma'(t) = 0. Chain rule in spherical coords for f=z.
+
+def gamma(t):
+    return np.stack([np.cos(t), np.sin(t), np.zeros_like(t)], axis=-1)
+
+def gamma_dot(t):
+    return np.stack([-np.sin(t), np.cos(t), np.zeros_like(t)], axis=-1)
+
+ts = np.linspace(0.0, 2.0 * np.pi, 200, endpoint=False)
+g, gd = gamma(ts), gamma_dot(ts)
+assert np.allclose(np.sum(g * g, axis=-1), 1.0)
+assert np.allclose(np.sum(g * gd, axis=-1), 0.0)
+
+# Spherical chart on this equator curve: theta=pi/2, phi=t
+# f = z = cos(theta) => along the curve, d(f∘gamma)/dt = 0 = -sin(theta) theta'
+theta, phi = np.pi / 2, ts
+f_chart = np.cos(theta)  # constant along this curve
+df_dt_chain = -np.sin(theta) * 0.0 + 0.0  # theta'=0, and f independent of phi
+df_dt_ambient = gd[:, 2]  # d(z)/dt along gamma
+assert np.allclose(df_dt_ambient, 0.0)
+assert np.allclose(df_dt_chain, df_dt_ambient)
+
+# One-line reminder that ambient midpoint leaves S^2 (fact, not the point)
 N = np.array([0.0, 0.0, 1.0])
 S = np.array([0.0, 0.0, -1.0])
-mid = 0.5 * (N + S)
-print("(M1) ||N||, ||S||, ||(N+S)/2|| =", norm(N), norm(S), norm(mid))
-assert np.isclose(norm(N), 1) and np.isclose(norm(S), 1)
-assert not np.isclose(norm(mid), 1)
+assert not np.isclose(norm(0.5 * (N + S)), 1.0)
+
+print("(M1) max |gamma·gamma'| =", np.max(np.abs(np.sum(g * gd, axis=-1))))
+print("(M1) chain rule for f=z on equator: OK")
 
 # (M2) v and 2v are different vectors, same direction
 v = np.array([1.0, 2.0])
