@@ -6,11 +6,12 @@ with charts and transition maps, and how the **exponential map**
 connects a Lie algebra of generators to a Lie group of
 transformations — with coded applications at three depths (A/B/C).
 
-This module is a mathematical prerequisite for Hamiltonian simulation
-and product formulas in
+It is a foundations module for the geometry of states, transformations,
+and parameters used across the tutorials and tools here. Part III of
+the notebook bridges in particular to product formulas and Hamiltonian
+simulation in
 [`coupled_harmonic_oscillators`](../coupled_harmonic_oscillators/)
-(module 05). It does **not** replace that notebook's simulation
-pipeline.
+(module 05); it does **not** replace that pipeline.
 
 
 # Notebook

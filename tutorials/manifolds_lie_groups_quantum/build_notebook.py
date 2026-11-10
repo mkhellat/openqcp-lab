@@ -46,22 +46,68 @@ cells: list[nbf.NotebookNode] = []
 cells.append(md(r"""
 # Smooth Manifolds, Lie Groups, and the Exponential Map
 
-Across mathematics and theoretical physics, many fundamental objects
-**cannot** be treated as a single global vector space (you cannot
-always add two points, or scale a point), yet we still need smooth
-curves, functions, and derivatives on them. Those objects are **smooth
-manifolds**. When a manifold is also a group of transformations under
-composition, it is a **Lie group**, and its tangent space at the
-identity — the **Lie algebra** — carries the local linear structure of
-the whole group. The **exponential map** sends generators in the Lie
-algebra to one-parameter subgroups in the Lie group; for matrices it
-is the familiar power series.
+Many sets that appear in mathematics and theoretical physics are not
+vector spaces: if $p$ and $q$ are points of the set, $p+q$ or
+$\alpha p$ need not lie in the set, and need not be meaningful.
+Concrete examples are in §1.
+
+Such sets arise as domains of points on which geometry and physical
+law are local and differential: they concern how structure and
+quantities vary among neighbouring points. What the points *are*
+depends on the subject — for example:
+
+- in **mathematics**: the domains that forced the invention of
+  manifolds — curved surfaces and higher-dimensional geometries that
+  admit calculus only through local coordinates like open sets in
+  $\mathbb{R}^n$ (not a single global vector-space chart), directions
+  up to scaling, and continuous groups of transformations — so that
+  derivatives, curvature, and differential equations can be stated
+  intrinsically on those sets;
+- in **special and general relativity**: **events**; the domain is
+  spacetime itself, and the independent variables need not single out
+  time as a privileged parameter of the set;
+- in **quantum mechanics**, **quantum information**, and **quantum
+  computing**: pure states up to phase, mixed states, and unitary
+  gates (finite transformations), as well as control parameters of
+  Hamiltonians;
+- in **statistical physics** and **quantum statistical physics**:
+  macroscopic states of ensembles, and parameters of families of
+  probability distributions or Gibbs states;
+- in **twistor theory**: points of the complex projective set
+  $\mathbb{CP}^{3}$ that reorganises null structure in spacetime;
+- in **post-quantum cryptography and cryptology**: geometric carriers
+  such as elliptic curves and lattice quotients that underwrite hard
+  problems (treated here only as a map; depth belongs in a dedicated
+  notebook).
+
+The language of that local variation is multivariable calculus: smooth
+real-valued functions, smooth curves, and derivatives, written in local
+coordinates. Manifolds were introduced in mathematics precisely to
+carry that language on a set of points that is only locally like an
+open set in $\mathbb{R}^n$, when a single global vector-space domain is
+the wrong description of the points.
+
+A **smooth manifold** is a set equipped with local coordinates in open
+subsets of $\mathbb{R}^d$ so that those calculus notions are defined
+via ordinary calculus in $\mathbb{R}^d$ (details in §2). Differentiating
+a curve through a point $p$ yields an element of a vector space
+$T_pM$, the tangent space at $p$ — not an operation that adds points
+of the set itself.
+
+If a smooth manifold $G$ is also a group and the group operations are
+smooth, $G$ is a **Lie group**. Its **Lie algebra** is the tangent
+space at the identity, $\mathfrak{g}=T_eG$, which is a vector space.
+For the matrix groups used in this notebook, the exponential series
+$\exp(X)=\sum_{k\ge 0}X^k/k!$ maps $\mathfrak{g}$ into $G$, and
+$t\mapsto\exp(tX)$ is the smooth curve in $G$ with derivative $X$ at
+$t=0$.
 
 This notebook develops that language with pictures and code, then
-walks through applications that matter for quantum theory and
-computation at three depths (A / B / C). It is a foundations module
-for the coupled-oscillator Hamiltonian-simulation tutorials
-(module 05), not a replacement for them.
+applications at depths A / B / C. It is a foundations module for the
+geometry of states, transformations, and parameters used across the
+tutorials and tools here. Part III bridges in particular to product
+formulas and the coupled-oscillator Hamiltonian-simulation notebooks
+(module 05); it does not replace them.
 """))
 
 cells.append(md(r"""
@@ -125,29 +171,280 @@ print("numpy", np.__version__)
 cells.append(md(r"""
 # Part I — Smooth manifolds and Lie groups
 
-## 1. Why a vector space is not enough
+## 1. Sets of points that are not vector spaces
 
-In a vector space you can add vectors and scale them. Many spaces we
-care about refuse that:
+In a real vector space $V$ you may pick any two vectors $u,v\in V$ and
+any scalar $\alpha\in\mathbb{R}$ and form
 
-- directions in the plane (rays through the origin) — scaling a ray by
-  \(2\) is the *same* ray;
-- pure quantum states — \(|\psi\rangle\) and \(\lambda|\psi\rangle\)
-  (\(\lambda\neq 0\)) are the same physical state;
-- rotations of \(\mathbb{R}^3\) — two rotations do not “add” as vectors;
-  they *compose*.
+$$
+u+v\in V,
+\qquad
+\alpha u\in V.
+$$
 
-We still want to say that a curve of rotations is smooth, or that a
-function on the Bloch sphere has a derivative. A **smooth manifold**
-is the structure that makes that precise: the space is covered by
-overlapping patches, each looking like an open set in
-\(\mathbb{R}^d\), and the dictionaries between overlapping patches are
-infinitely differentiable.
+The examples below are sets for which those operations on *points*
+either leave the set, depend on arbitrary choices, or are not the
+combination law actually used. That shows they are not vector spaces
+of points. Each is a domain of points on which local differential
+structure is needed; §2 attaches ordinary calculus in $\mathbb{R}^d$
+to that domain by charts. The examples use only linear algebra and
+(for physics) undergraduate quantum mechanics.
+
+### 1.1 Mathematics examples
+
+#### (M1) The unit sphere in $\mathbb{R}^3$
+
+Let
+
+$$
+S^2
+  =\bigl\{(x,y,z)\in\mathbb{R}^3:x^2+y^2+z^2=1\bigr\}.
+$$
+
+This is a perfectly smooth surface (you can draw curves on it and
+differentiate them), but it is **not** a vector subspace of
+$\mathbb{R}^3$.
+
+Take the north and south poles
+
+$$
+N=(0,0,1),\qquad S=(0,0,-1).
+$$
+
+Both lie on $S^2$, yet their midpoint
+
+$$
+\frac{N+S}{2}=(0,0,0)
+$$
+
+has squared length $0\neq 1$, so $\tfrac{N+S}{2}\notin S^2$. Scaling
+fails the same way: $2N=(0,0,2)$ has squared length $4\neq 1$, so
+$2N\notin S^2$. The only vector-space operations that stay on $S^2$
+for a generic point $p\in S^2$ are the trivial ones that happen to
+preserve the constraint $p\cdot p=1$.
+
+So: $S^2\subset\mathbb{R}^3$ inherits coordinates from $\mathbb{R}^3$,
+but **addition and scaling of points are the wrong operations** on
+$S^2$.
+
+#### (M2) Directions in the plane (rays through the origin)
+
+A **direction** in $\mathbb{R}^2$ is a line through the origin: the set
+of all nonzero scalar multiples of a single nonzero vector. Write
+
+$$
+v\sim w
+\quad\text{when there exists }\lambda\in\mathbb{R}\setminus\{0\}
+\text{ with }w=\lambda v.
+$$
+
+Then $v$ and $2v$ determine the **same** direction, even though they
+are different vectors in $\mathbb{R}^2$. The space of directions is the
+set of equivalence classes
+
+$$
+\bigl(\mathbb{R}^2\setminus\{0\}\bigr)\big/\sim.
+$$
+
+You cannot “add two directions” by adding representatives: if $v$ and
+$w$ are not parallel, $v+w$ depends on how long you chose $v$ and $w$
+to be, so the sum is not well-defined on classes. Scaling a class by
+$2$ does nothing new, because $v\sim 2v$ already.
+
+(The same construction over $\mathbb{C}^2\setminus\{0\}$ with
+$\lambda\in\mathbb{C}\setminus\{0\}$ is the space of pure qubit states
+below.)
+
+#### (M3) Rotation matrices
+
+A $3\times 3$ real matrix $R$ is a **rotation** of $\mathbb{R}^3$ when
+it preserves lengths and orientations:
+
+$$
+R^\top R = I,
+\qquad
+\det R = 1.
+$$
+
+Write $\mathrm{SO}(3)$ for the set of all such matrices. It sits inside
+the vector space $\mathrm{M}_3(\mathbb{R})$ of all $3\times 3$ real
+matrices, but it is not a linear subspace.
+
+If $R,S\in\mathrm{SO}(3)$, the sum $R+S$ typically fails
+$(R+S)^\top(R+S)=I$. The natural combination is **composition**
+
+$$
+(R,S)\longmapsto RS,
+$$
+
+which does stay in $\mathrm{SO}(3)$:
+
+$$
+(RS)^\top(RS)=S^\top R^\top R S=S^\top S=I,
+\qquad
+\det(RS)=(\det R)(\det S)=1.
+$$
+
+So the structure on $\mathrm{SO}(3)$ is multiplicative, not the vector
+addition of matrices. (One-parameter families $R(t)$ of rotations are
+still smooth curves of matrices; we will return to that with the
+matrix exponential.)
+
+### 1.2 Physics examples
+
+#### (P1) Pure states of a qubit
+
+A pure state of a two-level quantum system is a unit vector
+$|\psi\rangle\in\mathbb{C}^2$,
+
+$$
+|\psi\rangle
+  =\begin{pmatrix}\alpha\\\beta\end{pmatrix},
+\qquad
+|\alpha|^2+|\beta|^2=1,
+$$
+
+but physics does not distinguish an overall complex factor: for every
+$\lambda\in\mathbb{C}\setminus\{0\}$,
+
+$$
+|\psi\rangle
+\quad\text{and}\quad
+\lambda|\psi\rangle
+$$
+
+describe the **same** preparation (all expectation values
+$\langle\psi|A|\psi\rangle/\langle\psi|\psi\rangle$ agree). Equivalently
+one may keep $\|\psi\|=1$ and identify
+
+$$
+|\psi\rangle\sim e^{i\phi}|\psi\rangle,
+\qquad\phi\in\mathbb{R}.
+$$
+
+The space of pure qubit states is therefore **not** the vector space
+$\mathbb{C}^2$, and not even the unit sphere $S^3\subset\mathbb{C}^2\cong\mathbb{R}^4$
+once global phases are removed. A standard set of representatives is
+
+$$
+|\psi(\theta,\phi)\rangle
+  =\cos\frac{\theta}{2}\,|0\rangle
+  +e^{i\phi}\sin\frac{\theta}{2}\,|1\rangle,
+\qquad
+\theta\in[0,\pi],\quad\phi\in[0,2\pi),
+$$
+
+which labels points of an ordinary sphere $S^2$ (the Bloch sphere) by
+
+$$
+\mathbf{r}
+  =(\sin\theta\cos\phi,\;\sin\theta\sin\phi,\;\cos\theta).
+$$
+
+You need calculus on that sphere (paths of states, derivatives of
+expectation values); you do **not** add two Bloch vectors as if they
+were the states themselves and expect to stay on pure states — the
+sum of two pure-state projectors is generally mixed.
+
+#### (P2) Orientations of a rigid body
+
+The orientation of a rigid body in three-dimensional space is exactly
+a rotation of a body frame into a space frame: an element of
+$\mathrm{SO}(3)$ from (M3). A continuous motion is a smooth curve
+$R(t)\in\mathrm{SO}(3)$. Angular velocity lives in the linear space of
+antisymmetric $3\times 3$ matrices (skew-symmetric generators), while
+the orientation itself lives in the nonlinear set $\mathrm{SO}(3)$.
+Adding two orientation matrices is again the wrong operation;
+composing them (or following the curve $R(t)$) is the right one.
+
+#### (P3) Direction of a magnetic field (or spin axis)
+
+In many control and NMR-style settings the laboratory field direction
+is a unit vector $\hat{\mathbf{n}}\in S^2$. The Hamiltonian of a
+spin‑1/2 aligned with that field has the form
+
+$$
+H = \tfrac12 B\, \hat{\mathbf{n}}\cdot\boldsymbol{\sigma}
+$$
+
+(with Pauli matrices $\boldsymbol{\sigma}$ and strength $B$). The
+**parameter** that labels the family of Hamiltonians is the point
+$\hat{\mathbf{n}}$ on $S^2$, not a vector you add freely in
+$\mathbb{R}^3$: $\hat{\mathbf{n}}$ and $2\hat{\mathbf{n}}$ are not two
+different directions. Smoothly changing the field direction means
+moving on $S^2$, which returns us to (M1) with a physical reading.
+
+### 1.3 What we need next
+
+Each example is a set of points that is not a vector space under
+addition, and that set is a domain for local differential geometry
+(and, in the physics cases, for local physical dependence on the
+point). A **smooth manifold** covers the set with overlapping patches,
+each identified with an open set in $\mathbb{R}^d$, with infinitely
+differentiable change-of-coordinate maps on overlaps — so ordinary
+calculus applies patch by patch. Differentiating a curve at a point
+$p$ then yields an element of the vector space $T_pM$ (the tangent
+space), not a sum of points of the set. Section 2 turns this into
+definitions and a worked example on the circle.
 
 > **Further reading.** J. M. Lee, *Introduction to Smooth Manifolds*,
 > 2nd ed., Springer, 2013, Ch. 1 (smooth manifolds and smooth maps).
 > For a picture-first companion, V. Guillemin and A. Pollack,
 > *Differential Topology*, AMS Chelsea, 2010 (reprint), Ch. 1.
+"""))
+
+cells.append(code(r"""
+# Concrete checks for §1: sphere midpoint, ray equivalence, SO(3) sum vs product
+
+# (M1) Midpoint of north and south poles leaves S^2
+N = np.array([0.0, 0.0, 1.0])
+S = np.array([0.0, 0.0, -1.0])
+mid = 0.5 * (N + S)
+print("(M1) ||N||, ||S||, ||(N+S)/2|| =", norm(N), norm(S), norm(mid))
+assert np.isclose(norm(N), 1) and np.isclose(norm(S), 1)
+assert not np.isclose(norm(mid), 1)
+
+# (M2) v and 2v are different vectors, same direction
+v = np.array([1.0, 2.0])
+w = 2.0 * v
+print("(M2) v, 2v =", v, w, " parallel?", np.isclose(v[0] * w[1], v[1] * w[0]))
+
+# (M3) Two rotations: sum leaves SO(3), product stays
+def is_SO3(R, tol=1e-10):
+    return (
+        norm(R.T @ R - np.eye(3)) < tol
+        and abs(det(R) - 1.0) < tol
+    )
+
+# Rotation by α about z
+def Rz(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+R1, R2 = Rz(0.4), Rz(0.9)
+print("(M3) R1 in SO(3)?", is_SO3(R1), " R2 in SO(3)?", is_SO3(R2))
+print("(M3) R1+R2 in SO(3)?", is_SO3(R1 + R2),
+      " R1@R2 in SO(3)?", is_SO3(R1 @ R2))
+assert is_SO3(R1) and is_SO3(R2) and is_SO3(R1 @ R2)
+assert not is_SO3(R1 + R2)
+
+# (P1) Global phase does not change Pauli expectations
+def bloch(psi):
+    psi = psi / norm(psi)
+    X = np.array([[0, 1], [1, 0]], dtype=complex)
+    Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
+    Z = np.array([[1, 0], [0, -1]], dtype=complex)
+    return np.array([
+        np.real(np.vdot(psi, X @ psi)),
+        np.real(np.vdot(psi, Y @ psi)),
+        np.real(np.vdot(psi, Z @ psi)),
+    ])
+
+psi = np.array([np.cos(0.3), np.exp(1j * 0.5) * np.sin(0.3)], dtype=complex)
+psi_phase = np.exp(1j * 1.7) * psi
+print("(P1) Bloch(ψ)      =", bloch(psi))
+print("(P1) Bloch(e^{iφ}ψ)=", bloch(psi_phase))
+assert np.allclose(bloch(psi), bloch(psi_phase))
 """))
 
 cells.append(md(r"""
@@ -988,7 +1285,7 @@ with shorter code.
 ### Background
 
 Special relativity is not “Euclidean geometry with an extra
-coordinate.” Events form a four‑dimensional continuum, and the
+coordinate.” Events form a four‑dimensional set of points, and the
 physically meaningful notion of length is the **Minkowski** interval,
 which treats time differently from space. Light rays sit on the
 boundary between travel that is possible for massive particles and
