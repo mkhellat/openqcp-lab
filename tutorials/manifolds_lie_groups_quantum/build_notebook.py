@@ -30,12 +30,121 @@ def fix_math(source: str) -> str:
     return source
 
 
-def md(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_markdown_cell(fix_math(source.strip() + "\n"))
+def md(source: str, *, collapsed: bool | None = None) -> nbf.NotebookNode:
+    cell = nbf.v4.new_markdown_cell(fix_math(source.strip() + "\n"))
+    if collapsed is not None:
+        cell.metadata["jp-MarkdownHeadingCollapsed"] = collapsed
+    return cell
 
 
 def code(source: str) -> nbf.NotebookNode:
     return nbf.v4.new_code_cell(source.strip() + "\n")
+
+
+# Heading banners (N=2 orange family for the deepest level). Level-4
+# example titles such as (M1) must outrank their (M1.1)–style children
+# visually — slate parent strip, orange child strip — otherwise the
+# hierarchy in JupyterLab reads upside-down (plain #### under loud #####).
+_SUB_STYLE = (
+    "border-left:5px solid #455a64;"
+    "background:#eceff1;"
+    "padding:0.55em 0.9em;"
+    "margin:0.65em 0 0.2em 0;"
+    "font-size:1.18em;"
+    "font-weight:700;"
+    "line-height:1.35;"
+)
+_SUBSUB_STYLE = (
+    "border-left:4px solid #e67e22;"
+    "background:#fff4e5;"
+    "padding:0.5em 0.85em;"
+    "margin:0.55em 0 0.15em 0;"
+    "font-size:1.08em;"
+    "font-weight:600;"
+    "line-height:1.35;"
+)
+
+
+def style_subsection_heading(title: str) -> str:
+    """HTML <h4> banner for example-level titles such as (M1), (P1)."""
+    return f'<h4 style="{_SUB_STYLE}">{title}</h4>'
+
+
+def style_subsubsection_heading(title: str) -> str:
+    """HTML <h5> banner for a subsubsection title (math OK inside)."""
+    return f'<h5 style="{_SUBSUB_STYLE}">{title}</h5>'
+
+
+_HEADING_LINE = re.compile(r"^(#{1,6})\s+\S")
+
+
+def explode_heading_cells(
+    cells_in: list[nbf.NotebookNode],
+    *,
+    default_collapsed: bool = False,
+) -> list[nbf.NotebookNode]:
+    """Match the N=2 coupled-oscillators notebook: each ATX heading in its
+    own markdown cell with ``jp-MarkdownHeadingCollapsed``, body until the
+    next heading in the following cell. JupyterLab then expands/collapses
+    all cells under that heading.
+
+    Level-4 headings (``####``, e.g. (M1)) become slate ``<h4>`` banners;
+    level-5+ (``#####``, e.g. M1.1–M1.5) become orange ``<h5>`` banners.
+    """
+    out: list[nbf.NotebookNode] = []
+    saw_doc_title = False
+
+    def flush_body(buf: list[str]) -> None:
+        text = "".join(buf).strip()
+        if text:
+            out.append(md(text))
+
+    for cell in cells_in:
+        if cell.cell_type != "markdown":
+            out.append(cell)
+            continue
+
+        # Honour an explicit collapsed flag already set on a heading-only cell.
+        src = cell.source if isinstance(cell.source, str) else "".join(cell.source)
+        lines = src.splitlines(keepends=True)
+        body: list[str] = []
+        for line in lines:
+            if _HEADING_LINE.match(line):
+                flush_body(body)
+                body = []
+                level = len(line) - len(line.lstrip("#"))
+                heading_only = line.rstrip("\n").rstrip()
+                title = re.sub(r"^#{1,6}\s+", "", heading_only)
+                # Document title (# only, first time): no collapse meta (N=2).
+                if level == 1 and not saw_doc_title and not heading_only.startswith(
+                    "# Part"
+                ):
+                    saw_doc_title = True
+                    out.append(md(heading_only))
+                else:
+                    if level == 1:
+                        saw_doc_title = True
+                    explicit = cell.metadata.get("jp-MarkdownHeadingCollapsed")
+                    flag = (
+                        default_collapsed
+                        if explicit is None
+                        else bool(explicit)
+                    )
+                    if level >= 5:
+                        out.append(
+                            md(style_subsubsection_heading(title), collapsed=flag)
+                        )
+                    elif level == 4:
+                        out.append(
+                            md(style_subsection_heading(title), collapsed=flag)
+                        )
+                    else:
+                        out.append(md(heading_only, collapsed=flag))
+            else:
+                body.append(line)
+        flush_body(body)
+
+    return out
 
 
 cells: list[nbf.NotebookNode] = []
@@ -148,6 +257,16 @@ cells.append(md(r"""
 | II‑C | Map + citations: Calabi–Yau; \(G_2\); twistors; elliptic curves & lattices (PQC off‑ramp) |
 | III | Bridge to product formulas / module 05 |
 
+**Collapsible sections.** Same pattern as the N=2 coupled-oscillators
+notebook: each Markdown heading lives in its own cell with JupyterLab’s
+`jp-MarkdownHeadingCollapsed` flag. In JupyterLab (or the notebook ToC),
+click the triangle beside a heading to collapse or expand that section,
+subsection, or subsubsection — including the code cells under it.
+Example subsections (`####`, e.g. (M1)) use a slate banner; their
+subsubsections (`#####`, e.g. M1.1–M1.5) use an orange-accent banner
+(same family as the N=2 callout boxes) so the hierarchy stays readable.
+
+
 **Citation rule.** Every section names textbooks or articles a reader
 can open. We do not invent references.
 """))
@@ -203,16 +322,263 @@ S^2
   =\bigl\{(x,y,z)\in\mathbb{R}^3:x^2+y^2+z^2=1\bigr\}.
 $$
 
-This set is **not** a vector subspace of $\mathbb{R}^3$: the north and
-south poles $N=(0,0,1)$ and $S=(0,0,-1)$ lie on $S^2$, but
-$(N+S)/2=\mathbf{0}\notin S^2$, and $2N\notin S^2$. Addition and
-scaling of ambient vectors are simply the wrong operations on points of
-$S^2$. What matters is that $S^2$ still carries **ordinary calculus**
-locally — that is what we prove next.
+This set is **not** a vector subspace of $\mathbb{R}^3$ under the
+ambient $+/\cdot$: it is not closed under addition (or under scaling).
+For any distinct pair of points $p,q\in S^2$, the sum $p+q$ lies on
+$S^2$ if and only if $p\cdot q=-1/2$ (then $\|p+q\|=1$); otherwise
+$p+q\notin S^2$. So ambient addition is not a closed operation on
+$S^2$.
 
-**Constraint $\Rightarrow$ tangent plane.** Let
-$\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ be a $C^1$ curve
-that stays on $S^2$, so
+##### (M1.1) Why continuous $+/\cdot$ on $S^2$ cannot work
+
+Ambient $+/\cdot$ failed. Could some **other** pair of operations on
+the points of $S^2$ still satisfy the vector-space axioms?
+
+**Why we insist on continuity.** A discontinuous map
+$\oplus:S^2\times S^2\to S^2$ is still an operation on the **set** of
+points of $S^2$. Nothing in set language forbids it. Scalar fields and
+other functions *defined on* $S^2$ may also be discontinuous; analysis
+studies those routinely. Continuity of a map $f$ at $p$ means: for
+every $\varepsilon>0$ there exists $\delta>0$ such that
+$d(x,p)<\delta$ implies $d\bigl(f(x),f(p)\bigr)<\varepsilon$ — for each
+target tolerance around $f(p)$, some domain tolerance around $p$ works.
+The sizes need not match, and there is no “vice versa” in that
+definition.
+
+The issue is different. The sphere already carries a topology (nearness
+of points) used for limits, curves, and — later — derivatives. A
+**topological** vector space on that sphere is a vector-space structure
+whose $\oplus$ and $\odot$ are continuous **with respect to that same
+nearness**. If $p_n\to p$ on $S^2$ but $p_n\oplus q\not\to p\oplus q$,
+then limits and addition do not mesh: you cannot pass to the limit
+inside a sum. That is allowed as raw algebra on a set; it is not a
+structure that interacts with the differential geometry this notebook
+is building on $S^2$. So the question we ask is not “does any binary
+operation on the set exist?” but “can $+/\cdot$ obey the vector-space
+axioms **and** be continuous for the sphere’s own topology?” The maps
+under discussion are
+$$
+\oplus:S^2\times S^2\to S^2,
+\qquad
+\odot:\mathbb{R}\times S^2\to S^2.
+$$
+
+**What fails.** Under that requirement, **no** such $\oplus$ and
+$\odot$ exist. The reason does not use a special formula: take *any*
+continuous pair that satisfies the axioms and look at the shape of
+$S^2$.
+
+- **Compactness.** The whole sphere fits in a finite box in
+  $\mathbb{R}^3$; every sequence of points on $S^2$ has a subsequence
+  converging to a point still on $S^2$. Call that compactness: the
+  surface has no unused “room at infinity.”
+
+  Let $\mathbf{0}\in S^2$ be the zero of the assumed structure, and
+  suppose $v\neq\mathbf{0}$. Define
+  $$
+  f:\mathbb{R}\to S^2,
+  \qquad
+  f(t)=t\odot v.
+  $$
+  Continuity of $\odot$ makes $f$ continuous. The axioms make $f$
+  one-to-one: $t_1\odot v=t_2\odot v$ implies $t_1=t_2$. So as $t$
+  runs over all real numbers, $f(t)$ traces a continuous curve on
+  $S^2$ that **never revisits** a point. That is asking the compact
+  sphere to contain a continuous, endless, non-repeating copy of the
+  real line. It cannot. Therefore no nonzero $v$ can exist, and the
+  space would have to be $\{\mathbf{0}\}$ alone — but $S^2$ has many
+  points. Contradiction. So no continuous vector-space operations on
+  $S^2$ exist.
+
+- **Unboundedness (same obstruction, said with $\mathbb{R}^n$).**
+  **What.** Ordinary $\mathbb{R}^n$ with its usual $+/\cdot$ is the model
+  finite-dimensional real vector space. Along the line
+  $t\mapsto t\cdot e_1=(t,0,\dots,0)$ you get a new point for every real
+  $t$; as $|t|\to\infty$ those points leave every finite box. So
+  $\mathbb{R}^n$ is **not** compact.
+  **Why this matters for $S^2$.** If continuous $\oplus,\odot$ made $S^2$
+  into a finite-dimensional real vector space, that structure would be
+  the same kind of object as $\mathbb{R}^n$: you could pick a basis and
+  pass to coordinates by a continuous bijection with continuous inverse
+  (a **homeomorphism**) between $S^2$ and some $\mathbb{R}^d$.
+  Homeomorphic spaces share compactness: either both are compact or
+  neither is.
+  **How it fails.** $S^2$ *is* compact (fits in a box; sequential
+  compactness as above). $\mathbb{R}^d$ is *not*. They cannot be
+  homeomorphic. Therefore $S^2$ cannot carry continuous operations
+  making it a finite-dimensional real vector space — the same dead end
+  as the $f(t)=t\odot v$ argument, viewed as “$S^2$ would have to look
+  like flat $\mathbb{R}^d$, but it does not.”
+
+- **A chart is not a global $\oplus$.**
+  **What.** From one pole $N$ (say the north pole), **stereographic
+  projection** sends every other point of $S^2$ to a unique point of the
+  equatorial plane $\mathbb{R}^2$: draw the line from $N$ through
+  $p\in S^2\setminus\{N\}$ and record where it hits that plane. Call the
+  inverse map $\sigma:\mathbb{R}^2\to S^2\setminus\{N\}$. It is
+  continuous, bijective onto the punctured sphere, and continuously
+  invertible there — a chart.
+  **Why one might try this.** On $\mathbb{R}^2$ the usual $+/\cdot$
+  *do* give a continuous vector-space structure. Transport them to the
+  punctured sphere by
+  $$
+  p\oplus q
+    :=\sigma\bigl(\sigma^{-1}(p)+\sigma^{-1}(q)\bigr),
+  \qquad
+  t\odot p
+    :=\sigma\bigl(t\cdot\sigma^{-1}(p)\bigr).
+  $$
+  On $S^2\setminus\{N\}$ these are continuous and obey the vector-space
+  axioms — because $\sigma$ just renames points of the plane.
+  **How it fails for the whole $S^2$.** The chart never includes $N$.
+  As a point $x\in\mathbb{R}^2$ runs to infinity,
+  $\sigma(x)$ approaches $N$ on the sphere. Ordinary scaling
+  $t\cdot x$ with $|t|\to\infty$, or sums that leave every compact set
+  in the plane, correspond under $\sigma$ to points on $S^2$ that pile
+  up at $N$. There is no continuous way to assign $N\oplus p$ or
+  $t\odot N$ so that the same axioms hold and the operations stay
+  continuous at $N$: the missing pole is exactly where the plane’s
+  “infinity” was compressed. So stereographic $+/\cdot$ is a continuous
+  vector-space structure on the **open** set $S^2\setminus\{N\}$, not on
+  the **closed** sphere. Compactness / unboundedness already said no
+  global continuous structure exists; this bullet shows that the most
+  natural local copy of $\mathbb{R}^2$ does not sneak past that ban.
+
+(Closure without the axioms is also not enough: e.g.
+$(p,q)\mapsto(p+q)/\|p+q\|$ stays on $S^2$ when $p+q\neq\mathbf{0}$,
+but it is not a vector-space addition.)
+
+##### (M1.2) No circle-style group on the closed sphere
+
+On the circle $S^1$ you can **add angles**: pick two points, get a
+third, smoothly, and every point has an inverse (rotate back). That is
+a group living on the circle — the same idea as composing rotations in
+$\mathrm{SO}(3)$. On **all** of $S^2$ there is **no** analogous
+continuous rule that takes two points, returns a third still on the
+sphere, and obeys the group axioms everywhere. (Raw spherical angles
+$(\phi,\theta)$ are only chart labels, and adding them — even
+$\theta\bmod\pi$ — does not give such a law on the sphere.)
+
+**Punctured** $S^2\setminus\{N,S\}$ is different: it is a cylinder.
+Send $\theta\in(0,\pi)$ to $u=\cot\theta\in\mathbb{R}$ and keep
+$\phi\in S^1$; then $(u,\phi)$ with componentwise addition is a Lie
+group $\mathbb{R}\times S^1$. That group lives on the open cylinder,
+not on the closed sphere — it does not extend continuously over the
+poles.
+
+The vector-space hope is already dead from (M1.1). The remaining claim
+is stronger: even a circle-style group cannot live on closed $S^2$.
+That is where $S^0$, $S^1$, $S^3$ vs $S^2$ enters. The nowhere-zero
+tangent field below is **not** an extra demand we invent; it is what
+such a group law would **force**.
+
+Suppose a continuous group law $\ast$ existed on **all** of $S^2$,
+with identity $e$. Fix one continuous one-parameter family of group
+elements $g(t)$ with $g(0)=e$ and $g(t)\neq e$ for small $t\neq 0$ (a
+tiny nonzero “increment”). Then $p\mapsto p\ast g(t)$ moves **every**
+point by the **same** increment. The field $X$ in (M1.3) is exactly
+the $t=0$ derivative of that motion. Nobody can have $X(p)=\mathbf{0}$:
+a non-identity increment cannot leave a point still. So a continuous
+group law on the whole sphere would force a continuous nowhere-zero
+tangent field.
+
+##### (M1.3) Explicit velocity of $t\mapsto p\ast g(t)$
+
+Write $\mu(p,q)=p\ast q$. For fixed $p$, the curve is
+$t\mapsto\mu\bigl(p,\,g(t)\bigr)$ with $g(0)=e$. Its velocity at
+$t=0$ is the ordinary derivative in $\mathbb{R}^n$ (or the chart),
+equivalently the chain rule in the second slot of $\mu$:
+
+$$
+X(p)
+  =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{t=0}
+     \mu\bigl(p,\,g(t)\bigr)
+  =D_2\mu(p,e)\cdot g'(0)
+  \;\in\; T_p G.
+$$
+
+**Circle** $S^1\cong\mathbb{R}/2\pi\mathbb{Z}$. Take
+$\mu(\theta,\alpha)=\theta+\alpha$ and $g(t)=t$, so $g'(0)=1$:
+
+$$
+X(\theta)
+  =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{0}(\theta+t)
+  =1.
+$$
+
+**Sphere, increment = rotation about $z$.** Act by
+$R_z(t)\in\mathrm{SO}(3)$ on $p=(x,y,z)^\top$:
+
+$$
+R_z(t)=
+\begin{pmatrix}
+\cos t & -\sin t & 0\\
+\sin t & \cos t & 0\\
+0 & 0 & 1
+\end{pmatrix},
+\qquad
+p\ast g(t)
+  :=R_z(t)\,p
+  =
+\begin{pmatrix}
+x\cos t-y\sin t\\
+x\sin t+y\cos t\\
+z
+\end{pmatrix}.
+$$
+
+Differentiate componentwise at $t=0$:
+
+$$
+X(p)
+  =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{0}R_z(t)\,p
+  =
+\begin{pmatrix}-y\\ x\\ 0\end{pmatrix}
+  =\mathbf{E}(p).
+$$
+
+Same from the generator matrix
+$R_z'(0)=\begin{pmatrix}0&-1&0\\1&0&0\\0&0&0\end{pmatrix}$:
+$X(p)=R_z'(0)\,p=(-y,\,x,\,0)^\top$. Check:
+$p\cdot\mathbf{E}=0$ (tangent), and
+$\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$ (due east, length
+$\sin\theta$). So $\mathbf{E}(p)$ **is** the three numbers
+$\bigl(\dot x(0),\dot y(0),\dot z(0)\bigr)$ of the path
+$t\mapsto R_z(t)\,p$.
+
+##### (M1.4) Poles: continuous $\mathbf{E}$ vs nowhere-zero $\hat{\mathbf{E}}$
+
+The formula $\mathbf{E}(x,y,z)=(-y,\,x,\,0)$ extends continuously to
+$N$ and $S$, but $\mathbf{E}(N)=\mathbf{E}(S)=\mathbf{0}$ — the
+rotation stalls at the poles. The unit field on the belt
+
+$$
+\hat{\mathbf{E}}(p)
+  =\frac{(-y,\,x,\,0)}{\sqrt{x^2+y^2}}
+  \qquad(x^2+y^2>0)
+$$
+
+never stalls for $0<\theta<\pi$, yet has **no** continuous extension to
+$N$ or $S$: along longitude $\phi$ the limit is
+$(-\sin\phi,\,\cos\phi,\,0)$, which depends on $\phi$. Remove the poles
+and $\hat{\mathbf{E}}$ is fine (cylinder group $\mathbb{R}\times S^1$
+from (M1.2)). On the **closed** sphere, **no** continuous nowhere-zero
+tangent field exists (hairy-ball). Therefore the hypothesis of (M1.2)
+is false: there is no continuous group law on all of $S^2$. Among
+spheres, only $S^0$, $S^1$, and $S^3$ carry a smooth group structure on
+the entire sphere; $S^2$ does not.
+
+A smooth *path* through a pole is still fine — one curve needs one
+velocity. The group forces a *simultaneous* nonzero $X(p)$ at every
+point; that is what fails.
+
+##### (M1.5) Tangent planes and local calculus
+
+We stop hunting for a global $+/\cdot$ on points of $S^2$. The
+structure that *does* fit is local and linear on velocities.
+
+Let $\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ be a $C^1$
+curve that stays on $S^2$, so
 
 $$
 \gamma(t)\cdot\gamma(t)=1
@@ -227,14 +593,8 @@ $$
 $$
 
 Hence at every point $p=\gamma(t)$ the velocity is orthogonal to the
-position,
-
-$$
-\gamma'(t)\perp\gamma(t).
-$$
-
-The set of all such velocities at a fixed $p\in S^2$ is the
-**tangent plane**
+position, $\gamma'(t)\perp\gamma(t)$. The set of all such velocities at
+a fixed $p\in S^2$ is the **tangent plane**
 
 $$
 T_p S^2
@@ -245,8 +605,7 @@ a $2$-dimensional real vector space. Differentiating a curve on $S^2$
 does **not** produce another point of $S^2$; it produces a vector in
 $T_p S^2$.
 
-**Local coordinates $\Rightarrow$ $C^\infty$ calculus.** Away from the
-poles, spherical coordinates
+Away from the poles, spherical coordinates
 
 $$
 \begin{aligned}
@@ -262,12 +621,11 @@ $$
 give a chart
 $\varphi:U\subset S^2\to\mathbb{R}^2$,
 $\varphi(x,y,z)=(\theta,\phi)$, whose inverse
-$\varphi^{-1}$ is $C^\infty$ as a map into $\mathbb{R}^3$ (each component
-is a composition of sines and cosines). A real function
-$f:S^2\to\mathbb{R}$ is smooth on $U$ precisely when
+$\varphi^{-1}$ is $C^\infty$ as a map into $\mathbb{R}^3$. A real
+function $f:S^2\to\mathbb{R}$ is smooth on $U$ precisely when
 $f\circ\varphi^{-1}$ is a smooth function of $(\theta,\phi)$ in the
-usual multivariable sense. Along a curve written in these coordinates
-as $(\theta(t),\phi(t))$, the chain rule gives
+usual multivariable sense. Along a curve
+$(\theta(t),\phi(t))$, the chain rule gives
 
 $$
 \frac{d}{dt}(f\circ\gamma)(t)
@@ -277,13 +635,14 @@ $$
 
 so derivatives on $S^2$ are ordinary $\mathbb{R}^2$ derivatives in the
 chart. (Charts that cover the poles, and $C^\infty$ transitions on
-overlaps, are the atlas story of §2; the sphere is the same idea in
-dimension $2$.)
+overlaps, are the atlas story of §2.)
 
-**Punchline.** $S^2$ is not closed under ambient $+/\cdot$, but it is a
-domain on which curves have well-defined derivatives in the tangent
-planes $T_p S^2$, and on which scalar functions are differentiated by
-ordinary calculus in local coordinates.
+**Punchline for (M1).** $S^2$ is not closed under ambient $+/\cdot$,
+admits no continuous vector-space structure and no circle-style group
+on the **whole** closed sphere, but it *is* a domain on which curves have
+well-defined derivatives in the tangent planes $T_p S^2$, and on which
+scalar functions are differentiated by ordinary calculus in local
+coordinates.
 
 #### (M2) Directions in the plane (rays through the origin)
 
@@ -478,11 +837,6 @@ df_dt_chain = -np.sin(theta) * 0.0 + 0.0  # theta'=0, and f independent of phi
 df_dt_ambient = gd[:, 2]  # d(z)/dt along gamma
 assert np.allclose(df_dt_ambient, 0.0)
 assert np.allclose(df_dt_chain, df_dt_ambient)
-
-# One-line reminder that ambient midpoint leaves S^2 (fact, not the point)
-N = np.array([0.0, 0.0, 1.0])
-S = np.array([0.0, 0.0, -1.0])
-assert not np.isclose(norm(0.5 * (N + S)), 1.0)
 
 print("(M1) max |gamma·gamma'| =", np.max(np.abs(np.sum(g * gd, axis=-1))))
 print("(M1) chain rule for f=z on equator: OK")
@@ -1831,6 +2185,8 @@ cells.append(md(r"""
 10. Open Quantum Safe: https://openquantumsafe.org/ and the `liboqs`
     / `oqs-provider` repositories.
 """))
+
+cells = explode_heading_cells(cells, default_collapsed=False)
 
 nb = nbf.v4.new_notebook(
     cells=cells,
