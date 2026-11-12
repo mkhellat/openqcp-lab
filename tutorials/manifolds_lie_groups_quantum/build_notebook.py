@@ -467,28 +467,60 @@ not on the closed sphere — it does not extend continuously over the
 poles.
 
 The vector-space hope is already dead from (M1.1). The remaining claim
-is stronger: even a circle-style group cannot live on closed $S^2$.
-That is where $S^0$, $S^1$, $S^3$ vs $S^2$ enters. The nowhere-zero
-tangent field below is **not** an extra demand we invent; it is what
-such a group law would **force**.
+is stronger: even a circle-style **Lie** group (group operations
+smooth on the manifold) cannot live on closed $S^2$. That is where
+$S^0$, $S^1$, $S^3$ vs $S^2$ enters. The nowhere-zero tangent field
+below is **not** an extra demand we invent; it is what such a group
+would **force**.
 
-Suppose a continuous group law $\ast$ existed on **all** of $S^2$,
-with identity $e$. Fix one continuous one-parameter family of group
-elements $g(t)$ with $g(0)=e$ and $g(t)\neq e$ for small $t\neq 0$ (a
-tiny nonzero “increment”). Then $p\mapsto p\ast g(t)$ moves **every**
-point by the **same** increment. The field $X$ in (M1.3) is exactly
-the $t=0$ derivative of that motion. Nobody can have $X(p)=\mathbf{0}$:
-a non-identity increment cannot leave a point still. So a continuous
-group law on the whole sphere would force a continuous nowhere-zero
-tangent field.
+**What.** Suppose $S^2$ carried a smooth group operation $\ast$ with
+identity $e$ (inverses smooth too). Pick any smooth curve
+$g:(-\varepsilon,\varepsilon)\to S^2$ of group elements with
+$g(0)=e$ and **nonzero initial velocity** $g'(0)\neq\mathbf{0}$ in
+$T_e S^2$. (Such a curve exists as soon as the tangent space at $e$ is
+not $\{0\}$, which it is not on a surface.) For each point $p$, form
+the motion that right-multiplies by that same curve:
+$t\mapsto p\ast g(t)$. Its initial velocity is the tangent vector
+$X(p)$ computed in (M1.3).
+**Why $X(p)$ cannot vanish.** The claim is *not* “$g(t)\neq e$ so
+nobody sits still.” A point can fail to be fixed by a finite step yet
+still have zero instantaneous velocity (or the converse can be
+arranged at higher order). The correct link uses the group inverse.
+If $X(p)=\mathbf{0}$ at even one $p$, the curve $t\mapsto p\ast g(t)$
+has zero speed at $t=0$. Left-multiply by the fixed element $p^{-1}$
+(smooth map): 
+$$
+p^{-1}\ast\bigl(p\ast g(t)\bigr)=g(t).
+$$
+A smooth map sends a zero-velocity curve at $t=0$ to a zero-velocity
+curve, so $g'(0)=\mathbf{0}$ — contradicting the choice of $g$. Hence
+$X(p)\neq\mathbf{0}$ at **every** $p$.
+**How that bites.** Smoothness of $\ast$ also makes $p\mapsto X(p)$
+continuous. So a smooth group structure on all of $S^2$ would yield a
+continuous nowhere-zero tangent field. Hairy ball forbids that field;
+therefore no such group structure exists. (Details of $X$ and the
+standard try “rotate about $z$” are (M1.3)–(M1.4).)
 
 ##### (M1.3) Explicit velocity of $t\mapsto p\ast g(t)$
 
-Write $\mu(p,q)=p\ast q$. For fixed $p$, the curve is
-$t\mapsto\mu\bigl(p,\,g(t)\bigr)$ with $g(0)=e$. Its velocity at
-$t=0$ is the ordinary derivative in $\mathbb{R}^n$ (or the chart),
-equivalently the chain rule in the second slot of $\mu$:
+**What.** In (M1.2) the field $X$ was named as the initial velocity of
+$t\mapsto p\ast g(t)$. Here it is written as a formula, then evaluated
+on $S^1$ (where a smooth group exists) and on $S^2$ under the standard
+try “advance longitude” (a one-parameter family of rotations, not a
+binary operation on pairs of points of $S^2$).
 
+**Why.** Without the formula, “nowhere-zero continuous field” is an
+abstract slogan. The derivative below is exactly what (M1.2) used, and
+the east field $\mathbf{E}$ in (M1.4) is what that derivative becomes
+for rotation about $z$.
+
+**How — general definition.** Let $\mu(p,q)=p\ast q$ be a smooth group
+operation on a manifold $G$, and let $g$ be a smooth curve in $G$ with
+$g(0)=e$. For each fixed $p\in G$ the path $t\mapsto\mu\bigl(p,\,g(t)\bigr)$
+lies in $G$ and starts at $p\ast e=p$. Its velocity at $t=0$ is an
+ordinary derivative in local coordinates (or in an ambient Euclidean
+space when $G$ sits there). By the chain rule in the second slot of
+$\mu$,
 $$
 X(p)
   =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{t=0}
@@ -496,19 +528,24 @@ X(p)
   =D_2\mu(p,e)\cdot g'(0)
   \;\in\; T_p G.
 $$
+That is the definition of $X(p)$: three (or $d$) real numbers once
+coordinates are chosen — not a metaphor.
 
-**Circle** $S^1\cong\mathbb{R}/2\pi\mathbb{Z}$. Take
-$\mu(\theta,\alpha)=\theta+\alpha$ and $g(t)=t$, so $g'(0)=1$:
-
+**How — circle (group on the points themselves).** On
+$S^1\cong\mathbb{R}/2\pi\mathbb{Z}$ take $\mu(\theta,\alpha)=\theta+\alpha$
+and $g(t)=t$, so $g'(0)=1$. Then
 $$
 X(\theta)
   =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{0}(\theta+t)
-  =1.
+  =1
 $$
+in the angle coordinate: nowhere zero, as (M1.2) requires.
 
-**Sphere, increment = rotation about $z$.** Act by
-$R_z(t)\in\mathrm{SO}(3)$ on $p=(x,y,z)^\top$:
-
+**How — sphere under rotation about $z$.** We do **not** multiply two
+points of $S^2$ here. We let the Lie group $\mathrm{SO}(3)$ act on the
+set $S^2$ by matrix multiplication, and take the one-parameter family
+$R_z(t)$ of rotations about the $z$-axis (the geometric “same increment
+for everyone”):
 $$
 R_z(t)=
 \begin{pmatrix}
@@ -517,34 +554,33 @@ R_z(t)=
 0 & 0 & 1
 \end{pmatrix},
 \qquad
-p\ast g(t)
+\gamma_p(t)
   :=R_z(t)\,p
   =
 \begin{pmatrix}
 x\cos t-y\sin t\\
 x\sin t+y\cos t\\
 z
-\end{pmatrix}.
+\end{pmatrix}
+\quad\bigl(p=(x,y,z)^\top\bigr).
 $$
-
 Differentiate componentwise at $t=0$:
-
 $$
 X(p)
-  =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{0}R_z(t)\,p
+  =\gamma_p'(0)
   =
 \begin{pmatrix}-y\\ x\\ 0\end{pmatrix}
   =\mathbf{E}(p).
 $$
-
-Same from the generator matrix
-$R_z'(0)=\begin{pmatrix}0&-1&0\\1&0&0\\0&0&0\end{pmatrix}$:
-$X(p)=R_z'(0)\,p=(-y,\,x,\,0)^\top$. Check:
-$p\cdot\mathbf{E}=0$ (tangent), and
-$\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$ (due east, length
-$\sin\theta$). So $\mathbf{E}(p)$ **is** the three numbers
-$\bigl(\dot x(0),\dot y(0),\dot z(0)\bigr)$ of the path
-$t\mapsto R_z(t)\,p$.
+Equivalently, with generator
+$R_z'(0)=\begin{pmatrix}0&-1&0\\1&0&0\\0&0&0\end{pmatrix}$,
+one has $X(p)=R_z'(0)\,p$. Check: $p\cdot\mathbf{E}=0$ (tangent to the
+sphere), and $\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$ (due east,
+length $\sin\theta$). So $\mathbf{E}(p)$ **is**
+$\bigl(\dot x(0),\dot y(0),\dot z(0)\bigr)$ of $\gamma_p$. This $X$ is
+continuous on all of $S^2$, but (M1.4) shows it vanishes at the poles —
+so it is **not** the nowhere-zero field a smooth group structure on
+$S^2$ would have required.
 
 ##### (M1.4) Poles: continuous $\mathbf{E}$ vs nowhere-zero $\hat{\mathbf{E}}$
 
@@ -564,9 +600,9 @@ $(-\sin\phi,\,\cos\phi,\,0)$, which depends on $\phi$. Remove the poles
 and $\hat{\mathbf{E}}$ is fine (cylinder group $\mathbb{R}\times S^1$
 from (M1.2)). On the **closed** sphere, **no** continuous nowhere-zero
 tangent field exists (hairy-ball). Therefore the hypothesis of (M1.2)
-is false: there is no continuous group law on all of $S^2$. Among
-spheres, only $S^0$, $S^1$, and $S^3$ carry a smooth group structure on
-the entire sphere; $S^2$ does not.
+is false: there is no smooth group operation $\ast$ on all of $S^2$.
+Among spheres, only $S^0$, $S^1$, and $S^3$ carry a smooth group
+structure on the entire sphere; $S^2$ does not.
 
 A smooth *path* through a pole is still fine — one curve needs one
 velocity. The group forces a *simultaneous* nonzero $X(p)$ at every
@@ -638,8 +674,9 @@ chart. (Charts that cover the poles, and $C^\infty$ transitions on
 overlaps, are the atlas story of §2.)
 
 **Punchline for (M1).** $S^2$ is not closed under ambient $+/\cdot$,
-admits no continuous vector-space structure and no circle-style group
-on the **whole** closed sphere, but it *is* a domain on which curves have
+admits no continuous vector-space structure and no smooth circle-style
+group operation on the **whole** closed sphere, but it *is* a domain on
+which curves have
 well-defined derivatives in the tangent planes $T_p S^2$, and on which
 scalar functions are differentiated by ordinary calculus in local
 coordinates.
