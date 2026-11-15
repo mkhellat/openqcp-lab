@@ -594,23 +594,36 @@ $T_e S^2\neq\{\mathbf{0}\}$.) Note the three different objects: the
 **map** $g$ lives in a space of paths
 $C^1\bigl((-\varepsilon,\varepsilon),\mathbb{R}^3\bigr)$; each
 **value** $g(t)$ is a point of $S^2\subset\mathbb{R}^3$; the
-**number** $g'(0)$ is one vector in the subspace $T_e S^2$. For each
-point $p\in S^2$, form the motion that right-multiplies by that same
-curve: $t\mapsto p\ast g(t)\in S^2\subset\mathbb{R}^3$. Its ordinary
-derivative at the parameter $0$ is the vector $X(p)\in T_p S^2$
-computed in (M1.3).
+**number** $g'(0)$ is one vector in the subspace $T_e S^2$. Now use
+the assumed product $\ast$: for each **fixed** point $p\in S^2$,
+define a new path by applying $\ast$ to the pair $\bigl(p,\,g(t)\bigr)$
+at every parameter $t$,
+$$
+\gamma_p:(-\varepsilon,\varepsilon)\to\mathbb{R}^3,
+\qquad
+\gamma_p(t):=p\ast g(t).
+$$
+Because $g(t)\in S^2$ and $\ast$ returns a point of $S^2$, one has
+$\gamma_p(t)\in S^2\subset\mathbb{R}^3$. At $t=0$,
+$\gamma_p(0)=p\ast e=p$. The ordinary derivative of $\gamma_p$ **at
+the parameter** $0$ is a vector
+$X(p):=\gamma_p'(0)\in T_p S^2\subset\mathbb{R}^3$ (formula in
+(M1.3)). So one curve $g$ through $e$ produces, via $\ast$, a whole
+family of curves $\gamma_p$, one based at each $p$.
 **Why $X(p)$ cannot vanish.** The claim is *not* “$g(t)\neq e$ so
 nobody sits still.” A point can fail to be fixed by a finite step yet
 still have zero derivative at $t=0$ (or the converse can be arranged
 at higher order). The correct link uses the group inverse.
-If $X(p)=\mathbf{0}$ at even one $p$, the curve $t\mapsto p\ast g(t)$
-has zero derivative at the parameter $t=0$. Left-multiply by the fixed
-element $p^{-1}$ (smooth map $S^2\to S^2$):
+If $X(p)=\mathbf{0}$ at even one $p$, then $\gamma_p'(0)=\mathbf{0}$.
+Compose with the fixed smooth map $q\mapsto p^{-1}\ast q$
+($S^2\to S^2$):
 $$
-p^{-1}\ast\bigl(p\ast g(t)\bigr)=g(t).
+p^{-1}\ast\gamma_p(t)
+  =p^{-1}\ast\bigl(p\ast g(t)\bigr)
+  =g(t).
 $$
-A smooth map of the ambient sphere sends a curve with vanishing
-derivative at $t=0$ to a curve with vanishing derivative at $t=0$, so
+A smooth map $S^2\to S^2$ sends a curve with vanishing derivative at
+$t=0$ to a curve with vanishing derivative at $t=0$, so
 $g'(0)=\mathbf{0}$ — contradicting the choice of $g$. Hence
 $X(p)\neq\mathbf{0}$ in $T_p S^2\subset\mathbb{R}^3$ at **every** $p$.
 **How that bites.** Smoothness of $\ast$ also makes
@@ -621,14 +634,15 @@ everywhere. Hairy ball forbids that. Therefore no such group structure
 exists. (Details of $X$ and the standard try “rotate about $z$” are
 (M1.3)–(M1.4).)
 
-##### (M1.3) Explicit derivative of $t\mapsto p\ast g(t)$ at $t=0$
+##### (M1.3) Explicit derivative of $\gamma_p(t)=p\ast g(t)$ at $t=0$
 
-**What.** In (M1.2) the vector $X(p)$ was named as the ordinary
-derivative, at the parameter $0$, of $t\mapsto p\ast g(t)$. Here it is
-written as a formula, then evaluated on $S^1$ (where a smooth group
-exists) and on $S^2$ under the standard try “advance longitude” (a
-one-parameter family of rotations, not a binary operation on pairs of
-points of $S^2$).
+**What.** In (M1.2) the vector $X(p)$ was named as
+$\gamma_p'(0)$, the ordinary derivative at the parameter $0$ of the
+path $\gamma_p(t)=p\ast g(t)$ built from a fixed $p$ and the curve
+$g$. Here that derivative is written as a formula, then evaluated on
+$S^1$ (where a smooth group exists) and on $S^2$ under the standard
+try “advance longitude” (a one-parameter family of rotations, not a
+binary operation on pairs of points of $S^2$).
 
 **Why.** Without the formula, “nowhere-zero continuous field” is an
 abstract slogan. The derivative below is exactly what (M1.2) used, and
