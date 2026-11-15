@@ -37,8 +37,16 @@ def md(source: str, *, collapsed: bool | None = None) -> nbf.NotebookNode:
     return cell
 
 
-def code(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_code_cell(source.strip() + "\n")
+def code(source: str, *, hide_input: bool = False) -> nbf.NotebookNode:
+    cell = nbf.v4.new_code_cell(source.strip() + "\n")
+    if hide_input:
+        # JupyterLab collapses the source; nbconvert hide-input tag as backup.
+        cell.metadata["jupyter"] = {"source_hidden": True, "outputs_hidden": False}
+        tags = list(cell.metadata.get("tags", []))
+        if "hide-input" not in tags:
+            tags.append("hide-input")
+        cell.metadata["tags"] = tags
+    return cell
 
 
 # Heading banners (N=2 orange family for the deepest level). Level-4
@@ -475,6 +483,62 @@ group $\mathbb{R}\times S^1$. That group lives on the open cylinder,
 not on the closed sphere — it does not extend continuously over the
 poles.
 
+**Addition on the punctured sphere (explicit).** Invert the
+coordinate: $\sin\theta=1/\sqrt{1+u^2}$ and
+$\cos\theta=u/\sqrt{1+u^2}$ for $\theta\in(0,\pi)$, so the point of
+$S^2$ with cylinder coordinates $(u,\phi)$ is
+$$
+p(u,\phi)
+  =
+  \Bigl(
+    \frac{\cos\phi}{\sqrt{1+u^2}},\,
+    \frac{\sin\phi}{\sqrt{1+u^2}},\,
+    \frac{u}{\sqrt{1+u^2}}
+  \Bigr).
+$$
+The group operation is componentwise on the cylinder,
+$$
+(u_1,\phi_1)+(u_2,\phi_2)
+  =(u_1+u_2,\,\phi_1+\phi_2\bmod 2\pi),
+$$
+and the sum of two sphere points (in this structure) is the single
+sphere point
+$p(u_1+u_2,\,\phi_1+\phi_2)$.
+
+Interactive figure: enter $(u_i,\phi_i)$ as **expressions**
+($u$ free, e.g. `sqrt(2)`, `2/3`; $\phi$ as a **multiple of** $\pi$,
+e.g. `2/3`, `-1/2`, `2^2/3`) or use **sliders**. Camera: **elev** /
+**azim** (or **Snap cam**). The cylinder sum is
+$p(u_1+u_2,\phi_1+\phi_2)$, not $p_1+p_2$ in $\mathbb{R}^3$.
+
+<details>
+<summary><b>Where is the plot code?</b> (click to expand)</summary>
+
+The interactive UI lives in
+<code>cylinder_group_demo.py</code> next to this notebook so the
+tutorial cell stays short. JupyterLab also collapses the launch cell
+input by default (<code>source_hidden</code>). Open the <code>.py</code>
+file in the editor if you want the full implementation.
+
+</details>
+"""))
+
+cells.append(code(r"""
+# Launch only — implementation: cylinder_group_demo.py (same folder).
+from pathlib import Path
+import sys
+
+_here = Path.cwd()
+if not (_here / "cylinder_group_demo.py").exists():
+    _here = Path("tutorials/manifolds_lie_groups_quantum")
+sys.path.insert(0, str(_here.resolve()))
+
+from cylinder_group_demo import launch_cylinder_group_demo
+
+launch_cylinder_group_demo()
+""", hide_input=True))
+
+cells.append(md(r"""
 The vector-space hope is already dead from (M1.1). The remaining claim
 is stronger: even a circle-style **Lie** group (group operations
 smooth on the manifold) cannot live on closed $S^2$. That is where
