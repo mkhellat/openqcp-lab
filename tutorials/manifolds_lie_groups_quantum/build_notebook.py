@@ -610,10 +610,14 @@ the parameter** $0$ is a vector
 $X(p):=\gamma_p'(0)\in T_p S^2\subset\mathbb{R}^3$ (formula in
 (M1.3)). So one curve $g$ through $e$ produces, via $\ast$, a whole
 family of curves $\gamma_p$, one based at each $p$.
-**Why $X(p)$ cannot vanish.** The claim is *not* “$g(t)\neq e$ so
-nobody sits still.” A point can fail to be fixed by a finite step yet
-still have zero derivative at $t=0$ (or the converse can be arranged
-at higher order). The correct link uses the group inverse.
+**Why $X(p)$ cannot vanish.** Do **not** argue as follows: “$g(t)\neq e$
+for $t\neq 0$, so the motion moves, so $\gamma_p'(0)$ cannot be zero.”
+That confuses a **finite** displacement along the path with the
+**derivative at the single parameter** $t=0$. Counterexample in
+$\mathbb{R}$: $\varphi(t)=t^3$ satisfies $\varphi(t)\neq 0$ for all
+$t\neq 0$, yet $\varphi'(0)=0$. So “has left the starting value at
+some $t\neq 0$” does **not** imply “nonzero derivative at $0$.”
+The correct link uses the group inverse, not that slogan.
 If $X(p)=\mathbf{0}$ at even one $p$, then $\gamma_p'(0)=\mathbf{0}$.
 Compose with the fixed smooth map $q\mapsto p^{-1}\ast q$
 ($S^2\to S^2$):
