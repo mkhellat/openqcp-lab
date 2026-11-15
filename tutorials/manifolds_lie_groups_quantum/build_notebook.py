@@ -617,9 +617,8 @@ X(p)
   =D_2\mu(p,e)\,[g'(0)]
   \;\in\; T_p S^2\subset\mathbb{R}^3.
 $$
-So $X(p)$ is completely determined by the linear map
-$D_2\mu(p,e):T_e S^2\to T_p S^2$ applied to the single vector
-$g'(0)$ — not by whether $g(t)$ equals $e$ at other parameters.
+So $X(p)$ is the image of the single vector $g'(0)$ under the
+linear map $D_2\mu(p,e):T_e S^2\to T_p S^2$.
 **Why $X(p)$ cannot vanish.** Left multiplication by $p$,
 $L_p(q)=p\ast q$, is a smooth bijection $S^2\to S^2$ with smooth
 inverse $L_{p^{-1}}$, hence a diffeomorphism. Therefore its
