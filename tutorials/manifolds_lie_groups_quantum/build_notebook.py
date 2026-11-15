@@ -610,26 +610,25 @@ the parameter** $0$ is a vector
 $X(p):=\gamma_p'(0)\in T_p S^2\subset\mathbb{R}^3$ (formula in
 (M1.3)). So one curve $g$ through $e$ produces, via $\ast$, a whole
 family of curves $\gamma_p$, one based at each $p$.
-**Why $X(p)$ cannot vanish.** Do **not** argue as follows: “$g(t)\neq e$
-for $t\neq 0$, so the motion moves, so $\gamma_p'(0)$ cannot be zero.”
-That confuses a **finite** displacement along the path with the
-**derivative at the single parameter** $t=0$. Counterexample in
-$\mathbb{R}$: $\varphi(t)=t^3$ satisfies $\varphi(t)\neq 0$ for all
-$t\neq 0$, yet $\varphi'(0)=0$. So “has left the starting value at
-some $t\neq 0$” does **not** imply “nonzero derivative at $0$.”
-The correct link uses the group inverse, not that slogan.
-If $X(p)=\mathbf{0}$ at even one $p$, then $\gamma_p'(0)=\mathbf{0}$.
-Compose with the fixed smooth map $q\mapsto p^{-1}\ast q$
-($S^2\to S^2$):
+**Why $X(p)$ cannot vanish.** A common error is to infer
+$\gamma_p'(0)\neq\mathbf{0}$ merely from $g(t)\neq e$ for $t\neq 0$.
+That inference is false: it confuses the values of a path at
+parameters $t\neq 0$ with the derivative of the path at the single
+parameter $t=0$. In $\mathbb{R}$, the map $\varphi(t)=t^3$ satisfies
+$\varphi(t)\neq 0$ whenever $t\neq 0$, but $\varphi'(0)=0$. The same
+distinction applies to $\gamma_p$. The valid argument uses the group
+inverse. Suppose $X(p)=\mathbf{0}$ for some $p$. Then
+$\gamma_p'(0)=\mathbf{0}$. Let $\lambda_p:S^2\to S^2$ be the smooth
+map $q\mapsto p^{-1}\ast q$. Associativity gives
 $$
-p^{-1}\ast\gamma_p(t)
+\lambda_p\bigl(\gamma_p(t)\bigr)
   =p^{-1}\ast\bigl(p\ast g(t)\bigr)
-  =g(t).
+  =g(t)
 $$
-A smooth map $S^2\to S^2$ sends a curve with vanishing derivative at
-$t=0$ to a curve with vanishing derivative at $t=0$, so
-$g'(0)=\mathbf{0}$ — contradicting the choice of $g$. Hence
-$X(p)\neq\mathbf{0}$ in $T_p S^2\subset\mathbb{R}^3$ at **every** $p$.
+for every $t$. Differentiating at the parameter $t=0$ and using
+$\gamma_p'(0)=\mathbf{0}$ yields $g'(0)=\mathbf{0}$, which contradicts
+the choice of $g$. Therefore $X(p)\neq\mathbf{0}$ in
+$T_p S^2\subset\mathbb{R}^3$ for **every** $p\in S^2$.
 **How that bites.** Smoothness of $\ast$ also makes
 $p\mapsto X(p)\in\mathbb{R}^3$ continuous. So a smooth group structure
 on all of $S^2$ would yield a continuous map
