@@ -505,11 +505,12 @@ and the sum of two sphere points (in this structure) is the single
 sphere point
 $p(u_1+u_2,\,\phi_1+\phi_2)$.
 
-Interactive figure: enter $(u_i,\phi_i)$ as **expressions**
-($u$ free, e.g. `sqrt(2)`, `2/3`; $\phi$ as a **multiple of** $\pi$,
-e.g. `2/3`, `-1/2`, `2^2/3`) or use **sliders**. Camera: **elev** /
-**azim** (or **Snap cam**). The cylinder sum is
-$p(u_1+u_2,\phi_1+\phi_2)$, not $p_1+p_2$ in $\mathbb{R}^3$.
+Interactive figure: **static** mode takes $(u_i,\phi_i)$ as expressions
+or sliders; **animate** mode sets $\theta$ and/or $\phi$ ranges
+(multiples of $\pi$), builds frames, then scrubs them with a Play /
+frame control. Camera: **elev** / **azim** (or **Snap cam**). The
+cylinder sum is $p(u_1+u_2,\phi_1+\phi_2)$, not $p_1+p_2$ in
+$\mathbb{R}^3$.
 
 <details>
 <summary><b>Where is the plot code?</b> (click to expand)</summary>
