@@ -450,14 +450,23 @@ but it is not a vector-space addition.)
 
 ##### (M1.2) No circle-style group on the closed sphere
 
-On the circle $S^1$ you can **add angles**: pick two points, get a
-third, smoothly, and every point has an inverse (rotate back). That is
-a group living on the circle — the same idea as composing rotations in
-$\mathrm{SO}(3)$. On **all** of $S^2$ there is **no** analogous
-continuous rule that takes two points, returns a third still on the
-sphere, and obeys the group axioms everywhere. (Raw spherical angles
-$(\phi,\theta)$ are only chart labels, and adding them — even
-$\theta\bmod\pi$ — does not give such a law on the sphere.)
+On the circle $S^1$ each point may be recorded by a real angle
+$\theta$, with the understanding that $\theta$ and $\theta+2\pi k$
+(any integer $k$) name the **same** point — written
+$\theta\in\mathbb{R}/2\pi\mathbb{Z}$ (“reals modulo full turns”). The
+rule $(\theta,\alpha)\mapsto\theta+\alpha$ (mod $2\pi$) takes two
+points of $S^1$, returns a third still on $S^1$, is smooth, has
+identity $\theta=0$, and has inverses $\theta\mapsto -\theta$. That is
+a smooth group operation **on the set $S^1$ itself**: the group
+elements are exactly the points of the circle. On **all** of $S^2$
+there is **no** smooth (even continuous) binary operation that takes
+two points of the sphere, returns a third still on the sphere, and
+obeys the group axioms everywhere. (Spherical coordinates
+$(\phi,\theta)$ are **local coordinates** from a chart: they assign
+numbers only on an open patch of $S^2$, and they fail at the poles and
+along a cut in $\phi$. Adding those coordinate numbers — even
+$\theta\bmod\pi$ — is arithmetic in the coordinate plane, not a group
+operation defined on the points of the whole sphere.)
 
 **Punctured** $S^2\setminus\{N,S\}$ is different: it is a cylinder.
 Send $\theta\in(0,\pi)$ to $u=\cot\theta\in\mathbb{R}$ and keep
