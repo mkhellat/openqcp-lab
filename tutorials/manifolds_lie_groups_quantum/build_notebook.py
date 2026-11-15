@@ -323,14 +323,44 @@ undergraduate quantum mechanics.
 
 #### (M1) The unit sphere in $\mathbb{R}^3$
 
-Let
-
+**Working setup (extrinsic, declared once).** Throughout (M1) we
+treat $S^2$ as a subset of the Euclidean space $\mathbb{R}^3$. Write
+$\cdot$ for the standard bilinear product
+$(u,v)\mapsto u_1v_1+u_2v_2+u_3v_3$ on $\mathbb{R}^3$, and
+$\|u\|=\sqrt{u\cdot u}$. Define
 $$
 S^2
-  =\bigl\{(x,y,z)\in\mathbb{R}^3:x^2+y^2+z^2=1\bigr\}.
+  =\bigl\{p\in\mathbb{R}^3:p\cdot p=1\bigr\}.
 $$
+So both a point of $S^2$ and a vector in $\mathbb{R}^3$ live in **the
+same** ambient vector space; the product $a\cdot b$ is only ever used
+when $a,b\in\mathbb{R}^3$.
 
-This set is **not** a vector subspace of $\mathbb{R}^3$ under the
+**Curves and derivatives (ordinary calculus).** A $C^1$ curve on the
+sphere is a $C^1$ map
+$\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ whose values lie in
+$S^2$. The derivative $\gamma'(t)$ means the ordinary derivative of
+this $\mathbb{R}^3$-valued map **at the parameter** $t\in\mathbb{R}$ —
+not “at the point $\gamma(t)$.” Both $\gamma(t)$ and $\gamma'(t)$ are
+elements of $\mathbb{R}^3$. Differentiating the scalar identity
+$\gamma(t)\cdot\gamma(t)=1$ at $t$ gives
+$2\,\gamma(t)\cdot\gamma'(t)=0$, hence
+$\gamma(t)\cdot\gamma'(t)=0$. That identity is available only because
+both factors sit in $\mathbb{R}^3$.
+
+**Tangent plane as a subspace of the same $\mathbb{R}^3$.** For
+$p\in S^2$ set
+$$
+T_p S^2
+  :=\bigl\{v\in\mathbb{R}^3:p\cdot v=0\bigr\}.
+$$
+This is a linear **subspace** of $\mathbb{R}^3$ of dimension $2$ (the
+orthogonal complement of $\mathrm{span}\{p\}$). It is not a separate
+abstract “$2$-D space” floating beside $\mathbb{R}^3$: every
+$v\in T_p S^2$ is still a triple of real numbers, and
+$\gamma'(t)\in T_{\gamma(t)}S^2\subset\mathbb{R}^3$.
+
+This set $S^2$ is **not** a vector subspace of $\mathbb{R}^3$ under the
 ambient $+/\cdot$: it is not closed under addition (or under scaling).
 For any distinct pair of points $p,q\in S^2$, the sum $p+q$ lies on
 $S^2$ if and only if $p\cdot q=-1/2$ (then $\|p+q\|=1$); otherwise
@@ -542,46 +572,63 @@ launch_cylinder_group_demo()
 cells.append(md(r"""
 The vector-space hope is already dead from (M1.1). The remaining claim
 is stronger: even a circle-style **Lie** group (group operations
-smooth on the manifold) cannot live on closed $S^2$. That is where
-$S^0$, $S^1$, $S^3$ vs $S^2$ enters. The nowhere-zero tangent field
-below is **not** an extra demand we invent; it is what such a group
-would **force**.
+smooth as maps on the embedded sphere) cannot live on closed $S^2$.
+That is where $S^0$, $S^1$, $S^3$ vs $S^2$ enters. The nowhere-zero
+map $p\mapsto X(p)\in T_p S^2\subset\mathbb{R}^3$ below is **not** an
+extra demand we invent; it is what such a group would **force**.
 
 **What.** Suppose $S^2$ carried a smooth group operation $\ast$ with
-identity $e$ (inverses smooth too). Pick any smooth curve
-$g:(-\varepsilon,\varepsilon)\to S^2$ of group elements with
-$g(0)=e$ and **nonzero initial velocity** $g'(0)\neq\mathbf{0}$ in
-$T_e S^2$. (Such a curve exists as soon as the tangent space at $e$ is
-not $\{0\}$, which it is not on a surface.) For each point $p$, form
-the motion that right-multiplies by that same curve:
-$t\mapsto p\ast g(t)$. Its initial velocity is the tangent vector
-$X(p)$ computed in (M1.3).
+identity $e\in S^2$ (inverses smooth too). Pick a $C^1$ curve of group
+elements
+$$
+g:(-\varepsilon,\varepsilon)\to\mathbb{R}^3,
+\qquad
+g\bigl((-\varepsilon,\varepsilon)\bigr)\subset S^2,
+\qquad
+g(0)=e,
+$$
+such that the ordinary derivative **at the parameter** $0$ satisfies
+$g'(0)\neq\mathbf{0}$ in $\mathbb{R}^3$. By the working setup,
+$g'(0)\in T_e S^2\subset\mathbb{R}^3$. (Such a curve exists because
+$T_e S^2\neq\{\mathbf{0}\}$.) Note the three different objects: the
+**map** $g$ lives in a space of paths
+$C^1\bigl((-\varepsilon,\varepsilon),\mathbb{R}^3\bigr)$; each
+**value** $g(t)$ is a point of $S^2\subset\mathbb{R}^3$; the
+**number** $g'(0)$ is one vector in the subspace $T_e S^2$. For each
+point $p\in S^2$, form the motion that right-multiplies by that same
+curve: $t\mapsto p\ast g(t)\in S^2\subset\mathbb{R}^3$. Its ordinary
+derivative at the parameter $0$ is the vector $X(p)\in T_p S^2$
+computed in (M1.3).
 **Why $X(p)$ cannot vanish.** The claim is *not* “$g(t)\neq e$ so
 nobody sits still.” A point can fail to be fixed by a finite step yet
-still have zero instantaneous velocity (or the converse can be
-arranged at higher order). The correct link uses the group inverse.
+still have zero derivative at $t=0$ (or the converse can be arranged
+at higher order). The correct link uses the group inverse.
 If $X(p)=\mathbf{0}$ at even one $p$, the curve $t\mapsto p\ast g(t)$
-has zero speed at $t=0$. Left-multiply by the fixed element $p^{-1}$
-(smooth map): 
+has zero derivative at the parameter $t=0$. Left-multiply by the fixed
+element $p^{-1}$ (smooth map $S^2\to S^2$):
 $$
 p^{-1}\ast\bigl(p\ast g(t)\bigr)=g(t).
 $$
-A smooth map sends a zero-velocity curve at $t=0$ to a zero-velocity
-curve, so $g'(0)=\mathbf{0}$ — contradicting the choice of $g$. Hence
-$X(p)\neq\mathbf{0}$ at **every** $p$.
-**How that bites.** Smoothness of $\ast$ also makes $p\mapsto X(p)$
-continuous. So a smooth group structure on all of $S^2$ would yield a
-continuous nowhere-zero tangent field. Hairy ball forbids that field;
-therefore no such group structure exists. (Details of $X$ and the
-standard try “rotate about $z$” are (M1.3)–(M1.4).)
+A smooth map of the ambient sphere sends a curve with vanishing
+derivative at $t=0$ to a curve with vanishing derivative at $t=0$, so
+$g'(0)=\mathbf{0}$ — contradicting the choice of $g$. Hence
+$X(p)\neq\mathbf{0}$ in $T_p S^2\subset\mathbb{R}^3$ at **every** $p$.
+**How that bites.** Smoothness of $\ast$ also makes
+$p\mapsto X(p)\in\mathbb{R}^3$ continuous. So a smooth group structure
+on all of $S^2$ would yield a continuous map
+$X:S^2\to\mathbb{R}^3$ with $X(p)\in T_p S^2$ and $X(p)\neq\mathbf{0}$
+everywhere. Hairy ball forbids that. Therefore no such group structure
+exists. (Details of $X$ and the standard try “rotate about $z$” are
+(M1.3)–(M1.4).)
 
-##### (M1.3) Explicit velocity of $t\mapsto p\ast g(t)$
+##### (M1.3) Explicit derivative of $t\mapsto p\ast g(t)$ at $t=0$
 
-**What.** In (M1.2) the field $X$ was named as the initial velocity of
-$t\mapsto p\ast g(t)$. Here it is written as a formula, then evaluated
-on $S^1$ (where a smooth group exists) and on $S^2$ under the standard
-try “advance longitude” (a one-parameter family of rotations, not a
-binary operation on pairs of points of $S^2$).
+**What.** In (M1.2) the vector $X(p)$ was named as the ordinary
+derivative, at the parameter $0$, of $t\mapsto p\ast g(t)$. Here it is
+written as a formula, then evaluated on $S^1$ (where a smooth group
+exists) and on $S^2$ under the standard try “advance longitude” (a
+one-parameter family of rotations, not a binary operation on pairs of
+points of $S^2$).
 
 **Why.** Without the formula, “nowhere-zero continuous field” is an
 abstract slogan. The derivative below is exactly what (M1.2) used, and
@@ -589,37 +636,43 @@ the east field $\mathbf{E}$ in (M1.4) is what that derivative becomes
 for rotation about $z$.
 
 **How — general definition.** Let $\mu(p,q)=p\ast q$ be a smooth group
-operation on a manifold $G$, and let $g$ be a smooth curve in $G$ with
-$g(0)=e$. For each fixed $p\in G$ the path $t\mapsto\mu\bigl(p,\,g(t)\bigr)$
-lies in $G$ and starts at $p\ast e=p$. Its velocity at $t=0$ is an
-ordinary derivative in local coordinates (or in an ambient Euclidean
-space when $G$ sits there). By the chain rule in the second slot of
-$\mu$,
+operation on an embedded Lie group $G\subset\mathbb{R}^N$ (for $S^1$ or
+matrix groups; the same chain rule holds in charts). Let
+$g:(-\varepsilon,\varepsilon)\to\mathbb{R}^N$ be $C^1$ with values in
+$G$ and $g(0)=e$. For each fixed $p\in G$ the path
+$t\mapsto\mu\bigl(p,\,g(t)\bigr)$ takes values in $G\subset\mathbb{R}^N$
+and starts at $p\ast e=p$. Its derivative **at the parameter** $t=0$ is
+the ordinary $\mathbb{R}^N$-derivative. By the chain rule in the second
+slot of $\mu$,
 $$
 X(p)
   =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{t=0}
      \mu\bigl(p,\,g(t)\bigr)
-  =D_2\mu(p,e)\cdot g'(0)
-  \;\in\; T_p G.
+  =D_2\mu(p,e)\,[g'(0)]
+  \;\in\; T_p G\subset\mathbb{R}^N.
 $$
-That is the definition of $X(p)$: three (or $d$) real numbers once
-coordinates are chosen — not a metaphor.
+Here $D_2\mu(p,e)$ is the linear map on the ambient tangent space at
+$e$ coming from differentiating $\mu$ in its second argument; the
+brackets mean “apply that linear map to the vector $g'(0)$,” not a
+Euclidean product of two points of $G$. The result $X(p)$ is again a
+vector in the same ambient $\mathbb{R}^N$, constrained to the subspace
+$T_p G$.
 
 **How — circle (group on the points themselves).** On
 $S^1\cong\mathbb{R}/2\pi\mathbb{Z}$ take $\mu(\theta,\alpha)=\theta+\alpha$
-and $g(t)=t$, so $g'(0)=1$. Then
+and $g(t)=t$ (angle coordinate), so the ordinary derivative at the
+parameter $0$ is $g'(0)=1$. Then
 $$
 X(\theta)
   =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{0}(\theta+t)
   =1
 $$
-in the angle coordinate: nowhere zero, as (M1.2) requires.
+in that coordinate: nowhere zero, as (M1.2) requires.
 
 **How — sphere under rotation about $z$.** We do **not** multiply two
 points of $S^2$ here. We let the Lie group $\mathrm{SO}(3)$ act on the
-set $S^2$ by matrix multiplication, and take the one-parameter family
-$R_z(t)$ of rotations about the $z$-axis (the geometric “same increment
-for everyone”):
+set $S^2\subset\mathbb{R}^3$ by matrix–vector multiplication, and take
+the one-parameter family $R_z(t)$ of rotations about the $z$-axis:
 $$
 R_z(t)=
 \begin{pmatrix}
@@ -636,31 +689,36 @@ x\cos t-y\sin t\\
 x\sin t+y\cos t\\
 z
 \end{pmatrix}
-\quad\bigl(p=(x,y,z)^\top\bigr).
+\quad\bigl(p=(x,y,z)^\top\in S^2\subset\mathbb{R}^3\bigr).
 $$
-Differentiate componentwise at $t=0$:
+Differentiate the $\mathbb{R}^3$-valued map $\gamma_p$ **at the
+parameter** $t=0$:
 $$
 X(p)
   =\gamma_p'(0)
   =
 \begin{pmatrix}-y\\ x\\ 0\end{pmatrix}
-  =\mathbf{E}(p).
+  =\mathbf{E}(p)
+  \;\in\;\mathbb{R}^3.
 $$
 Equivalently, with generator
 $R_z'(0)=\begin{pmatrix}0&-1&0\\1&0&0\\0&0&0\end{pmatrix}$,
-one has $X(p)=R_z'(0)\,p$. Check: $p\cdot\mathbf{E}=0$ (tangent to the
-sphere), and $\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$ (due east,
-length $\sin\theta$). So $\mathbf{E}(p)$ **is**
+one has $X(p)=R_z'(0)\,p$. Both $p$ and $\mathbf{E}(p)$ lie in
+$\mathbb{R}^3$, and the declared product gives
+$p\cdot\mathbf{E}(p)=0$, i.e. $\mathbf{E}(p)\in T_p S^2$. In spherical
+coordinates, $\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$ (due east,
+length $\sin\theta$). So $\mathbf{E}(p)$ **is** the triple
 $\bigl(\dot x(0),\dot y(0),\dot z(0)\bigr)$ of $\gamma_p$. This $X$ is
-continuous on all of $S^2$, but (M1.4) shows it vanishes at the poles —
-so it is **not** the nowhere-zero field a smooth group structure on
-$S^2$ would have required.
+continuous on all of $S^2$ as an $\mathbb{R}^3$-valued map, but (M1.4)
+shows it vanishes at the poles — so it is **not** the nowhere-zero
+field a smooth group structure on $S^2$ would have required.
 
 ##### (M1.4) Poles: continuous $\mathbf{E}$ vs nowhere-zero $\hat{\mathbf{E}}$
 
-The formula $\mathbf{E}(x,y,z)=(-y,\,x,\,0)$ extends continuously to
+The formula $\mathbf{E}(x,y,z)=(-y,\,x,\,0)$ is an
+$\mathbb{R}^3$-valued map on all of $S^2$. It extends continuously to
 $N$ and $S$, but $\mathbf{E}(N)=\mathbf{E}(S)=\mathbf{0}$ — the
-rotation stalls at the poles. The unit field on the belt
+rotation stalls at the poles. The renormalized field on the belt
 
 $$
 \hat{\mathbf{E}}(p)
@@ -669,51 +727,38 @@ $$
 $$
 
 never stalls for $0<\theta<\pi$, yet has **no** continuous extension to
-$N$ or $S$: along longitude $\phi$ the limit is
-$(-\sin\phi,\,\cos\phi,\,0)$, which depends on $\phi$. Remove the poles
-and $\hat{\mathbf{E}}$ is fine (cylinder group $\mathbb{R}\times S^1$
-from (M1.2)). On the **closed** sphere, **no** continuous nowhere-zero
-tangent field exists (hairy-ball). Therefore the hypothesis of (M1.2)
-is false: there is no smooth group operation $\ast$ on all of $S^2$.
-Among spheres, only $S^0$, $S^1$, and $S^3$ carry a smooth group
-structure on the entire sphere; $S^2$ does not.
+$N$ or $S$ as an $\mathbb{R}^3$-valued map: along longitude $\phi$ the
+limit is $(-\sin\phi,\,\cos\phi,\,0)$, which depends on $\phi$. Remove
+the poles and $\hat{\mathbf{E}}$ is fine (cylinder group
+$\mathbb{R}\times S^1$ from (M1.2)). On the **closed** sphere, **no**
+continuous map $X:S^2\to\mathbb{R}^3$ with $X(p)\in T_p S^2$ and
+$X(p)\neq\mathbf{0}$ for every $p$ exists (hairy-ball). Therefore the
+hypothesis of (M1.2) is false: there is no smooth group operation
+$\ast$ on all of $S^2$. Among spheres, only $S^0$, $S^1$, and $S^3$
+carry a smooth group structure on the entire sphere; $S^2$ does not.
 
-A smooth *path* through a pole is still fine — one curve needs one
-velocity. The group forces a *simultaneous* nonzero $X(p)$ at every
-point; that is what fails.
+A smooth *path* through a pole is still fine — one curve
+$\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ needs one ordinary
+derivative $\gamma'(t_0)$ at each parameter $t_0$. The group forces a
+*simultaneous* choice of nonzero $X(p)\in T_p S^2$ at every $p$; that
+is what fails.
 
-##### (M1.5) Tangent planes and local calculus
+##### (M1.5) Local calculus in the ambient picture
 
 We stop hunting for a global $+/\cdot$ on points of $S^2$. The
-structure that *does* fit is local and linear on velocities.
+structure that *does* fit is linear on **velocities in**
+$\mathbb{R}^3$, not on points of $S^2$.
 
-Let $\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ be a $C^1$
-curve that stays on $S^2$, so
-
-$$
-\gamma(t)\cdot\gamma(t)=1
-\qquad\text{for all }t.
-$$
-
-Differentiate both sides with the product rule:
-
-$$
-\frac{d}{dt}\bigl(\gamma(t)\cdot\gamma(t)\bigr)
-  =2\,\gamma(t)\cdot\gamma'(t)=0.
-$$
-
-Hence at every point $p=\gamma(t)$ the velocity is orthogonal to the
-position, $\gamma'(t)\perp\gamma(t)$. The set of all such velocities at
-a fixed $p\in S^2$ is the **tangent plane**
-
-$$
-T_p S^2
-  =\bigl\{v\in\mathbb{R}^3:p\cdot v=0\bigr\},
-$$
-
-a $2$-dimensional real vector space. Differentiating a curve on $S^2$
-does **not** produce another point of $S^2$; it produces a vector in
-$T_p S^2$.
+The working setup already fixed $T_p S^2\subset\mathbb{R}^3$. Recap
+only the calculus step: if
+$\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ is $C^1$ with
+$\gamma(t)\in S^2$ for all $t$, then $\gamma(t)$ and $\gamma'(t)$ are
+both in $\mathbb{R}^3$, the product $\gamma(t)\cdot\gamma'(t)$ is the
+ambient Euclidean product, and differentiating $\gamma\cdot\gamma=1$
+at the parameter $t$ yields $\gamma(t)\cdot\gamma'(t)=0$, i.e.
+$\gamma'(t)\in T_{\gamma(t)}S^2$. Differentiating a curve on $S^2$
+does **not** produce another point of $S^2$; it produces another vector
+in the same $\mathbb{R}^3$, constrained to that $2$-plane.
 
 Away from the poles, spherical coordinates
 
@@ -734,8 +779,8 @@ $\varphi(x,y,z)=(\theta,\phi)$, whose inverse
 $\varphi^{-1}$ is $C^\infty$ as a map into $\mathbb{R}^3$. A real
 function $f:S^2\to\mathbb{R}$ is smooth on $U$ precisely when
 $f\circ\varphi^{-1}$ is a smooth function of $(\theta,\phi)$ in the
-usual multivariable sense. Along a curve
-$(\theta(t),\phi(t))$, the chain rule gives
+usual multivariable sense. Along a parameter curve
+$t\mapsto\bigl(\theta(t),\phi(t)\bigr)$, the chain rule gives
 
 $$
 \frac{d}{dt}(f\circ\gamma)(t)
@@ -743,15 +788,16 @@ $$
   +\partial_\phi(f\circ\varphi^{-1})\,\phi'(t),
 $$
 
-so derivatives on $S^2$ are ordinary $\mathbb{R}^2$ derivatives in the
-chart. (Charts that cover the poles, and $C^\infty$ transitions on
-overlaps, are the atlas story of §2.)
+so derivatives of scalar functions on $S^2$ are ordinary $\mathbb{R}^2$
+derivatives in the chart (again: $\theta'(t),\phi'(t)$ are derivatives
+**at the parameter** $t$). Charts that cover the poles, and $C^\infty$
+transitions on overlaps, are the atlas story of §2.
 
-**Punchline for (M1).** $S^2$ is not closed under ambient $+/\cdot$,
-admits no continuous vector-space structure and no smooth circle-style
-group operation on the **whole** closed sphere, but it *is* a domain on
-which curves have
-well-defined derivatives in the tangent planes $T_p S^2$, and on which
+**Punchline for (M1).** $S^2\subset\mathbb{R}^3$ is not closed under
+ambient $+/\cdot$, admits no continuous vector-space structure and no
+smooth circle-style group operation on the **whole** closed sphere, but
+curves in $S^2$ have ordinary $\mathbb{R}^3$-derivatives at each
+parameter $t$, constrained to the subspaces $T_{\gamma(t)}S^2$, and
 scalar functions are differentiated by ordinary calculus in local
 coordinates.
 
@@ -906,9 +952,10 @@ moving on $S^2$, which returns us to (M1) with a physical reading.
 
 Each example is a set of points that is not a vector space under
 addition. The important structure is local and differential — as in
-(M1), where differentiating the constraint produced the tangent planes
-$T_p S^2$ and spherical coordinates reduced derivatives to ordinary
-$\mathbb{R}^2$ calculus. A **smooth manifold** covers such a set with
+(M1), where the ambient constraint in $\mathbb{R}^3$ produced the
+subspaces $T_p S^2\subset\mathbb{R}^3$ and spherical coordinates reduced
+derivatives (at the parameter) to ordinary $\mathbb{R}^2$ calculus. A
+**smooth manifold** covers such a set with
 overlapping patches, each identified with an open set in
 $\mathbb{R}^d$, with infinitely differentiable change-of-coordinate maps
 on overlaps. Differentiating a curve at a point $p$ yields an element
