@@ -595,47 +595,54 @@ $T_e S^2\neq\{\mathbf{0}\}$.) Note the three different objects: the
 $C^1\bigl((-\varepsilon,\varepsilon),\mathbb{R}^3\bigr)$; each
 **value** $g(t)$ is a point of $S^2\subset\mathbb{R}^3$; the
 **number** $g'(0)$ is one vector in the subspace $T_e S^2$. Now use
-the assumed product $\ast$: for each **fixed** point $p\in S^2$,
-define a new path by applying $\ast$ to the pair $\bigl(p,\,g(t)\bigr)$
-at every parameter $t$,
+the assumed product $\ast$. Write $\mu(a,b)=a\ast b$. For each
+**fixed** $p\in S^2$ define
 $$
 \gamma_p:(-\varepsilon,\varepsilon)\to\mathbb{R}^3,
 \qquad
-\gamma_p(t):=p\ast g(t).
+\gamma_p(t):=\mu\bigl(p,\,g(t)\bigr)=p\ast g(t).
 $$
-Because $g(t)\in S^2$ and $\ast$ returns a point of $S^2$, one has
-$\gamma_p(t)\in S^2\subset\mathbb{R}^3$. At $t=0$,
-$\gamma_p(0)=p\ast e=p$. The ordinary derivative of $\gamma_p$ **at
-the parameter** $0$ is a vector
-$X(p):=\gamma_p'(0)\in T_p S^2\subset\mathbb{R}^3$ (formula in
-(M1.3)). So one curve $g$ through $e$ produces, via $\ast$, a whole
-family of curves $\gamma_p$, one based at each $p$.
-**Why $X(p)$ cannot vanish.** A common error is to infer
-$\gamma_p'(0)\neq\mathbf{0}$ merely from $g(t)\neq e$ for $t\neq 0$.
-That inference is false: it confuses the values of a path at
-parameters $t\neq 0$ with the derivative of the path at the single
-parameter $t=0$. In $\mathbb{R}$, the map $\varphi(t)=t^3$ satisfies
-$\varphi(t)\neq 0$ whenever $t\neq 0$, but $\varphi'(0)=0$. The same
-distinction applies to $\gamma_p$. The valid argument uses the group
-inverse. Suppose $X(p)=\mathbf{0}$ for some $p$. Then
-$\gamma_p'(0)=\mathbf{0}$. Let $\lambda_p:S^2\to S^2$ be the smooth
-map $q\mapsto p^{-1}\ast q$. Associativity gives
+Then $\gamma_p(t)\in S^2\subset\mathbb{R}^3$ and $\gamma_p(0)=p\ast e=p$.
+Differentiate the composite **at the parameter** $t$ by the chain rule
+in the second slot of $\mu$ (first slot held fixed at $p$):
 $$
-\lambda_p\bigl(\gamma_p(t)\bigr)
-  =p^{-1}\ast\bigl(p\ast g(t)\bigr)
-  =g(t)
+\gamma_p'(t)
+  =D_2\mu\bigl(p,\,g(t)\bigr)\,[g'(t)]
+  \;\in\; T_{\gamma_p(t)}S^2\subset\mathbb{R}^3.
 $$
-for every $t$. Differentiating at the parameter $t=0$ and using
-$\gamma_p'(0)=\mathbf{0}$ yields $g'(0)=\mathbf{0}$, which contradicts
-the choice of $g$. Therefore $X(p)\neq\mathbf{0}$ in
-$T_p S^2\subset\mathbb{R}^3$ for **every** $p\in S^2$.
-**How that bites.** Smoothness of $\ast$ also makes
-$p\mapsto X(p)\in\mathbb{R}^3$ continuous. So a smooth group structure
-on all of $S^2$ would yield a continuous map
+In particular, at $t=0$,
+$$
+X(p)
+  :=\gamma_p'(0)
+  =D_2\mu(p,e)\,[g'(0)]
+  \;\in\; T_p S^2\subset\mathbb{R}^3.
+$$
+So $X(p)$ is completely determined by the linear map
+$D_2\mu(p,e):T_e S^2\to T_p S^2$ applied to the single vector
+$g'(0)$ — not by whether $g(t)$ equals $e$ at other parameters.
+**Why $X(p)$ cannot vanish.** Left multiplication by $p$,
+$L_p(q)=p\ast q$, is a smooth bijection $S^2\to S^2$ with smooth
+inverse $L_{p^{-1}}$, hence a diffeomorphism. Therefore its
+differential at the identity,
+$D_2\mu(p,e)=DL_p|_e:T_e S^2\to T_p S^2$, is a linear isomorphism.
+A linear isomorphism sends nonzero vectors to nonzero vectors, so
+$$
+X(p)=\mathbf{0}
+  \quad\Longleftrightarrow\quad
+g'(0)=\mathbf{0}.
+$$
+We chose $g$ with $g'(0)\neq\mathbf{0}$, hence
+$X(p)\neq\mathbf{0}$ in $T_p S^2\subset\mathbb{R}^3$ for **every**
+$p\in S^2$. (Equivalently: if $\gamma_p'(0)=\mathbf{0}$, then
+$g=\lambda_p\circ\gamma_p$ with $\lambda_p=L_{p^{-1}}$ yields
+$g'(0)=\mathbf{0}$ by the chain rule — the same identity.)
+**How that bites.** Smoothness of $\ast$ makes
+$p\mapsto X(p)\in\mathbb{R}^3$ continuous. A smooth group structure on
+all of $S^2$ would therefore give a continuous map
 $X:S^2\to\mathbb{R}^3$ with $X(p)\in T_p S^2$ and $X(p)\neq\mathbf{0}$
 everywhere. Hairy ball forbids that. Therefore no such group structure
-exists. (Details of $X$ and the standard try “rotate about $z$” are
-(M1.3)–(M1.4).)
+exists. (The rotation try that produces a field vanishing at the poles
+is (M1.3)–(M1.4).)
 
 ##### (M1.3) Explicit derivative of $\gamma_p(t)=p\ast g(t)$ at $t=0$
 
@@ -647,33 +654,26 @@ $S^1$ (where a smooth group exists) and on $S^2$ under the standard
 try “advance longitude” (a one-parameter family of rotations, not a
 binary operation on pairs of points of $S^2$).
 
-**Why.** Without the formula, “nowhere-zero continuous field” is an
-abstract slogan. The derivative below is exactly what (M1.2) used, and
-the east field $\mathbf{E}$ in (M1.4) is what that derivative becomes
-for rotation about $z$.
+**Why.** (M1.2) already recorded
+$\gamma_p'(t)=D_2\mu(p,g(t))[g'(t)]$ and
+$X(p)=D_2\mu(p,e)[g'(0)]$. Here the same identity is repeated in
+ambient notation and evaluated on $S^1$ and on the $\mathrm{SO}(3)$
+action that produces $\mathbf{E}$ in (M1.4).
 
-**How — general definition.** Let $\mu(p,q)=p\ast q$ be a smooth group
-operation on an embedded Lie group $G\subset\mathbb{R}^N$ (for $S^1$ or
-matrix groups; the same chain rule holds in charts). Let
-$g:(-\varepsilon,\varepsilon)\to\mathbb{R}^N$ be $C^1$ with values in
-$G$ and $g(0)=e$. For each fixed $p\in G$ the path
-$t\mapsto\mu\bigl(p,\,g(t)\bigr)$ takes values in $G\subset\mathbb{R}^N$
-and starts at $p\ast e=p$. Its derivative **at the parameter** $t=0$ is
-the ordinary $\mathbb{R}^N$-derivative. By the chain rule in the second
-slot of $\mu$,
+**How — general definition.** Let $\mu(p,q)=p\ast q$ on an embedded
+Lie group $G\subset\mathbb{R}^N$. With $\gamma_p(t)=\mu(p,g(t))$ as in
+(M1.2),
 $$
+\gamma_p'(t)
+  =D_2\mu\bigl(p,\,g(t)\bigr)\,[g'(t)],
+\qquad
 X(p)
-  =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{t=0}
-     \mu\bigl(p,\,g(t)\bigr)
+  =\gamma_p'(0)
   =D_2\mu(p,e)\,[g'(0)]
   \;\in\; T_p G\subset\mathbb{R}^N.
 $$
-Here $D_2\mu(p,e)$ is the linear map on the ambient tangent space at
-$e$ coming from differentiating $\mu$ in its second argument; the
-brackets mean “apply that linear map to the vector $g'(0)$,” not a
-Euclidean product of two points of $G$. The result $X(p)$ is again a
-vector in the same ambient $\mathbb{R}^N$, constrained to the subspace
-$T_p G$.
+The brackets mean “apply the linear map $D_2\mu(p,e)$ to the vector
+$g'(0)$,” not a Euclidean product of two points of $G$.
 
 **How — circle (group on the points themselves).** On
 $S^1\cong\mathbb{R}/2\pi\mathbb{Z}$ take $\mu(\theta,\alpha)=\theta+\alpha$
