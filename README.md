@@ -141,11 +141,11 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
 - [Foundations - Smooth manifolds, Lie groups, and the exponential map](tutorials/manifolds_lie_groups_quantum)  
   Charts and $C^\infty$ transitions, Lie algebras, and the matrix
   exponential, with Tier A/B/C applications (Bloch sphere through
-  PQC off-ramp). Tier‑C twistors already include the
-  $\mathbb{CP}^{3}$ incidence dictionary; CY / $G_2$ / elliptic stay
-  map-depth here. Foundations for the geometry of states,
-  transformations, and parameters across the lab; Part III bridges
-  to product formulas in module ( 05 ).
+  PQC off-ramp). Tier‑C is geometry-depth for Calabi–Yau, $G_2$,
+  twistors ($\mathbb{CP}^{3}$ incidence), and elliptic / lattice
+  tori. Foundations for the geometry of states, transformations, and
+  parameters across the lab; Part III bridges to product formulas in
+  module ( 05 ).
 
 - [Foundations - Twistor theory (geometry and Penrose transform)](tutorials/twistor_theory)  
   Graduate off-ramp from manifolds §C3: 2‑spinor coordinates, reality

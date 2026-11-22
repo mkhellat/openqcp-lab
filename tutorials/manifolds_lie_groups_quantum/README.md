@@ -38,21 +38,19 @@ where it shows up**, then code or a reading off-ramp.
 |------|--------|------------|
 | A | Bloch / $\mathbb{CP}^{1}$; $\mathbb{CP}^{d-1}$ & density operators; $\mathrm{U}(2^{n})$; $\mathrm{Sp}(2n,\mathbb{R})$; statistical manifolds | Full labs |
 | B | Lorentzian Minkowski; $U(1)$ bundles / Berry phase | Light code |
-| C | Calabi–Yau; $G_{2}$; **twistors** (incidence dictionary + schematic); elliptic curves & lattices | C1/C2/C4: prose + schematics; **C3: geometry-depth**; PQC/crypto off-ramp |
+| C | Calabi–Yau ($c_1=0$); $G_{2}$ (parallel $3$-form); twistors (incidence); elliptic curves & lattice tori | Geometry-depth + schematics; PQC/crypto off-ramp |
 
-**Twistors (C3).** Inside the notebook, Part II‑C §C3 declares
-Minkowski / complexified Minkowski / $\mathbb{PT}=\mathbb{CP}^{3}$ once,
-writes the incidence relation $\omega^{A}=ix^{AA'}\pi_{A'}$, and
-records the dictionary (point of $\mathbb{PT}$ ↔ null line; spacetime
-point ↔ $\mathbb{CP}^{1}$ in $\mathbb{PT}$). The graduate off-ramp is
-[`../twistor_theory`](../twistor_theory/) (spinors, reality
-conditions, Penrose-transform sketch).
+**Tier C (all of C1–C4).** Each section declares a working setup and
+writes at least one explicit equation or dictionary (Yau / $c_1=0$;
+model $\varphi_0$ on $\mathbb{R}^{7}$; $\omega^{A}=ix^{AA'}\pi_{A'}$;
+Weierstrass $\Delta\neq 0$ and $\mathbb{R}^{n}/\Lambda$). Twistor
+graduate notebook: [`../twistor_theory`](../twistor_theory/). PQC
+engineering: [`../post_quantum_cryptography`](../post_quantum_cryptography/).
 
 **Graduation:** PQC / cryptology continues in
 [`../post_quantum_cryptography`](../post_quantum_cryptography/)
-(NIST FIPS, hybrid TLS RFCs, soft-gated Open Quantum Safe). This
-foundations file stays the geometric invitation for C1/C2/C4; C3 is
-the first Tier‑C topic taken past a citation map.
+(NIST FIPS, hybrid TLS RFCs, soft-gated Open Quantum Safe). CY / $G_2$
+compactification depth stays in cited monographs until a future note.
 
 
 # Further reading (primary)
