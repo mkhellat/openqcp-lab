@@ -46,7 +46,7 @@ tables still run; with it, ML-KEM / ML-DSA round-trips execute.
 | II | NIST portfolio: FIPS 203/204/205; HQC as second KEM family | Tables + schematics |
 | III | KEM / signature APIs; parameter-set size comparison | Full labs (numpy) |
 | IV | Open Quantum Safe soft-gated round-trips | Full when OQS present |
-| V | PQ/T hybrid TLS (RFC map); `oqs-provider` | Prose + checklist |
+| V | PQ/T hybrid dig: combiner, RFC 10024 groups + share sizes, soft-gated `oqs-provider` | Prose + tables + soft-gated openssl |
 | VI | Bridges to QI and manifolds; further reading | Short |
 
 **Upstream:** [`../quantum_information_theory`](../quantum_information_theory/)

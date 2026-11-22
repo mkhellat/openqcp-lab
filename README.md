@@ -161,9 +161,10 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
 - [Foundations - Post-quantum cryptography and cryptology](tutorials/post_quantum_cryptography)  
   NIST PQC portfolio (ML-KEM, ML-DSA, SLH-DSA; HQC as second KEM),
   KEM/signature interfaces and sizes, soft-gated Open Quantum Safe
-  labs, and hybrid TLS / `oqs-provider` off-ramp. Consumes the QI
-  coding bridge and manifolds Tier‑C §C4 geometric invitation
-  (lattices / ECC; not the twistor §C3).
+  labs, and a hybrid TLS dig (RFC 10024 groups + ClientHello share
+  sizes; soft-gated `oqs-provider` checks). Consumes the QI coding
+  bridge and manifolds Tier‑C §C4 geometric invitation (lattices /
+  ECC; not the twistor §C3).
 
 ## Tools
 
