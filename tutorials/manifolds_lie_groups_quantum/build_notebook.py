@@ -2079,8 +2079,9 @@ used**, then a reading path. **C3 (twistors)** is the exception within
 this part — it is written at the same extrinsic / formula‑first
 precision as the Minkowski lab in II‑B, still without a full spinor
 calculus course. C1, C2, and C4 remain map‑plus‑citations until a later
-pass. Dedicated follow‑on notebooks (starting with twistors) graduate
-from these entries.
+pass. The twistor graduate notebook is
+[`../twistor_theory`](../twistor_theory/); other follow‑ons can
+graduate from C1/C2/C4 later.
 """))
 
 cells.append(md(r"""
@@ -2248,8 +2249,9 @@ notebook (phase B).
 > K. P. Tod, *An Introduction to Twistor Theory*, 2nd ed., Cambridge,
 > 1994, Ch. 1–2 (incidence in coordinates).
 
-**Off‑ramp (phase B):** a dedicated twistor notebook — geometry first
-(spinors, reality, Penrose transform), then field equations. This
+**Off‑ramp:** the dedicated twistor notebook
+[`../twistor_theory`](../twistor_theory/) — geometry first (spinors,
+reality, Penrose transform), then a field‑equation sketch. This
 section stops at the incidence dictionary and the schematic below.
 """))
 
@@ -2316,8 +2318,8 @@ cells.append(md(r"""
 Manifold: twistor space $\mathbb{PT}=\mathbb{CP}^{3}$. Dictionary:
 point of $\mathbb{PT}$ $\leftrightarrow$ null line in $\mathbb{CM}$;
 spacetime point $\leftrightarrow$ $\mathbb{CP}^{1}$ in $\mathbb{PT}$,
-via $\omega^{A}=ix^{AA'}\pi_{A'}$. Next depth: dedicated twistor
-notebook (phase B).
+via $\omega^{A}=ix^{AA'}\pi_{A'}$. Next depth:
+[`../twistor_theory`](../twistor_theory/).
 """))
 
 cells.append(md(r"""
@@ -2475,9 +2477,9 @@ cells.append(md(r"""
   Berry).
 - CY, \(G_2\), and crypto appear at Tier‑C as maps with citations;
   **twistors (C3)** already carry the incidence dictionary
-  $\omega^{A}=ix^{AA'}\pi_{A'}$ in this notebook, with a dedicated
-  twistor notebook as the next off‑ramp; **PQC belongs in the
-  dedicated RFC + OQS module**.
+  $\omega^{A}=ix^{AA'}\pi_{A'}$ here, with the dedicated
+  [`twistor_theory`](../twistor_theory/) notebook as the graduate
+  off‑ramp; **PQC belongs in the dedicated RFC + OQS module**.
 
 ## Global further reading (bookshelf)
 

@@ -44,9 +44,9 @@ where it shows up**, then code or a reading off-ramp.
 Minkowski / complexified Minkowski / $\mathbb{PT}=\mathbb{CP}^{3}$ once,
 writes the incidence relation $\omega^{A}=ix^{AA'}\pi_{A'}$, and
 records the dictionary (point of $\mathbb{PT}$ ↔ null line; spacetime
-point ↔ $\mathbb{CP}^{1}$ in $\mathbb{PT}$). A dedicated twistor
-notebook (spinors, reality conditions, Penrose transform) is the
-planned graduate off-ramp; it is not this file.
+point ↔ $\mathbb{CP}^{1}$ in $\mathbb{PT}$). The graduate off-ramp is
+[`../twistor_theory`](../twistor_theory/) (spinors, reality
+conditions, Penrose-transform sketch).
 
 **Graduation:** PQC / cryptology continues in
 [`../post_quantum_cryptography`](../post_quantum_cryptography/)
