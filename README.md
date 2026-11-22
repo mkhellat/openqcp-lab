@@ -147,6 +147,11 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   transformations, and parameters across the lab; Part III bridges
   to product formulas in module ( 05 ).
 
+- [Foundations - Twistor theory (geometry and Penrose transform)](tutorials/twistor_theory)  
+  Graduate off-ramp from manifolds §C3: 2‑spinor coordinates, reality
+  conditions for real Minkowski space, and a Penrose-transform sketch
+  for massless fields (amplitudes / integrable systems stay maps).
+
 - [Foundations - Quantum information and information theory](tutorials/quantum_information_theory)  
   Shannon and von Neumann entropies, relative entropy, channels,
   fidelity and trace distance, with a bridge toward code-based PQC
