@@ -58,7 +58,8 @@ engineering: [`../post_quantum_cryptography`](../post_quantum_cryptography/).
 **Graduation:** PQC / cryptology continues in
 [`../post_quantum_cryptography`](../post_quantum_cryptography/)
 (NIST FIPS, hybrid TLS RFCs, soft-gated Open Quantum Safe). CY / $G_2$
-compactification depth stays in cited monographs until a future note.
+holonomy deepen continues in
+[`../special_holonomy`](../special_holonomy/).
 
 
 # Further reading (primary)
