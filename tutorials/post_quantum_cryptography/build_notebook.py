@@ -55,11 +55,11 @@ hard for both classical and quantum adversaries — primarily on
 and then **standardises** concrete KEMs and signatures.
 
 This module is **standards- and interface-first**. Geometry of lattices
-and ECC lives in the manifolds foundations notebook (Tier C);
-coding / decoding hardness and the HQC destination live in the QI
-notebook. Here we map NIST's portfolio, KEM/signature APIs, hybrid TLS,
-and Open Quantum Safe. We do **not** re-implement ML-KEM, HQC, or
-ML-DSA by hand.
+and ECC lives in the manifolds foundations notebook **Tier‑C §C4**
+(§C3 there is twistor incidence, not crypto); coding / decoding
+hardness and the HQC destination live in the QI notebook. Here we map
+NIST's portfolio, KEM/signature APIs, hybrid TLS, and Open Quantum
+Safe. We do **not** re-implement ML-KEM, HQC, or ML-DSA by hand.
 
 > **Further reading (anchors).** NIST Post-Quantum Cryptography project:
 > https://csrc.nist.gov/Projects/post-quantum-cryptography/ — FIPS 203
@@ -71,7 +71,7 @@ cells.append(md(r"""
 ## Prerequisites
 
 - QI notebook Parts I–III recommended (Hamming bridge; HQC named).
-- Manifolds foundations Tier C recommended (lattice / ECC geometry).
+- Manifolds foundations Tier‑C §C4 recommended (lattice / ECC geometry).
 - Comfort reading FIPS / RFC abstracts.
 
 ## Learning objectives

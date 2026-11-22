@@ -141,7 +141,9 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
 - [Foundations - Smooth manifolds, Lie groups, and the exponential map](tutorials/manifolds_lie_groups_quantum)  
   Charts and $C^\infty$ transitions, Lie algebras, and the matrix
   exponential, with Tier A/B/C applications (Bloch sphere through
-  PQC off-ramp). Foundations for the geometry of states,
+  PQC off-ramp). Tier‑C twistors already include the
+  $\mathbb{CP}^{3}$ incidence dictionary; CY / $G_2$ / elliptic stay
+  map-depth here. Foundations for the geometry of states,
   transformations, and parameters across the lab; Part III bridges
   to product formulas in module ( 05 ).
 
@@ -155,7 +157,8 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   NIST PQC portfolio (ML-KEM, ML-DSA, SLH-DSA; HQC as second KEM),
   KEM/signature interfaces and sizes, soft-gated Open Quantum Safe
   labs, and hybrid TLS / `oqs-provider` off-ramp. Consumes the QI
-  coding bridge and manifolds Tier‑C geometric invitation.
+  coding bridge and manifolds Tier‑C §C4 geometric invitation
+  (lattices / ECC; not the twistor §C3).
 
 ## Tools
 

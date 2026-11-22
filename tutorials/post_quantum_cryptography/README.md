@@ -7,8 +7,9 @@ engineers touch those algorithms through standards, hybrid TLS, and
 Open Quantum Safe — without re-implementing primitives from scratch.
 
 Cross-links the QI notebook for the coding / HQC bridge and the
-manifolds foundations notebook (Tier C) for lattice / ECC geometry; it
-does **not** redo information measures or Lie theory.
+manifolds foundations notebook **Tier‑C §C4** for lattice / ECC
+geometry (C3 there is twistor incidence, not crypto). It does **not**
+redo information measures or Lie theory.
 
 
 # Notebook
@@ -51,7 +52,7 @@ tables still run; with it, ML-KEM / ML-DSA round-trips execute.
 **Upstream:** [`../quantum_information_theory`](../quantum_information_theory/)
 (coding / HQC destination);
 [`../manifolds_lie_groups_quantum`](../manifolds_lie_groups_quantum/)
-(Tier C geometry invitation).
+(Tier‑C §C4 geometry invitation; twistors are §C3 in that notebook).
 
 
 # Further reading (primary)
