@@ -646,23 +646,18 @@ is (M1.3)–(M1.4).)
 
 ##### (M1.3) Explicit derivative of $\gamma_p(t)=p\ast g(t)$ at $t=0$
 
-**What.** In (M1.2) the vector $X(p)$ was named as
-$\gamma_p'(0)$, the ordinary derivative at the parameter $0$ of the
-path $\gamma_p(t)=p\ast g(t)$ built from a fixed $p$ and the curve
-$g$. Here that derivative is written as a formula, then evaluated on
-$S^1$ (where a smooth group exists) and on $S^2$ under the standard
-try “advance longitude” (a one-parameter family of rotations, not a
-binary operation on pairs of points of $S^2$).
+**DG toolset so far (from M1.1–M1.2).** Extrinsic manifold
+$S^2\subset\mathbb{R}^3$; tangent space
+$T_p S^2=\{v\in\mathbb{R}^3:p\cdot v=0\}$; differential of a map in the
+second slot $D_2\mu$; left translation $L_p$ with
+$DL_p|_e$ a linear isomorphism $T_e\to T_p$.
 
-**Why.** (M1.2) already recorded
-$\gamma_p'(t)=D_2\mu(p,g(t))[g'(t)]$ and
-$X(p)=D_2\mu(p,e)[g'(0)]$. Here the same identity is repeated in
-ambient notation and evaluated on $S^1$ and on the $\mathrm{SO}(3)$
-action that produces $\mathbf{E}$ in (M1.4).
+**What.** Evaluate the same identity on two models: the circle (a true
+Lie group on its points) and the sphere under an $\mathrm{SO}(3)$
+**action** (not a product $\ast$ on pairs of points of $S^2$).
 
-**How — general definition.** Let $\mu(p,q)=p\ast q$ on an embedded
-Lie group $G\subset\mathbb{R}^N$. With $\gamma_p(t)=\mu(p,g(t))$ as in
-(M1.2),
+**How — general (embedded Lie group).** Let $\mu(p,q)=p\ast q$ on
+$G\subset\mathbb{R}^N$, $\gamma_p(t)=\mu(p,g(t))$. Then
 $$
 \gamma_p'(t)
   =D_2\mu\bigl(p,\,g(t)\bigr)\,[g'(t)],
@@ -672,24 +667,19 @@ X(p)
   =D_2\mu(p,e)\,[g'(0)]
   \;\in\; T_p G\subset\mathbb{R}^N.
 $$
-The brackets mean “apply the linear map $D_2\mu(p,e)$ to the vector
-$g'(0)$,” not a Euclidean product of two points of $G$.
+Brackets mean “apply the linear map,” not a Euclidean product of
+points. A map $p\mapsto X(p)\in T_p G$ of this kind is a **vector
+field** on $G$ (tool we will reuse).
 
-**How — circle (group on the points themselves).** On
-$S^1\cong\mathbb{R}/2\pi\mathbb{Z}$ take $\mu(\theta,\alpha)=\theta+\alpha$
-and $g(t)=t$ (angle coordinate), so the ordinary derivative at the
-parameter $0$ is $g'(0)=1$. Then
-$$
-X(\theta)
-  =\frac{\mathrm{d}}{\mathrm{d}t}\Big|_{0}(\theta+t)
-  =1
-$$
-in that coordinate: nowhere zero, as (M1.2) requires.
+**How — circle (group law on the points).** On
+$S^1\cong\mathbb{R}/2\pi\mathbb{Z}$, $\mu(\theta,\alpha)=\theta+\alpha$,
+$g(t)=t$, so $g'(0)=1$ and
+$X(\theta)=\frac{\mathrm{d}}{\mathrm{d}t}|_{0}(\theta+t)=1$ in the
+angle chart — nowhere zero, as (M1.2) requires.
 
-**How — sphere under rotation about $z$.** We do **not** multiply two
-points of $S^2$ here. We let the Lie group $\mathrm{SO}(3)$ act on the
-set $S^2\subset\mathbb{R}^3$ by matrix–vector multiplication, and take
-the one-parameter family $R_z(t)$ of rotations about the $z$-axis:
+**How — sphere under rotation about $z$ (action, not $\ast$).** Let
+$\mathrm{SO}(3)$ act on $S^2\subset\mathbb{R}^3$ by matrix–vector
+multiplication. Take the **one-parameter subgroup**
 $$
 R_z(t)=
 \begin{pmatrix}
@@ -698,18 +688,16 @@ R_z(t)=
 0 & 0 & 1
 \end{pmatrix},
 \qquad
-\gamma_p(t)
-  :=R_z(t)\,p
-  =
+\gamma_p(t):=R_z(t)\,p
+=
 \begin{pmatrix}
 x\cos t-y\sin t\\
 x\sin t+y\cos t\\
 z
 \end{pmatrix}
-\quad\bigl(p=(x,y,z)^\top\in S^2\subset\mathbb{R}^3\bigr).
+\quad\bigl(p=(x,y,z)^\top\bigr).
 $$
-Differentiate the $\mathbb{R}^3$-valued map $\gamma_p$ **at the
-parameter** $t=0$:
+Differentiate **at the parameter** $t=0$:
 $$
 X(p)
   =\gamma_p'(0)
@@ -718,67 +706,73 @@ X(p)
   =\mathbf{E}(p)
   \;\in\;\mathbb{R}^3.
 $$
-Equivalently, with generator
-$R_z'(0)=\begin{pmatrix}0&-1&0\\1&0&0\\0&0&0\end{pmatrix}$,
-one has $X(p)=R_z'(0)\,p$. Both $p$ and $\mathbf{E}(p)$ lie in
-$\mathbb{R}^3$, and the declared product gives
-$p\cdot\mathbf{E}(p)=0$, i.e. $\mathbf{E}(p)\in T_p S^2$. In spherical
-coordinates, $\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$ (due east,
-length $\sin\theta$). So $\mathbf{E}(p)$ **is** the triple
-$\bigl(\dot x(0),\dot y(0),\dot z(0)\bigr)$ of $\gamma_p$. This $X$ is
-continuous on all of $S^2$ as an $\mathbb{R}^3$-valued map, but (M1.4)
-shows it vanishes at the poles — so it is **not** the nowhere-zero
-field a smooth group structure on $S^2$ would have required.
+Equivalently $X(p)=R_z'(0)\,p$ with generator
+$R_z'(0)=\begin{pmatrix}0&-1&0\\1&0&0\\0&0&0\end{pmatrix}$
+(an element of the **Lie algebra** $\mathfrak{so}(3)$ of skew matrices —
+foreshadowing the exponential map). Ambient Euclid gives
+$p\cdot\mathbf{E}(p)=0$, so $\mathbf{E}(p)\in T_p S^2$. In the
+spherical chart, $\mathbf{E}=\sin\theta\,\hat{\boldsymbol{\phi}}$
+(due east). This $X$ is a continuous vector field on all of $S^2$, but
+(M1.4) shows it vanishes at the poles — hence **not** the nowhere-zero
+field a smooth group law on $S^2$ would force.
 
-##### (M1.4) Poles: continuous $\mathbf{E}$ vs nowhere-zero $\hat{\mathbf{E}}$
+##### (M1.4) Poles: continuous field vs nowhere-zero field
 
-The formula $\mathbf{E}(x,y,z)=(-y,\,x,\,0)$ is an
-$\mathbb{R}^3$-valued map on all of $S^2$. It extends continuously to
-$N$ and $S$, but $\mathbf{E}(N)=\mathbf{E}(S)=\mathbf{0}$ — the
-rotation stalls at the poles. The renormalized field on the belt
+**DG toolset.** A **(continuous) vector field** on $S^2$ is a
+continuous map $X:S^2\to\mathbb{R}^3$ with $X(p)\in T_p S^2$ for every
+$p$. “Nowhere zero” means $X(p)\neq\mathbf{0}$ everywhere. Hairy ball:
+no continuous nowhere-zero vector field on $S^2$.
 
+The field $\mathbf{E}(x,y,z)=(-y,\,x,\,0)$ is continuous on all of
+$S^2$, but $\mathbf{E}(N)=\mathbf{E}(S)=\mathbf{0}$ — the rotation
+stalls at the poles. Renormalize on the open belt $x^2+y^2>0$:
 $$
 \hat{\mathbf{E}}(p)
-  =\frac{(-y,\,x,\,0)}{\sqrt{x^2+y^2}}
-  \qquad(x^2+y^2>0)
+  =\frac{(-y,\,x,\,0)}{\sqrt{x^2+y^2}}.
 $$
+Then $\hat{\mathbf{E}}(p)\neq\mathbf{0}$ for $0<\theta<\pi$, yet
+$\hat{\mathbf{E}}$ has **no** continuous extension to $N$ or $S$: along
+longitude $\phi$ the limit is $(-\sin\phi,\,\cos\phi,\,0)$, which
+depends on $\phi$. Remove the poles and $\hat{\mathbf{E}}$ is fine
+(cylinder $\mathbb{R}\times S^1$ from (M1.2)). On the **closed**
+sphere, hairy ball forbids any continuous nowhere-zero $X$. So (M1.2)'s
+hypothesis fails: no smooth $\ast$ on all of $S^2$. Among spheres only
+$S^0$, $S^1$, $S^3$ carry a smooth group structure on the whole
+sphere.
 
-never stalls for $0<\theta<\pi$, yet has **no** continuous extension to
-$N$ or $S$ as an $\mathbb{R}^3$-valued map: along longitude $\phi$ the
-limit is $(-\sin\phi,\,\cos\phi,\,0)$, which depends on $\phi$. Remove
-the poles and $\hat{\mathbf{E}}$ is fine (cylinder group
-$\mathbb{R}\times S^1$ from (M1.2)). On the **closed** sphere, **no**
-continuous map $X:S^2\to\mathbb{R}^3$ with $X(p)\in T_p S^2$ and
-$X(p)\neq\mathbf{0}$ for every $p$ exists (hairy-ball). Therefore the
-hypothesis of (M1.2) is false: there is no smooth group operation
-$\ast$ on all of $S^2$. Among spheres, only $S^0$, $S^1$, and $S^3$
-carry a smooth group structure on the entire sphere; $S^2$ does not.
-
-A smooth *path* through a pole is still fine — one curve
-$\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ needs one ordinary
-derivative $\gamma'(t_0)$ at each parameter $t_0$. The group forces a
-*simultaneous* choice of nonzero $X(p)\in T_p S^2$ at every $p$; that
+**Path vs field.** One smooth curve
+$\gamma:(-\varepsilon,\varepsilon)\to S^2$ through a pole is fine: it
+needs only $\gamma'(t_0)\in T_{\gamma(t_0)}S^2$ at each parameter. A
+group law forces a **simultaneous** nonzero $X(p)$ at every $p$; that
 is what fails.
 
-##### (M1.5) Local calculus in the ambient picture
+**Takeaway box — M1.4.**  
+Continuous vector field $\mathbf{E}$ exists but vanishes at poles;
+unit belt field $\hat{\mathbf{E}}$ cannot extend continuously; hairy
+ball ⇒ no smooth circle-style group on closed $S^2$.
 
-We stop hunting for a global $+/\cdot$ on points of $S^2$. The
-structure that *does* fit is linear on **velocities in**
-$\mathbb{R}^3$, not on points of $S^2$.
+##### (M1.5) Local calculus: constraint, charts, chain rule
 
-The working setup already fixed $T_p S^2\subset\mathbb{R}^3$. Recap
-only the calculus step: if
+We stop hunting for global $+/\cdot$ on points of $S^2$. What fits is
+linear structure on **velocities**, plus ordinary calculus in
+**charts**.
+
+**Constraint ⇒ tangent space (ambient).** If
 $\gamma:(-\varepsilon,\varepsilon)\to\mathbb{R}^3$ is $C^1$ with
-$\gamma(t)\in S^2$ for all $t$, then $\gamma(t)$ and $\gamma'(t)$ are
-both in $\mathbb{R}^3$, the product $\gamma(t)\cdot\gamma'(t)$ is the
-ambient Euclidean product, and differentiating $\gamma\cdot\gamma=1$
-at the parameter $t$ yields $\gamma(t)\cdot\gamma'(t)=0$, i.e.
-$\gamma'(t)\in T_{\gamma(t)}S^2$. Differentiating a curve on $S^2$
-does **not** produce another point of $S^2$; it produces another vector
-in the same $\mathbb{R}^3$, constrained to that $2$-plane.
+$\gamma(t)\in S^2$, both $\gamma(t)$ and $\gamma'(t)$ live in
+$\mathbb{R}^3$. Differentiate $\gamma\cdot\gamma=1$ at the parameter
+$t$:
+$$
+\gamma(t)\cdot\gamma'(t)=0
+  \quad\Longleftrightarrow\quad
+\gamma'(t)\in T_{\gamma(t)}S^2.
+$$
+Differentiating a curve on $S^2$ does **not** return a point of $S^2$;
+it returns a vector in the ambient $\mathbb{R}^3$ constrained to that
+plane. (Tool: **differentiate the defining equation** to read the
+tangent space of an embedded manifold.)
 
-Away from the poles, spherical coordinates
-
+**Charts.** Away from the poles, spherical coordinates
 $$
 \begin{aligned}
 x&=\sin\theta\cos\phi,\\
@@ -789,97 +783,90 @@ z&=\cos\theta,
 \theta\in(0,\pi),\quad
 \phi\in(0,2\pi),
 $$
-
-give a chart
-$\varphi:U\subset S^2\to\mathbb{R}^2$,
-$\varphi(x,y,z)=(\theta,\phi)$, whose inverse
-$\varphi^{-1}$ is $C^\infty$ as a map into $\mathbb{R}^3$. A real
-function $f:S^2\to\mathbb{R}$ is smooth on $U$ precisely when
-$f\circ\varphi^{-1}$ is a smooth function of $(\theta,\phi)$ in the
-usual multivariable sense. Along a parameter curve
-$t\mapsto\bigl(\theta(t),\phi(t)\bigr)$, the chain rule gives
-
+give a chart $\varphi:U\subset S^2\to\mathbb{R}^2$,
+$\varphi(x,y,z)=(\theta,\phi)$, with $\varphi^{-1}$ smooth into
+$\mathbb{R}^3$. A scalar $f:S^2\to\mathbb{R}$ is smooth on $U$ iff
+$f\circ\varphi^{-1}$ is smooth in $(\theta,\phi)$. Along
+$t\mapsto\bigl(\theta(t),\phi(t)\bigr)$,
 $$
 \frac{d}{dt}(f\circ\gamma)(t)
   =\partial_\theta(f\circ\varphi^{-1})\,\theta'(t)
-  +\partial_\phi(f\circ\varphi^{-1})\,\phi'(t),
+  +\partial_\phi(f\circ\varphi^{-1})\,\phi'(t):
 $$
-
-so derivatives of scalar functions on $S^2$ are ordinary $\mathbb{R}^2$
-derivatives in the chart (again: $\theta'(t),\phi'(t)$ are derivatives
-**at the parameter** $t$). Charts that cover the poles, and $C^\infty$
-transitions on overlaps, are the atlas story of §2.
+derivatives of scalars on $S^2$ are ordinary $\mathbb{R}^2$ derivatives
+in the chart ($\theta',\phi'$ at the **parameter** $t$). Charts
+covering the poles and $C^\infty$ **transition maps** on overlaps are
+the atlas story of §2 — the intrinsic upgrade of this extrinsic
+picture.
 
 **Punchline for (M1).** $S^2\subset\mathbb{R}^3$ is not closed under
 ambient $+/\cdot$, admits no continuous vector-space structure and no
-smooth circle-style group operation on the **whole** closed sphere, but
-curves in $S^2$ have ordinary $\mathbb{R}^3$-derivatives at each
-parameter $t$, constrained to the subspaces $T_{\gamma(t)}S^2$, and
-scalar functions are differentiated by ordinary calculus in local
-coordinates.
+smooth circle-style group on the whole closed sphere; curves have
+$\mathbb{R}^3$-derivatives in $T_{\gamma(t)}S^2$; scalars are
+differentiated by charts + chain rule. Toolset in hand: embedded
+constraint, $T_pM$, differential $DF$, vector field, chart,
+one-parameter subgroup / Lie-algebra generator (preview).
 
-#### (M2) Directions in the plane (rays through the origin)
+#### (M2) Directions in the plane (projective tool)
 
-A **direction** in $\mathbb{R}^2$ is a line through the origin: the set
-of all nonzero scalar multiples of a single nonzero vector. Write
-
+**Working setup.** A **direction** in $\mathbb{R}^2$ is a line through
+the origin. Declare
 $$
 v\sim w
-\quad\text{when there exists }\lambda\in\mathbb{R}\setminus\{0\}
+\quad\text{iff}\quad
+\exists\,\lambda\in\mathbb{R}\setminus\{0\}
 \text{ with }w=\lambda v.
 $$
-
-Then $v$ and $2v$ determine the **same** direction, even though they
-are different vectors in $\mathbb{R}^2$. The space of directions is the
-set of equivalence classes
-
+The space of directions is the quotient manifold (set for now)
 $$
-\bigl(\mathbb{R}^2\setminus\{0\}\bigr)\big/\sim.
+\mathbb{RP}^{1}
+  =\bigl(\mathbb{R}^2\setminus\{0\}\bigr)\big/\sim.
 $$
+Then $v$ and $2v$ are different vectors but the **same** point of
+$\mathbb{RP}^{1}$.
 
-You cannot “add two directions” by adding representatives: if $v$ and
-$w$ are not parallel, $v+w$ depends on how long you chose $v$ and $w$
-to be, so the sum is not well-defined on classes. Scaling a class by
-$2$ does nothing new, because $v\sim 2v$ already.
+**Why $+$ fails on classes.** If $v,w$ are not parallel, the class of
+$v+w$ depends on representative lengths: $v+w$ and $v+2w$ are not
+proportional in general, so addition of directions is not well-defined.
+Scaling a class by $2$ does nothing new ($v\sim 2v$).
 
-(The same construction over $\mathbb{C}^2\setminus\{0\}$ with
-$\lambda\in\mathbb{C}\setminus\{0\}$ is the space of pure qubit states
-below.)
+**DG tool.** Quotients by free scaling (projective spaces) are standard
+manifolds; the same pattern over $\mathbb{C}$ gives
+$\mathbb{CP}^{1}$ (pure qubit states in (P1) / Bloch sphere).
 
-#### (M3) Rotation matrices
+#### (M3) Rotation matrices (matrix Lie group)
 
-A $3\times 3$ real matrix $R$ is a **rotation** of $\mathbb{R}^3$ when
-it preserves lengths and orientations:
-
+**Working setup.** A matrix $R\in\mathrm{M}_3(\mathbb{R})$ is a
+**rotation** when
 $$
 R^\top R = I,
 \qquad
 \det R = 1.
 $$
+Write $\mathrm{SO}(3)$ for that set. It is an **embedded** subset of the
+vector space $\mathrm{M}_3(\mathbb{R})\cong\mathbb{R}^{9}$, cut out by
+smooth equations — same extrinsic pattern as $S^2\subset\mathbb{R}^3$.
+It is **not** a linear subspace: if $R,S\in\mathrm{SO}(3)$, then $R+S$
+typically fails $(R+S)^\top(R+S)=I$.
 
-Write $\mathrm{SO}(3)$ for the set of all such matrices. It sits inside
-the vector space $\mathrm{M}_3(\mathbb{R})$ of all $3\times 3$ real
-matrices, but it is not a linear subspace.
-
-If $R,S\in\mathrm{SO}(3)$, the sum $R+S$ typically fails
-$(R+S)^\top(R+S)=I$. The natural combination is **composition**
-
+**Group law.** The structure that closes is **composition**
+$(R,S)\mapsto RS$:
 $$
-(R,S)\longmapsto RS,
-$$
-
-which does stay in $\mathrm{SO}(3)$:
-
-$$
-(RS)^\top(RS)=S^\top R^\top R S=S^\top S=I,
+(RS)^\top(RS)=S^\top R^\top R S=I,
 \qquad
-\det(RS)=(\det R)(\det S)=1.
+\det(RS)=1.
 $$
+So $\mathrm{SO}(3)$ is a **matrix Lie group**: manifold + smooth group
+operations, realised inside matrices. A smooth curve $R(t)$ in
+$\mathrm{SO}(3)$ has velocity $R'(t)$ in the ambient
+$\mathrm{M}_3(\mathbb{R})$; at $t=0$ with $R(0)=I$, the constraint
+$R^\top R=I$ forces $R'(0)^\top+R'(0)=0$ — i.e. $R'(0)$ lies in the
+Lie algebra $\mathfrak{so}(3)$ of skew-symmetric matrices (compare
+$R_z'(0)$ in (M1.3)). The matrix exponential will reconnect algebra →
+group later.
 
-So the structure on $\mathrm{SO}(3)$ is multiplicative, not the vector
-addition of matrices. (One-parameter families $R(t)$ of rotations are
-still smooth curves of matrices; we will return to that with the
-matrix exponential.)
+**Link.** The eastward field $\mathbf{E}$ of (M1.3) was exactly the
+velocity of the $\mathrm{SO}(3)$-orbit $t\mapsto R_z(t)p$.
 
 ### 1.2 Physics examples
 
@@ -968,17 +955,13 @@ moving on $S^2$, which returns us to (M1) with a physical reading.
 ### 1.3 What we need next
 
 Each example is a set of points that is not a vector space under
-addition. The important structure is local and differential — as in
-(M1), where the ambient constraint in $\mathbb{R}^3$ produced the
-subspaces $T_p S^2\subset\mathbb{R}^3$ and spherical coordinates reduced
-derivatives (at the parameter) to ordinary $\mathbb{R}^2$ calculus. A
-**smooth manifold** covers such a set with
-overlapping patches, each identified with an open set in
-$\mathbb{R}^d$, with infinitely differentiable change-of-coordinate maps
-on overlaps. Differentiating a curve at a point $p$ yields an element
-of the vector space $T_pM$ (the tangent space), not a sum of points of
-the set. Section 2 turns this into definitions and a worked example on
-the circle.
+addition. From (M1)–(M3) we already carry a **differential-geometry
+toolset in embryo**: embedded constraint → $T_pM$; differential
+$DF$ / $D_2\mu$; vector field; chart + chain rule; projective
+quotient; matrix Lie group with Lie algebra of velocities at the
+identity. Section 2 turns these into definitions (atlas, smooth maps,
+tangent bundle language) on a worked circle example, then feeds the
+Lie-group / exponential story later.
 
 > **Further reading.** J. M. Lee, *Introduction to Smooth Manifolds*,
 > 2nd ed., Springer, 2013, Ch. 1 (smooth manifolds and smooth maps).
@@ -1016,19 +999,35 @@ assert np.allclose(df_dt_chain, df_dt_ambient)
 print("(M1) max |gamma·gamma'| =", np.max(np.abs(np.sum(g * gd, axis=-1))))
 print("(M1) chain rule for f=z on equator: OK")
 
-# (M2) v and 2v are different vectors, same direction
+# (M1.3)–(M1.4) E field from Rz action: E(p)=(-y,x,0), tangent, zeros at poles
+def E_field(p):
+    x, y, z = p
+    return np.array([-y, x, 0.0])
+
+for p in [np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0]),
+          np.array([0.0, 0.0, -1.0])]:
+    Ep = E_field(p)
+    print("(M1.3) p =", p, " E =", Ep, " p·E =", np.dot(p, Ep))
+    assert np.isclose(np.dot(p, Ep), 0.0)
+assert np.allclose(E_field(np.array([0.0, 0.0, 1.0])), 0.0)  # pole stall
+
+# (M2) same direction vs ill-defined sum of classes
 v = np.array([1.0, 2.0])
 w = 2.0 * v
 print("(M2) v, 2v =", v, w, " parallel?", np.isclose(v[0] * w[1], v[1] * w[0]))
+a, b = np.array([1.0, 0.0]), np.array([0.0, 1.0])
+s1, s2 = a + b, a + 2.0 * b
+# s1 and s2 are not parallel ⇒ class of a+b depends on representative of [b]
+print("(M2) a+b =", s1, " a+2b =", s2,
+      " parallel?", np.isclose(s1[0] * s2[1], s1[1] * s2[0]))
 
-# (M3) Two rotations: sum leaves SO(3), product stays
+# (M3) Two rotations: sum leaves SO(3), product stays; Rz'(0) skew
 def is_SO3(R, tol=1e-10):
     return (
         norm(R.T @ R - np.eye(3)) < tol
         and abs(det(R) - 1.0) < tol
     )
 
-# Rotation by α about z
 def Rz(a):
     c, s = np.cos(a), np.sin(a)
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
@@ -1039,6 +1038,11 @@ print("(M3) R1+R2 in SO(3)?", is_SO3(R1 + R2),
       " R1@R2 in SO(3)?", is_SO3(R1 @ R2))
 assert is_SO3(R1) and is_SO3(R2) and is_SO3(R1 @ R2)
 assert not is_SO3(R1 + R2)
+# generator at identity: d/dt Rz(t)|_0 is skew-symmetric (so(3))
+h = 1e-6
+Rz_dot0 = (Rz(h) - Rz(0.0)) / h
+print("(M3) Rz'(0) ≈\n", np.round(Rz_dot0, 6))
+print("(M3) skew check ||A+A.T|| =", norm(Rz_dot0 + Rz_dot0.T))
 
 # (P1) Global phase does not change Pauli expectations
 def bloch(psi):
