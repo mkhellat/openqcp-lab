@@ -29,6 +29,14 @@ These are in the top-level `requirements.txt`. No Classiq, no
 `paulikit` / `trotterkit` required here.
 
 
+# Part I toolset (before applications)
+
+Examples (M1)–(M3) build an extrinsic differential-geometry kit in
+order: embedded constraint → tangent space; differential of a map /
+vector field; charts + chain rule; projective quotients; matrix Lie
+groups and Lie-algebra velocities at the identity. Section 2 then
+makes the atlas language precise.
+
 # Depth map (applications)
 
 Each case is written as **background → geometry (with equations) →
