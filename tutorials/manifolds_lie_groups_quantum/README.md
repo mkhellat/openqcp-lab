@@ -38,12 +38,21 @@ where it shows up**, then code or a reading off-ramp.
 |------|--------|------------|
 | A | Bloch / $\mathbb{CP}^{1}$; $\mathbb{CP}^{d-1}$ & density operators; $\mathrm{U}(2^{n})$; $\mathrm{Sp}(2n,\mathbb{R})$; statistical manifolds | Full labs |
 | B | Lorentzian Minkowski; $U(1)$ bundles / Berry phase | Light code |
-| C | Calabi–Yau; $G_{2}$; twistors; elliptic curves & lattices | Prose + schematics; PQC/crypto off-ramp |
+| C | Calabi–Yau; $G_{2}$; **twistors** (incidence dictionary + schematic); elliptic curves & lattices | C1/C2/C4: prose + schematics; **C3: geometry-depth**; PQC/crypto off-ramp |
+
+**Twistors (C3).** Inside the notebook, Part II‑C §C3 declares
+Minkowski / complexified Minkowski / $\mathbb{PT}=\mathbb{CP}^{3}$ once,
+writes the incidence relation $\omega^{A}=ix^{AA'}\pi_{A'}$, and
+records the dictionary (point of $\mathbb{PT}$ ↔ null line; spacetime
+point ↔ $\mathbb{CP}^{1}$ in $\mathbb{PT}$). A dedicated twistor
+notebook (spinors, reality conditions, Penrose transform) is the
+planned graduate off-ramp; it is not this file.
 
 **Graduation:** PQC / cryptology continues in
 [`../post_quantum_cryptography`](../post_quantum_cryptography/)
 (NIST FIPS, hybrid TLS RFCs, soft-gated Open Quantum Safe). This
-foundations file stays the geometric invitation only.
+foundations file stays the geometric invitation for C1/C2/C4; C3 is
+the first Tier‑C topic taken past a citation map.
 
 
 # Further reading (primary)

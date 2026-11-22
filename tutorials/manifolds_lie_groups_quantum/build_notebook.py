@@ -191,7 +191,8 @@ depends on the subject — for example:
   macroscopic states of ensembles, and parameters of families of
   probability distributions or Gibbs states;
 - in **twistor theory**: points of the complex projective set
-  $\mathbb{CP}^{3}$ that reorganises null structure in spacetime;
+  $\mathbb{PT}=\mathbb{CP}^{3}$ that reorganise null structure in
+  spacetime (incidence dictionary in Part II‑C §C3);
 - in **post-quantum cryptography and cryptology**: geometric carriers
   such as elliptic curves and lattice quotients that underwrite hard
   problems (treated here only as a map; depth belongs in a dedicated
@@ -251,7 +252,7 @@ cells.append(md(r"""
    background, equations, executable checks, and application notes.
 5. Read Tier‑B/C vignettes with enough background *and* geometry to know
    *what* the manifold is, *why it matters*, and where to go next
-   (including a PQC/crypto off‑ramp).
+   (twistor incidence in II‑C §C3; PQC/crypto off‑ramp in §C4).
 """))
 
 cells.append(md(r"""
@@ -262,7 +263,7 @@ cells.append(md(r"""
 | I | Charts, tangent vectors, Lie groups, \(\mathrm{GL}/\mathfrak{gl}\), exponential map |
 | II‑A | Full labs: Bloch / \(\mathbb{CP}^{1}\); \(\mathbb{CP}^{d-1}\) & density operators; \(\mathrm{U}(2^n)\); \(\mathrm{Sp}(2n,\mathbb{R})\); statistical manifolds |
 | II‑B | Light labs: Lorentzian Minkowski; \(U(1)\) / Berry phase |
-| II‑C | Map + citations: Calabi–Yau; \(G_2\); twistors; elliptic curves & lattices (PQC off‑ramp) |
+| II‑C | Tier‑C map: Calabi–Yau; \(G_2\); **twistors (geometry deepened)**; elliptic curves & lattices (PQC off‑ramp) |
 | III | Bridge to product formulas / module 05 |
 
 **Collapsible sections.** Same pattern as the N=2 coupled-oscillators
@@ -2072,10 +2073,14 @@ curvature → solid angle / monopole.
 cells.append(md(r"""
 # Part II‑C — Map, schematics, and reading paths
 
-These topics are too rich for a full lab here. Each entry still gives
-**background**, the **geometric object**, and **where it is used**,
-then stops at a reading path. Dedicated follow‑on notebooks can
-graduate from these entries.
+Tier‑C topics stay **invitation‑depth** relative to Tier A: each entry
+still gives **background**, the **geometric object**, and **where it is
+used**, then a reading path. **C3 (twistors)** is the exception within
+this part — it is written at the same extrinsic / formula‑first
+precision as the Minkowski lab in II‑B, still without a full spinor
+calculus course. C1, C2, and C4 remain map‑plus‑citations until a later
+pass. Dedicated follow‑on notebooks (starting with twistors) graduate
+from these entries.
 """))
 
 cells.append(md(r"""
@@ -2155,23 +2160,83 @@ cells.append(md(r"""
 
 ### Background
 
-Penrose's twistor programme asks whether spacetime geometry — especially
-its **null** (light‑ray) structure — is better organised in a complex
+Part II‑B treated flat spacetime $\mathbb{R}^{1,3}$ with its Lorentzian
+metric and null cone. Penrose's twistor programme asks whether that
+**null** (light‑ray) structure is better organised in a complex
 projective space than in $\mathbb{R}^{1,3}$ itself. Massless fields and
-some integrable systems become cleaner in that language.
+some integrable systems become cleaner once incidence in projective
+geometry replaces metric algebra on the light cone.
 
-### Geometry
+### Working setup (extrinsic, declared once)
 
-**Twistor space** for complexified Minkowski space is $\mathbb{CP}^{3}$.
-A basic dictionary: points of $\mathbb{CP}^{3}$ correspond to null lines
-in (complexified) Minkowski space; spacetime points correspond to lines
-($\mathbb{CP}^{1}$s) in twistor space. Incidence relations replace some
-metric calculations with projective geometry.
+Throughout (C3) we work with three declared spaces:
+
+1. **Real Minkowski space** $M=\mathbb{R}^{1,3}$ with metric
+   $\eta=\mathrm{diag}(-1,1,1,1)$ as in II‑B (B1).
+2. **Complexified Minkowski space**
+   $\mathbb{CM}=\mathbb{C}^{1,3}$ — the complexification of $M$ as an
+   affine space (same $\eta$, now on complex vectors). Null lines of
+   $\mathbb{CM}$ are the complex geodesics with $\eta(v,v)=0$.
+3. **Twistor space**
+   $$
+   \mathbb{PT}
+     :=\mathbb{CP}^{3}
+     =(\mathbb{C}^{4}\setminus\{\mathbf{0}\})/\mathbb{C}^{\times},
+   $$
+   the set of complex lines through the origin in $\mathbb{C}^{4}$. A
+   point of $\mathbb{PT}$ is a homogeneous coordinate
+   $Z=[Z^{0}:Z^{1}:Z^{2}:Z^{3}]$, with $Z\sim\lambda Z$ for
+   $\lambda\in\mathbb{C}^{\times}$.
+
+No claim is made that $\mathbb{PT}$ is a Lie group, nor that we build
+the full 2‑spinor calculus here. The object is the **incidence
+dictionary** between $\mathbb{PT}$ and null geometry in $\mathbb{CM}$.
+
+### Geometry — incidence dictionary
+
+Write a twistor in 2‑spinor blocks
+$Z^{\alpha}=(\omega^{A},\pi_{A'})$ with $A,A'\in\{0,1\}$, so
+$Z\in\mathbb{C}^{4}$ and $[Z]\in\mathbb{PT}$. A point
+$x\in\mathbb{CM}$ has Hermitian spinor coordinates $x^{AA'}$
+(the standard isomorphism $\mathbb{C}^{1,3}\cong\mathrm{Herm}(2)$).
+The **incidence relation** is the linear equation
+$$
+\omega^{A}
+  =ix^{AA'}\pi_{A'}
+  \qquad
+  (A=0,1).
+$$
+For fixed nonzero $\pi_{A'}$, this is one linear constraint on $x$;
+its solution set in $\mathbb{CM}$ is a **null line** (complex light
+ray). Scaling $(\omega,\pi)\mapsto\lambda(\omega,\pi)$ does not change
+the line, so the geometric object attached to a **point** of
+$\mathbb{PT}$ is that null line — not a single event of $M$.
+
+Conversely, fix an event $x\in\mathbb{CM}$. The twistors incident with
+$x$ are the solutions $(\omega,\pi)$ of the same equation. The free
+data is the projective class $[\pi_{A'}]\in\mathbb{CP}^{1}$, and
+$\omega^{A}$ is then determined by $x$ and $\pi$. Thus a spacetime
+point corresponds to a **line**
+$\mathbb{CP}^{1}\subset\mathbb{PT}$ — the set of all twistors through
+that event.
+
+In short (one dictionary, both directions):
+
+| in $\mathbb{PT}$ | in $\mathbb{CM}$ |
+|---|---|
+| point $[Z]\in\mathbb{CP}^{3}$ | one null line |
+| line $\mathbb{CP}^{1}\subset\mathbb{CP}^{3}$ | one spacetime point $x$ |
+
+Incidence replaces some metric calculations on the light cone with
+projective linear algebra in $\mathbb{CP}^{3}$. Full contour‑integral
+formulae for massless fields, and the reality conditions that select
+real $M\subset\mathbb{CM}$, are deferred to the dedicated twistor
+notebook (phase B).
 
 ### Where it shows up
 
 - **Classical relativity / massless fields:** contour‑integral formulae
-  for solutions of helicity field equations.
+  for solutions of helicity field equations (Penrose transform).
 - **Scattering amplitudes** (modern descendants): twistor and
   momentum‑twistor variables in gauge‑theory amplitude methods.
 - **Integrable systems:** several soliton equations have natural
@@ -2179,10 +2244,80 @@ metric calculations with projective geometry.
 
 > **Further reading.** R. Penrose, “Twistor algebra,” *J. Math. Phys.*
 > **8** (1967) 345–366. R. Penrose and W. Rindler, *Spinors and
-> Space‑Time*, Vol. 2, Cambridge, 1986, Ch. 6.
+> Space‑Time*, Vol. 2, Cambridge, 1986, Ch. 6. S. A. Huggett and
+> K. P. Tod, *An Introduction to Twistor Theory*, 2nd ed., Cambridge,
+> 1994, Ch. 1–2 (incidence in coordinates).
 
-**Off‑ramp:** a dedicated twistor notebook (geometry first, then field
-equations).
+**Off‑ramp (phase B):** a dedicated twistor notebook — geometry first
+(spinors, reality, Penrose transform), then field equations. This
+section stops at the incidence dictionary and the schematic below.
+"""))
+
+cells.append(code(r"""
+# Schematic only: incidence cartoon (not a twistor engine).
+# Left: one null ray in R^{1,1}  ↔  one point of PT.
+# Right: CP^1 of directions at a fixed event  ↔  line in PT.
+
+fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.0))
+
+# --- left: Minkowski null line ---
+ax = axes[0]
+xs = np.linspace(-1.5, 1.5, 200)
+ax.plot(xs, xs, "C0-", lw=2.5, label=r"null ray ($t=x$)")
+ax.plot(xs, -xs, color="0.75", lw=1, ls="--")
+ax.scatter([0], [0], c="C3", s=40, zorder=5)
+ax.annotate(
+    r"one $[Z]\in\mathbb{CP}^{3}$" + "\n" + r"$\leftrightarrow$ this null line",
+    xy=(0.9, 0.9), xytext=(0.15, 1.25),
+    fontsize=9,
+    arrowprops=dict(arrowstyle="->", color="0.3"),
+)
+ax.set_aspect("equal")
+ax.set_xlim(-1.6, 1.6)
+ax.set_ylim(-1.6, 1.6)
+ax.set_xlabel(r"$x$")
+ax.set_ylabel(r"$t$")
+ax.set_title(r"Point of $\mathbb{PT}$ $\leftrightarrow$ null line")
+ax.legend(fontsize=8, loc="lower right")
+
+# --- right: CP^1 of twistors through one event ---
+ax = axes[1]
+th = np.linspace(0, 2 * np.pi, 400)
+ax.plot(np.cos(th), np.sin(th), "C0-", lw=2.5)
+# three sample π-directions on the circle (S^1 ⊂ CP^1 chart caricature)
+for ang, lab in [(0.3, r"$[\pi]_1$"), (2.0, r"$[\pi]_2$"), (4.2, r"$[\pi]_3$")]:
+    ax.scatter([np.cos(ang)], [np.sin(ang)], c="C3", s=36, zorder=5)
+    ax.annotate(lab, xy=(np.cos(ang), np.sin(ang)),
+                xytext=(1.15 * np.cos(ang), 1.15 * np.sin(ang)),
+                fontsize=9, ha="center")
+ax.scatter([0], [0], c="k", s=28, zorder=5)
+ax.annotate(
+    r"event $x$" + "\n" + r"$\leftrightarrow$ this $\mathbb{CP}^{1}$",
+    xy=(0, 0), xytext=(-0.2, -1.35),
+    fontsize=9, ha="center",
+)
+ax.set_aspect("equal")
+ax.set_xlim(-1.6, 1.6)
+ax.set_ylim(-1.6, 1.6)
+ax.axis("off")
+ax.set_title(r"Spacetime point $\leftrightarrow$ line in $\mathbb{PT}$")
+
+fig.suptitle(
+    r"Incidence cartoon (schematic): $\mathbb{PT}=\mathbb{CP}^{3}$ vs null geometry",
+    fontsize=11,
+)
+plt.tight_layout()
+plt.show()
+print("Incidence: ω^A = i x^{AA'} π_{A'}  (homogeneous; not evaluated numerically here).")
+"""))
+
+cells.append(md(r"""
+**Takeaway box — C3.**  
+Manifold: twistor space $\mathbb{PT}=\mathbb{CP}^{3}$. Dictionary:
+point of $\mathbb{PT}$ $\leftrightarrow$ null line in $\mathbb{CM}$;
+spacetime point $\leftrightarrow$ $\mathbb{CP}^{1}$ in $\mathbb{PT}$,
+via $\omega^{A}=ix^{AA'}\pi_{A'}$. Next depth: dedicated twistor
+notebook (phase B).
 """))
 
 cells.append(md(r"""
@@ -2338,8 +2473,11 @@ cells.append(md(r"""
   (Bengtsson–Życzkowski, de Gosson, Amari).
 - Relativity and bundles appear at Tier‑B (Carroll/Wald, Nakahara,
   Berry).
-- CY, \(G_2\), twistors, and crypto appear at Tier‑C as maps with
-  citations; **PQC belongs in a dedicated RFC + OQS notebook**.
+- CY, \(G_2\), and crypto appear at Tier‑C as maps with citations;
+  **twistors (C3)** already carry the incidence dictionary
+  $\omega^{A}=ix^{AA'}\pi_{A'}$ in this notebook, with a dedicated
+  twistor notebook as the next off‑ramp; **PQC belongs in the
+  dedicated RFC + OQS module**.
 
 ## Global further reading (bookshelf)
 
