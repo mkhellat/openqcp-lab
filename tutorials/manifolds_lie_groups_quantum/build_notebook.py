@@ -263,7 +263,7 @@ cells.append(md(r"""
 | I | Charts, tangent vectors, Lie groups, \(\mathrm{GL}/\mathfrak{gl}\), exponential map |
 | II‑A | Full labs: Bloch / \(\mathbb{CP}^{1}\); \(\mathbb{CP}^{d-1}\) & density operators; \(\mathrm{U}(2^n)\); \(\mathrm{Sp}(2n,\mathbb{R})\); statistical manifolds |
 | II‑B | Light labs: Lorentzian Minkowski; \(U(1)\) / Berry phase |
-| II‑C | Tier‑C map: Calabi–Yau; \(G_2\); **twistors (geometry deepened)**; elliptic curves & lattices (PQC off‑ramp) |
+| II‑C | Tier‑C geometry‑depth: Calabi–Yau; \(G_2\); twistors; elliptic curves & lattices (PQC off‑ramp) |
 | III | Bridge to product formulas / module 05 |
 
 **Collapsible sections.** Same pattern as the N=2 coupled-oscillators
@@ -2071,17 +2071,18 @@ curvature → solid angle / monopole.
 # Part II-C
 # ---------------------------------------------------------------------------
 cells.append(md(r"""
-# Part II‑C — Map, schematics, and reading paths
+# Part II‑C — Geometry‑depth maps and reading paths
 
-Tier‑C topics stay **invitation‑depth** relative to Tier A: each entry
-still gives **background**, the **geometric object**, and **where it is
-used**, then a reading path. **C3 (twistors)** is the exception within
-this part — it is written at the same extrinsic / formula‑first
-precision as the Minkowski lab in II‑B, still without a full spinor
-calculus course. C1, C2, and C4 remain map‑plus‑citations until a later
-pass. The twistor graduate notebook is
-[`../twistor_theory`](../twistor_theory/); other follow‑ons can
-graduate from C1/C2/C4 later.
+Tier‑C topics stay **invitation‑depth** relative to Tier A (no full
+string / holonomy / crypto course), but each of **C1–C4** is now written
+formula‑first: a declared working setup, the geometric object with at
+least one explicit equation or dictionary, a schematic where it helps,
+and a takeaway. Graduate off‑ramps:
+
+- Twistors → [`../twistor_theory`](../twistor_theory/)
+- PQC / lattices / ECC engineering →
+  [`../post_quantum_cryptography`](../post_quantum_cryptography/)
+- CY / $G_2$ compactifications → future dedicated notes (cited in C1–C2)
 """))
 
 cells.append(md(r"""
@@ -2095,25 +2096,43 @@ compact space whose shape affects which particles and couplings appear
 at low energy. The spaces that preserve enough supersymmetry to be
 phenomenologically useful are **Calabi–Yau** manifolds.
 
-### Geometry
+### Working setup (declared once)
 
-A Calabi–Yau $m$-fold is (in the physicist's working sense) a compact
-Kähler manifold with vanishing first Chern class — equivalently, one
-that admits a Ricci‑flat Kähler metric with holonomy in $\mathrm{SU}(m)$
-(Yau's solution of the Calabi conjecture). Threefolds ($m=3$) are the
-standard choice for heterotic / type‑II compactifications: Hodge numbers
-and cycles control generations of particles and moduli fields.
+Throughout (C1) we use the physicist's working package (equivalent
+conditions under standard compactness / simply‑connected hypotheses;
+see Yau, Joyce):
 
-We do **not** attempt to construct Ricci‑flat metrics in code here.
+1. A **complex manifold** $X$ of complex dimension $m$ (real dimension
+   $2m$), with holomorphic tangent bundle $T^{1,0}X$.
+2. A **Kähler** structure $(g,J,\omega)$: a Riemannian metric $g$
+   compatible with a complex structure $J$, and Kähler form
+   $\omega(u,v)=g(Ju,v)$.
+3. The **first Chern class** $c_1(X)=c_1(T^{1,0}X)\in H^{2}(X;\mathbb{Z})$.
+
+A compact Kähler $X$ is **Calabi–Yau** (in this working sense) when
+$c_1(X)=0$. Yau's theorem then supplies a unique Ricci‑flat Kähler
+metric in each Kähler class: the holonomy reduces to a subgroup of
+$\mathrm{SU}(m)$. Equivalently, $X$ admits a nowhere‑vanishing
+holomorphic volume form $\Omega\in H^{0}(X,K_X)$ (trivial canonical
+bundle $K_X=\det T^{*1,0}X$).
+
+Threefolds ($m=3$) are the standard internal spaces for heterotic /
+type‑II compactifications to four dimensions. Hodge numbers
+$h^{p,q}=\dim H^{p,q}(X)$ and cycles control generations and moduli.
+
+We do **not** construct Ricci‑flat metrics in code. The lab below only
+checks a **toy algebraic condition** that appears in the Weierstrass
+model of an elliptic K3 / CY fibre — the discriminant of
+$y^{2}=x^{3}+fx+g$ — as a reminder that “CY geometry” starts from
+equations on ambient projective space, not from slogans.
 
 ### Where it shows up
 
-- **String compactifications:** linking topology of the internal space
-  to four‑dimensional effective field theory.
+- **String compactifications:** topology of the internal space →
+  four‑dimensional effective field theory.
 - **Mirror symmetry:** pairs of Calabi–Yau spaces with exchanged Hodge
-  data; a major bridge between geometry and physics.
-- **Mathematical interest:** existence and moduli of Ricci‑flat metrics
-  independent of any string interpretation.
+  data.
+- **Existence / moduli of Ricci‑flat metrics** as pure geometry (Yau).
 
 > **Further reading.** D. Joyce, *Compact Manifolds with Special
 > Holonomy*, OUP, 2000, Ch. on Calabi–Yau. S.‑T. Yau, “On the Ricci
@@ -2122,7 +2141,42 @@ We do **not** attempt to construct Ricci‑flat metrics in code here.
 > M. Gross, D. Huybrechts, D. Joyce, *Calabi–Yau Manifolds and Related
 > Geometries*, Springer, 2003 (survey lectures).
 
-**Off‑ramp:** a future “string compactifications / CY” notebook.
+**Off‑ramp:** a future “string compactifications / CY” notebook; this
+section stops at the working definition and the discriminant cartoon.
+"""))
+
+cells.append(code(r"""
+# Cartoon only: Weierstrass discriminant Δ = -16(4f³+27g²) for y²=x³+f x+g.
+# Singular fibres where Δ=0; smooth elliptic fibres where Δ≠0.
+# Not a CY metric — just the algebraic locus that appears in elliptic
+# fibrations used as CY building blocks.
+
+f = -1.0
+gs = np.linspace(-1.5, 1.5, 400)
+disc = -16.0 * (4.0 * f**3 + 27.0 * gs**2)
+
+fig, ax = plt.subplots(figsize=(6.0, 3.6))
+ax.plot(gs, disc, "C0-", lw=2)
+ax.axhline(0, color="0.5", lw=1)
+ax.fill_between(gs, disc, 0, where=(disc > 0), alpha=0.12, color="C2",
+                label=r"$\Delta>0$ (smooth fibres, schematic)")
+ax.fill_between(gs, disc, 0, where=(disc < 0), alpha=0.12, color="C3",
+                label=r"$\Delta<0$")
+ax.set_xlabel(r"$g$")
+ax.set_ylabel(r"$\Delta(f,g)$")
+ax.set_title(r"Weierstrass discriminant at fixed $f=-1$ (cartoon)")
+ax.legend(fontsize=8)
+plt.tight_layout()
+plt.show()
+print("CY claim in this notebook: c1=0 + Kähler ⇒ Ricci-flat metric exists (Yau).")
+print("Code here only plots Δ; it does not build a Ricci-flat metric.")
+"""))
+
+cells.append(md(r"""
+**Takeaway box — C1.**  
+Working definition: compact Kähler $X$ with $c_1(X)=0$ (holomorphic
+volume form; holonomy in $\mathrm{SU}(m)$ after Yau). Code: discriminant
+cartoon only. Next depth: dedicated CY / compactification notebook.
 """))
 
 cells.append(md(r"""
@@ -2133,27 +2187,91 @@ cells.append(md(r"""
 M‑theory is formulated in eleven dimensions. Compactifying on a
 7‑dimensional internal space while keeping some supersymmetry selects
 manifolds whose holonomy is the exceptional Lie group $G_2$, not
-$\mathrm{SU}(3)$.
+$\mathrm{SU}(3)$ as in Calabi–Yau threefolds (C1).
 
-### Geometry
+### Working setup (declared once)
 
-$G_2$ is an exceptional simple Lie group of dimension $14$. A
-Riemannian 7‑manifold with holonomy $G_2$ is Ricci‑flat and carries a
-parallel 3‑form $\varphi$ that determines the metric. Compact examples
-with holonomy exactly $G_2$ were constructed by Joyce in the 1990s.
+1. **$G_2$** is the exceptional simple Lie group of dimension $14$,
+   realised as the automorphism group of the normed algebra of
+   octonions — equivalently, as the stabilizer in $\mathrm{GL}(7,\mathbb{R})$
+   of a generic 3‑form on $\mathbb{R}^{7}$.
+2. On $\mathbb{R}^{7}$ with coordinates $(x^{1},\ldots,x^{7})$, a
+   standard associative 3‑form is
+   $$
+   \varphi_0
+     =dx^{123}+dx^{145}+dx^{167}+dx^{246}
+      -dx^{257}-dx^{347}-dx^{356},
+   $$
+   where $dx^{ijk}=dx^{i}\wedge dx^{j}\wedge dx^{k}$. The metric and
+   orientation are recovered from $\varphi_0$ by a pointwise algebraic
+   formula (Joyce).
+3. A smooth oriented 7‑manifold $Y$ with a stable 3‑form $\varphi$ has
+   **holonomy contained in $G_2$** when $\nabla\varphi=0$ for the
+   Levi‑Civita connection of the metric determined by $\varphi$. Then
+   $Y$ is Ricci‑flat. Compact examples with holonomy **exactly** $G_2$
+   were constructed by Joyce in the 1990s.
+
+We do **not** build $G_2$‑holonomy metrics here. The lab only verifies
+that the model 3‑form $\varphi_0$ is alternating of rank $\binom{7}{3}$
+data reduced to the seven terms above — a coordinate check that the
+object being preserved is a concrete tensor on $\mathbb{R}^{7}$.
 
 ### Where it shows up
 
-- **M‑theory compactifications** to four dimensions with $\mathcal{N}=1$
-  supersymmetry.
-- **Exceptional holonomy geometry** as a research area in its own
-  right (alongside $\mathrm{Spin}(7)$ in eight dimensions).
+- **M‑theory compactifications** to four dimensions with
+  $\mathcal{N}=1$ supersymmetry.
+- **Exceptional holonomy geometry** alongside $\mathrm{Spin}(7)$ in
+  eight dimensions.
 
 > **Further reading.** Joyce, *Compact Manifolds with Special
 > Holonomy*, OUP, 2000, Part II ($G_2$ and $\mathrm{Spin}(7)$).
 
-**Off‑ramp:** graduate with the CY notebook or a dedicated exceptional
-holonomy note.
+**Off‑ramp:** dedicated exceptional‑holonomy note (or shared with a
+future CY compactification notebook).
+"""))
+
+cells.append(code(r"""
+# Coordinate check: list the seven monomials in φ0 and confirm they are
+# distinct oriented triples in {1..7}. No metric construction.
+
+terms = [
+    (1, 2, 3),
+    (1, 4, 5),
+    (1, 6, 7),
+    (2, 4, 6),
+    (2, 5, 7),  # appears with a minus in φ0
+    (3, 4, 7),  # minus
+    (3, 5, 6),  # minus
+]
+signs = [+1, +1, +1, +1, -1, -1, -1]
+assert len(terms) == 7 and len(set(terms)) == 7
+assert all(len(set(t)) == 3 and all(1 <= i <= 7 for i in t) for t in terms)
+
+# Count of independent 3-form coefficients on R^7 vs G2 stabilizer dimension
+n_three_forms = 35  # C(7,3)
+dim_GL7 = 49
+dim_G2 = 14
+print("C(7,3) =", n_three_forms, "  dim GL(7) =", dim_GL7, "  dim G2 =", dim_G2)
+print("Model φ0 uses", len(terms), "signed triples:")
+for s, t in zip(signs, terms):
+    print(f"  {s:+d} dx^{t[0]}{t[1]}{t[2]}")
+
+# Tiny bar chart: dimensions in the stabilizer story
+fig, ax = plt.subplots(figsize=(5.5, 3.2))
+ax.bar(["3-forms", "GL(7)", "G2"], [n_three_forms, dim_GL7, dim_G2],
+       color=["C0", "C1", "C2"])
+ax.set_ylabel("dimension")
+ax.set_title(r"Sizes in the $G_2\subset\mathrm{GL}(7)$ picture (schematic)")
+plt.tight_layout()
+plt.show()
+"""))
+
+cells.append(md(r"""
+**Takeaway box — C2.**  
+A $G_2$‑manifold is a Ricci‑flat 7‑fold with parallel stable 3‑form
+$\varphi$ (holonomy in $G_2$). Model $\varphi_0$ on $\mathbb{R}^{7}$ is
+an explicit tensor; compact exact‑holonomy examples exist (Joyce). Code:
+coordinate inventory only.
 """))
 
 cells.append(md(r"""
@@ -2231,8 +2349,7 @@ In short (one dictionary, both directions):
 Incidence replaces some metric calculations on the light cone with
 projective linear algebra in $\mathbb{CP}^{3}$. Full contour‑integral
 formulae for massless fields, and the reality conditions that select
-real $M\subset\mathbb{CM}$, are deferred to the dedicated twistor
-notebook (phase B).
+real $M\subset\mathbb{CM}$, are in the dedicated twistor notebook.
 
 ### Where it shows up
 
@@ -2335,34 +2452,43 @@ break those via Shor's algorithm, so **post‑quantum cryptography
 (PQC)** shifts to problems believed harder for quantum adversaries,
 notably on **lattices**.
 
-### Geometry
+### Working setup (declared once)
 
-An **elliptic curve** over a field (e.g. $\mathbb{F}_p$) is a smooth
-genus‑one curve with a chosen point; its points form an abelian group
-used in elliptic‑curve cryptography (ECDH, ECDSA, …). Over $\mathbb{C}$,
-isomorphism classes of elliptic curves are parametrised by the quotient
-of the upper half‑plane by $\mathrm{SL}_2(\mathbb{Z})$ — a foundational
-orbifold / stacky manifold picture that links complex analysis to the
-moduli of curves.
+**Elliptic curves.** Over a field $k$ of $\mathrm{char}\neq 2,3$, a
+Weierstrass model
+$$
+E:\; y^{2}=x^{3}+Ax+B,
+\qquad
+\Delta:=-16(4A^{3}+27B^{2})\neq 0,
+$$
+cuts out a smooth genus‑one curve. With a chosen point $O$ (the point
+at infinity in the projective model), the chord‑and‑tangent law makes
+$E(k)$ an abelian group. Over $\mathbb{C}$, every elliptic curve is a
+complex torus $\mathbb{C}/\Lambda$ for a lattice
+$\Lambda=\mathbb{Z}+\mathbb{Z}\tau$ with $\mathrm{Im}\,\tau>0$;
+isomorphism classes are parametrised by the modular curve
+$\mathrm{SL}_{2}(\mathbb{Z})\backslash\mathbb{H}$.
 
-**Lattices** $\Lambda\subset\mathbb{R}^n$ are discrete subgroups; the
-quotient tori $\mathbb{R}^n/\Lambda$ are smooth manifolds. Short‑vector
-and related problems on lattices underpin much of NIST's PQC portfolio.
+**Lattices.** A **lattice** $\Lambda\subset\mathbb{R}^{n}$ is a discrete
+cocompact subgroup (equivalently $\Lambda=B\mathbb{Z}^{n}$ for
+invertible $B\in\mathrm{GL}(n,\mathbb{R})$). The quotient
+$\mathbb{R}^{n}/\Lambda$ is a smooth $n$‑torus. Cryptographic hardness
+(short / close vectors, LWE, …) is stated on lattices; the manifold
+picture here is only that the torus $\mathbb{R}^{n}/\Lambda$ is a
+compact flat manifold whose geometry depends on $\Lambda$.
+
+This section is the **geometric invitation**. Implementations,
+parameter sets, and hybrid TLS live in
+[`../post_quantum_cryptography`](../post_quantum_cryptography/).
 
 ### Where it shows up
 
 - **Classical ECC** in TLS, SSH, blockchains (still widely deployed).
 - **PQC standards:** ML‑KEM, ML‑DSA, SLH‑DSA, … for encryption and
   signatures meant to survive quantum adversaries.
-- **Protocol engineering:** hybrid key exchange in TLS and related
-  RFCs / Internet‑Drafts; the **Open Quantum Safe** stack
-  ([`liboqs`](https://github.com/open-quantum-safe/liboqs),
-  [`oqs-provider`](https://github.com/open-quantum-safe/oqs-provider))
-  for real implementations — **not** the schematic plot below.
-
-This foundations notebook stops at the geometric invitation. A
-**dedicated PQC / cryptology notebook** should use NIST standards, RFCs,
-and OQS rather than re‑implementing crypto here.
+- **Protocol engineering:** hybrid key exchange in TLS; Open Quantum
+  Safe ([`liboqs`](https://github.com/open-quantum-safe/liboqs),
+  [`oqs-provider`](https://github.com/open-quantum-safe/oqs-provider)).
 
 > **Further reading (geometry / ECC).** J. H. Silverman, *The
 > Arithmetic of Elliptic Curves*, 2nd ed., Springer, 2009. J. H.
@@ -2371,30 +2497,56 @@ and OQS rather than re‑implementing crypto here.
 """))
 
 cells.append(code(r"""
-# Tiny schematic: group law sketch on y^2 = x^3 + a x + b over the reals
-# (illustrative only — not a crypto implementation)
+# Left: real Weierstrass locus + Δ check.
+# Right: 2D lattice Λ = Z v1 + Z v2 and the fundamental parallelogram
+# (torus R²/Λ schematic). Not a crypto implementation.
 
 a, b = -1.0, 1.0
+disc = -16.0 * (4.0 * a**3 + 27.0 * b**2)
 xs = np.linspace(-2, 2, 400)
 ysq = xs ** 3 + a * xs + b
 mask = ysq >= 0
-fig, ax = plt.subplots()
+
+fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.0))
+
+ax = axes[0]
 ax.plot(xs[mask], np.sqrt(ysq[mask]), "C0-", lw=2)
 ax.plot(xs[mask], -np.sqrt(ysq[mask]), "C0-", lw=2)
-# chord-and-tangent cartoon: three colinear points
-ax.set_title(r"Real locus of $y^2=x^3-x+1$ (schematic)")
+ax.set_title(rf"$y^2=x^3{a:+}x{b:+}$" + rf"  ($\Delta={disc:.0f}$)")
 ax.set_xlabel("$x$")
 ax.set_ylabel("$y$")
 ax.set_aspect("equal")
+
+ax = axes[1]
+v1 = np.array([1.0, 0.0])
+v2 = np.array([0.4, 0.9])
+# draw a few lattice points
+pts = [i * v1 + j * v2 for i in range(-2, 3) for j in range(-2, 3)]
+P = np.array(pts)
+ax.scatter(P[:, 0], P[:, 1], c="C0", s=22, zorder=3)
+# fundamental parallelogram
+para = np.array([[0, 0], v1, v1 + v2, v2, [0, 0]])
+ax.plot(para[:, 0], para[:, 1], "C3-", lw=2)
+ax.fill(para[:, 0], para[:, 1], color="C3", alpha=0.15)
+ax.set_aspect("equal")
+ax.set_title(r"Lattice $\Lambda\subset\mathbb{R}^2$; torus $=\mathbb{R}^2/\Lambda$")
+ax.set_xlabel(r"$x$")
+ax.set_ylabel(r"$y$")
+
+fig.suptitle("C4 schematics: elliptic curve (real) and lattice torus", fontsize=11)
+plt.tight_layout()
 plt.show()
-print("Crypto/PQC implementations: use RFCs + OQS, not this plot.")
+print(f"Weierstrass Δ = {disc:.6g} (nonsingular over R chart iff Δ≠0).")
+print("PQC implementations: use the PQC module + OQS/RFCs, not these plots.")
 """))
 
 cells.append(md(r"""
 **Takeaway box — C4.**  
-Manifolds / quotients: elliptic curves (as groups/manifolds), modular
-curves, lattice tori. Engineering depth: **separate** PQC notebook with
-OQS + RFCs.
+Elliptic curve: smooth Weierstrass model ($\Delta\neq 0$) with group
+law; over $\mathbb{C}$, a torus $\mathbb{C}/\Lambda$. Lattice:
+discrete $\Lambda\subset\mathbb{R}^{n}$; torus $\mathbb{R}^{n}/\Lambda$.
+Engineering depth:
+[`../post_quantum_cryptography`](../post_quantum_cryptography/).
 """))
 
 # ---------------------------------------------------------------------------
@@ -2475,11 +2627,11 @@ cells.append(md(r"""
   (Bengtsson–Życzkowski, de Gosson, Amari).
 - Relativity and bundles appear at Tier‑B (Carroll/Wald, Nakahara,
   Berry).
-- CY, \(G_2\), and crypto appear at Tier‑C as maps with citations;
-  **twistors (C3)** already carry the incidence dictionary
-  $\omega^{A}=ix^{AA'}\pi_{A'}$ here, with the dedicated
-  [`twistor_theory`](../twistor_theory/) notebook as the graduate
-  off‑ramp; **PQC belongs in the dedicated RFC + OQS module**.
+- Tier‑C is geometry‑depth throughout: Calabi–Yau ($c_1=0$), $G_2$
+  (parallel $3$‑form), twistors (incidence
+  $\omega^{A}=ix^{AA'}\pi_{A'}$), elliptic curves / lattice tori.
+  Graduate off‑ramps: [`twistor_theory`](../twistor_theory/);
+  PQC module for standards and OQS.
 
 ## Global further reading (bookshelf)
 
