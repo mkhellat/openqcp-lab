@@ -85,8 +85,9 @@ cells.append(md(r"""
 4. When Open Quantum Safe is installed, run an ML-KEM encapsulate /
    decapsulate and an ML-DSA sign / verify round-trip; otherwise follow
    the install off-ramp without failing the notebook.
-5. Explain PQ/T hybrid key agreement in TLS 1.3 at the named-group
-   level and point to `oqs-provider` for OpenSSL wiring.
+5. Explain PQ/T hybrid key agreement in TLS 1.3: combiner idea, RFC
+   10024 named groups (with ClientHello share sizes), and soft-gated
+   `oqs-provider` / OpenSSL checks.
 6. Cross-link QI and manifolds C4 as conceptual feeds without re-deriving
    them.
 """))
@@ -98,7 +99,8 @@ cells.append(md(r"""
 - **Part II.** NIST portfolio map (FIPS + HQC).
 - **Part III.** KEM / signature interfaces and sizes.
 - **Part IV.** Soft-gated Open Quantum Safe labs.
-- **Part V.** Hybrid TLS and `oqs-provider`.
+- **Part V.** Hybrid TLS dig: PQ/T combiner, RFC 10024 groups + sizes,
+  soft-gated `oqs-provider` checks, production checklist.
 - **Part VI.** Bridges back to the lab.
 
 **Citation rule.** Every major block names primary sources a reader can
@@ -498,80 +500,191 @@ print(
 # Part V
 # ---------------------------------------------------------------------------
 cells.append(md(r"""
-# Part V — Protocols and providers
+# Part V — Hybrid TLS and providers (dig)
 
-## V.1 PQ/T hybrid idea
+Part IV soft-gates **algorithm** round-trips via `liboqs-python`. This
+part is the **protocol / provider** off-ramp: how those KEMs enter
+TLS 1.3 as PQ/T hybrids, what RFC 10024 actually standardises, and how
+[`oqs-provider`](https://github.com/open-quantum-safe/oqs-provider)
+exposes them to OpenSSL 3. The notebook still does **not** run a TLS
+handshake in CI.
 
-A **post-quantum / traditional (PQ/T) hybrid** key agreement combines a
-classical share (e.g. ECDHE) with a PQC KEM share so that an attacker
-must break both to recover the session key (under the combiner's
-assumptions). During transition this hedges against cryptanalysis of
-either component.
+## V.1 PQ/T hybrid idea (combiner)
 
-> **Further reading.** RFC 9794 (PQ/T hybrid terminology — verify on
-> rfc-editor); RFC 9954 (TLS 1.3 hybrid framework — verify); RFC 10024
-> (concrete ECDHE–ML-KEM groups for TLS 1.3).
+Write a classical ephemeral share $c$ (ECDHE) and a post-quantum KEM
+share $q$ (ML-KEM encapsulation key / ciphertext as appropriate). A
+**PQ/T hybrid** key agreement feeds both into TLS 1.3's key schedule
+so that the session keys remain secret if **at least one** component
+stays unbroken (under the hybrid framework's assumptions). During
+transition this hedges cryptanalysis of either piece.
+
+Roles of the RFCs (open them; do not invent numbers):
+
+| RFC | Role |
+|-----|------|
+| [RFC 9794](https://www.rfc-editor.org/rfc/rfc9794) | PQ/T hybrid **terminology** |
+| [RFC 9954](https://www.rfc-editor.org/rfc/rfc9954) | Hybrid key exchange **framework** for TLS 1.3 |
+| [RFC 10024](https://www.rfc-editor.org/rfc/rfc10024) | Concrete **ECDHE–ML-KEM** named groups + encodings |
+
+Schematic (not a security proof):
+
+$$
+\text{shared secret}
+  \;=\;
+  \mathrm{concat}(s_{\mathrm{PQ}},\,s_{\mathrm{ECDHE}})
+  \quad\text{or}\quad
+  \mathrm{concat}(s_{\mathrm{ECDHE}},\,s_{\mathrm{PQ}})
+$$
+
+depending on the group (RFC 10024 places ML-KEM first for
+X25519MLKEM768 and ECDHE first for the NIST-curve hybrids, for
+FIPS-related ordering reasons — read §5 of that RFC).
 """))
 
 cells.append(md(r"""
 ## V.2 TLS 1.3 named groups (RFC 10024)
 
-RFC 10024 specifies hybrid key agreement mechanisms for TLS 1.3,
-including:
+RFC 10024 registers three hybrid **Supported Groups** for TLS 1.3.
+Client `key_exchange` sizes below are from the RFC (bytes of the
+concatenated share — the dominant ClientHello growth vs classical
+X25519's 32-byte share).
 
-- **X25519MLKEM768** — X25519 + ML-KEM-768 (widely practical default)
-- **SecP256r1MLKEM768** — P-256 + ML-KEM-768
-- **SecP384r1MLKEM1024** — P-384 + ML-KEM-1024
+| Group | Code point | Classical | ML-KEM | Client share | Server share | IANA Recommended |
+|-------|------------|-----------|--------|--------------|--------------|------------------|
+| X25519MLKEM768 | 4588 | X25519 | 768 | 1216 | 1120 | Y |
+| SecP256r1MLKEM768 | 4587 | P-256 | 768 | 1249 | 1153 | N |
+| SecP384r1MLKEM1024 | 4589 | P-384 | 1024 | 1665 | 1665 | N |
 
-Read the RFC for code points, encodings, and FIPS-related discussion.
-This notebook does not run a TLS stack.
+X25519MLKEM768 is the widely practical default; the NIST-curve hybrids
+target FIPS-oriented deployments (Recommended = N reflects IETF
+consensus status, not a claim that the crypto is broken). Read the RFC
+for share order, validity checks, and shared-secret lengths (64 or 80
+bytes).
 """))
 
 cells.append(code(r"""
-# Named groups from RFC 10024 (names only)
+# RFC 10024 share sizes (bytes) — for ClientHello / path MTU awareness.
+# Source: https://www.rfc-editor.org/rfc/rfc10024  §4.1–4.2
 
-rfc10024_groups = [
-    "X25519MLKEM768",
-    "SecP256r1MLKEM768",
-    "SecP384r1MLKEM1024",
+rfc10024 = [
+    # group, code_point, client_share, server_share, recommended
+    ("X25519MLKEM768", 4588, 1216, 1120, "Y"),
+    ("SecP256r1MLKEM768", 4587, 1249, 1153, "N"),
+    ("SecP384r1MLKEM1024", 4589, 1665, 1665, "N"),
 ]
-print("RFC 10024 hybrid groups:")
-for g in rfc10024_groups:
-    print(" ", g)
+classical_x25519_client = 32  # classical ECDHE share for scale
+
+print(f"{'group':22s}  code  client  server  rec")
+for name, code, cshare, sshare, rec in rfc10024:
+    print(f"{name:22s}  {code:4d}  {cshare:6d}  {sshare:6d}  {rec}")
+
+names = [r[0] for r in rfc10024]
+client_shares = [r[2] for r in rfc10024]
+fig, ax = plt.subplots(figsize=(7.0, 3.8))
+ax.bar(["X25519"] + names,
+       [classical_x25519_client] + client_shares,
+       color=["0.6"] + ["C0", "C1", "C2"])
+ax.axhline(1200, color="C3", ls="--", lw=1, label="~1200 B (MTU-ish cue)")
+ax.set_ylabel("client key_exchange bytes")
+ax.set_title("RFC 10024 hybrid client shares vs classical X25519")
+ax.tick_params(axis="x", rotation=20)
+ax.legend(fontsize=8)
+plt.tight_layout()
+plt.show()
+print("Takeaway: hybrid ClientHellos are ~1–1.6 KiB of key_share alone;")
+print("test fragmentation / middleboxes on real paths (checklist V.4).")
 """))
 
 cells.append(md(r"""
-## V.3 `oqs-provider`
+## V.3 `oqs-provider` (OpenSSL 3)
 
 [`oqs-provider`](https://github.com/open-quantum-safe/oqs-provider) is an
-OpenSSL 3 provider that exposes liboqs algorithms through OpenSSL's
-provider API (TLS 1.3 KEMs, signatures, related encoding). Wiring it is
-an OpenSSL / packaging task — not a cell in this notebook.
+OpenSSL 3 **provider**: a loadable module that registers liboqs KEMs and
+signatures through the provider API so `openssl` / libssl can negotiate
+PQC and hybrid groups without forking OpenSSL.
 
-Typical checks on a machine where the provider is installed:
+Wiring is an OpenSSL / packaging task (install provider, configure
+`openssl.cnf` or `-provider` flags). This notebook only **soft-gates**
+local discovery commands — same spirit as Part IV's `import oqs`.
+
+Typical checks when the provider is installed:
 
 ```bash
+openssl version
 openssl list -kem-algorithms -provider oqsprovider
 openssl list -signature-algorithms -provider oqsprovider
 ```
 
-> **Further reading.** oqs-provider `USAGE.md` on GitHub.
+> **Further reading.** oqs-provider `USAGE.md` on GitHub;
+> https://openquantumsafe.org/
+"""))
+
+cells.append(code(r"""
+# Soft-gate: probe openssl + oqsprovider. Never fail the notebook if absent.
+import shutil
+import subprocess
+
+
+def run_soft(cmd, timeout=15):
+    exe = shutil.which(cmd[0])
+    if exe is None:
+        print(f"skip: {cmd[0]!r} not on PATH")
+        return None
+    try:
+        out = subprocess.run(
+            cmd, check=False, capture_output=True, text=True, timeout=timeout
+        )
+    except Exception as exc:  # noqa: BLE001 — soft-gate
+        print(f"skip: {cmd!r} raised {type(exc).__name__}: {exc}")
+        return None
+    if out.returncode != 0:
+        err = (out.stderr or out.stdout or "").strip().splitlines()
+        hint = err[0] if err else f"exit {out.returncode}"
+        print(f"skip: {' '.join(cmd)} → {hint}")
+        return None
+    return out.stdout
+
+
+ver = run_soft(["openssl", "version"])
+if ver:
+    print("openssl:", ver.strip())
+
+kem = run_soft(
+    ["openssl", "list", "-kem-algorithms", "-provider", "oqsprovider"]
+)
+if kem:
+    lines = [ln for ln in kem.splitlines() if ln.strip()]
+    print(f"oqsprovider KEMs listed: {len(lines)} line(s) (showing up to 8)")
+    for ln in lines[:8]:
+        print(" ", ln)
+else:
+    print(
+        "oqs-provider not usable here — prose + RFC 10024 table still valid.\n"
+        "Install OpenSSL 3 + oqs-provider locally to exercise V.3 commands."
+    )
 """))
 
 cells.append(md(r"""
 ## V.4 Production off-ramp checklist
 
 1. Prefer FIPS 203/204/205 algorithms for general use; track HQC's FIPS.
-2. Prefer hybrid groups from RFC 10024 (or successors) in TLS 1.3.
+2. Prefer hybrid groups from RFC 10024 (or successors) in TLS 1.3;
+   know the ClientHello share sizes in V.2 before enabling them.
 3. Use maintained libraries / providers (`liboqs`, `oqs-provider`, or
    other vetted FIPS modules) — not notebook code.
 4. Follow institutional transition guidance (NIST IR 8547 and your
    sector's profiles).
-5. Test ClientHello size / fragmentation on real paths.
+5. Test ClientHello size / fragmentation / middlebox behaviour on real
+   paths (hybrid shares are $\sim 1$–$1.6\,\mathrm{KiB}$).
+6. Confirm provider load (`openssl list … -provider oqsprovider`) in the
+   same environment that serves TLS.
 """))
 
-cells.append(code(r"""
-print("Protocol off-ramp: RFC 10024 + oqs-provider + IR 8547 — not this notebook's TLS.")
+cells.append(md(r"""
+**Takeaway box — Part V.**  
+PQ/T hybrid = classical ECDHE + ML-KEM under RFC 9954/10024 so one
+broken component need not break the session. Deploy via OpenSSL
+`oqs-provider` (or equivalent), not via re-implemented notebook TLS.
 """))
 
 # ---------------------------------------------------------------------------
@@ -597,14 +710,16 @@ cells.append(md(r"""
 """))
 
 cells.append(code(r"""
-print("PQC module complete: standards map + soft-gated OQS + hybrid TLS off-ramp.")
+print("PQC module complete: standards map + soft-gated OQS + hybrid TLS dig.")
 """))
 
 cells.append(md(r"""
 **Takeaway.** PQC replaces Shor-broken public-key trapdoors with
 standardised lattice-, code-, and hash-based KEMs and signatures.
-Learn the FIPS names and APIs; run OQS when you can; deploy via hybrid
-TLS and vetted providers — not via re-implemented notebook crypto.
+Learn the FIPS names and APIs; run OQS when you can; deploy via
+RFC 10024 hybrid groups and vetted providers (`oqs-provider`) — not
+via re-implemented notebook crypto. Part V is the hybrid dig, not a
+stub name-list.
 """))
 
 # ---------------------------------------------------------------------------
