@@ -152,6 +152,11 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   conditions for real Minkowski space, and a Penrose-transform sketch
   for massless fields (amplitudes / integrable systems stay maps).
 
+- [Foundations - Special holonomy (Calabi–Yau and $G_2$)](tutorials/special_holonomy)  
+  Graduate off-ramp from manifolds §C1–C2: holonomy as a DG tool,
+  Calabi–Yau ($c_1=0$, Yau, $\mathrm{SU}(m)$), and $G_2$ via a parallel
+  3-form ($\mathrm{Spin}(7)$ stays a map).
+
 - [Foundations - Quantum information and information theory](tutorials/quantum_information_theory)  
   Shannon and von Neumann entropies, relative entropy, channels,
   fidelity and trace distance, with a bridge toward code-based PQC

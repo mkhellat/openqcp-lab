@@ -2084,9 +2084,10 @@ least one explicit equation or dictionary, a schematic where it helps,
 and a takeaway. Graduate off‑ramps:
 
 - Twistors → [`../twistor_theory`](../twistor_theory/)
+- CY / $G_2$ (holonomy deepen) →
+  [`../special_holonomy`](../special_holonomy/)
 - PQC / lattices / ECC engineering →
   [`../post_quantum_cryptography`](../post_quantum_cryptography/)
-- CY / $G_2$ compactifications → future dedicated notes (cited in C1–C2)
 """))
 
 cells.append(md(r"""
@@ -2145,8 +2146,9 @@ equations on ambient projective space, not from slogans.
 > M. Gross, D. Huybrechts, D. Joyce, *Calabi–Yau Manifolds and Related
 > Geometries*, Springer, 2003 (survey lectures).
 
-**Off‑ramp:** a future “string compactifications / CY” notebook; this
-section stops at the working definition and the discriminant cartoon.
+**Off‑ramp:** [`../special_holonomy`](../special_holonomy/) (holonomy
+tool + CY deepen). This section stops at the working definition and
+the discriminant cartoon.
 """))
 
 cells.append(code(r"""
@@ -2180,7 +2182,8 @@ cells.append(md(r"""
 **Takeaway box — C1.**  
 Working definition: compact Kähler $X$ with $c_1(X)=0$ (holomorphic
 volume form; holonomy in $\mathrm{SU}(m)$ after Yau). Code: discriminant
-cartoon only. Next depth: dedicated CY / compactification notebook.
+cartoon only. Next depth:
+[`../special_holonomy`](../special_holonomy/).
 """))
 
 cells.append(md(r"""
@@ -2230,8 +2233,8 @@ object being preserved is a concrete tensor on $\mathbb{R}^{7}$.
 > **Further reading.** Joyce, *Compact Manifolds with Special
 > Holonomy*, OUP, 2000, Part II ($G_2$ and $\mathrm{Spin}(7)$).
 
-**Off‑ramp:** dedicated exceptional‑holonomy note (or shared with a
-future CY compactification notebook).
+**Off‑ramp:** [`../special_holonomy`](../special_holonomy/) ($G_2$
+deepen + $\mathrm{Spin}(7)$ map).
 """))
 
 cells.append(code(r"""
@@ -2275,7 +2278,8 @@ cells.append(md(r"""
 A $G_2$‑manifold is a Ricci‑flat 7‑fold with parallel stable 3‑form
 $\varphi$ (holonomy in $G_2$). Model $\varphi_0$ on $\mathbb{R}^{7}$ is
 an explicit tensor; compact exact‑holonomy examples exist (Joyce). Code:
-coordinate inventory only.
+coordinate inventory only. Next depth:
+[`../special_holonomy`](../special_holonomy/).
 """))
 
 cells.append(md(r"""
@@ -2635,7 +2639,8 @@ cells.append(md(r"""
   (parallel $3$‑form), twistors (incidence
   $\omega^{A}=ix^{AA'}\pi_{A'}$), elliptic curves / lattice tori.
   Graduate off‑ramps: [`twistor_theory`](../twistor_theory/);
-  PQC module for standards and OQS.
+  [`special_holonomy`](../special_holonomy/); PQC module for standards
+  and OQS.
 
 ## Global further reading (bookshelf)
 
