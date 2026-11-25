@@ -12,9 +12,9 @@ The generated notebook is ``04_tier_a_applications.ipynb``
 beside this file. Markdown and the five lab checks are Part II-A
 from ``build_notebook.py`` (Bloch sphere, density operators,
 unitary gates, the symplectic group, and the Fisher metric).
-Examples (M1)–(M3), charts and atlases, Lie groups, and Tiers B
-and C stay in the mega notebook. This builder does not rewrite
-that text.
+Examples (M1)–(M3), charts, and Lie groups are notebooks 01–03.
+Tiers B and C are notebooks 05 and 06. This builder does not
+rewrite that text.
 
 Heading cells are split the same way as the mega notebook:
 level-4 titles become slate banners, and level-5 titles become
@@ -184,11 +184,11 @@ the Bloch sphere ($\mathbb{CP}^{1}$), density operators on
 $\mathbb{CP}^{d-1}$, unitary gates $\mathrm{U}(n)$, the symplectic
 group $\mathrm{Sp}(2n,\mathbb{R})$, and the Fisher metric on a
 statistical manifold. The wording below is that text. Examples
-(M1)–(M3), charts and atlases, Lie groups and the exponential map,
-and Tiers B and C stay in the mega notebook.
+(M1)–(M3), charts, and Lie groups are notebooks 01–03. Tiers B
+and C are notebooks 05 and 06. The map is `00_series_guide.ipynb`.
 
 The code cells check those five labs. Lab A2 uses the Pauli
-matrices defined in the A1 cell, as in the mega notebook. There
+matrices defined in the A1 cell, as when these labs shared one notebook. There
 is no sibling demo.
 '''
 

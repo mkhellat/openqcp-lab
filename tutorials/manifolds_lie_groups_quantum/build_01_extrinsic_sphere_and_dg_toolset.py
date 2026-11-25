@@ -10,10 +10,9 @@ Run from the repository root or from this directory:
 
 The generated notebook is ``01_extrinsic_sphere_and_dg_toolset.ipynb``
 beside this file. Markdown and the check cell are the (M1)–(M3)
-blocks from ``build_notebook.py``, including the hidden launch of
-``cylinder_group_demo.py``. Physics examples (P1)–(P3) and Part I
-§2 onward stay in the mega notebook. This builder does not rewrite
-that text.
+blocks and the physics examples (P1)–(P3), including the hidden
+launch of ``cylinder_group_demo.py``. Charts, Lie groups, and the
+tiers are notebooks 02–06. This builder does not rewrite that text.
 
 Heading cells are split the same way as the mega notebook: level-4
 titles such as (M1) become slate banners, and (M1.1)–(M1.5) become
@@ -179,15 +178,18 @@ LOCATOR = r'''
 This notebook is examples (M1)–(M3) from
 `smooth_manifolds_lie_groups_and_the_exponential_map.ipynb`:
 the unit sphere in $\mathbb{R}^3$, directions in the plane, and
-rotation matrices, with the cylinder-group figure. The wording
-below is that text. Physics examples (P1)–(P3), charts and
-atlases (§2), Lie groups, and the application tiers stay in the
-mega notebook.
+rotation matrices, with the cylinder-group figure, plus physics
+examples (P1)–(P3): pure qubit states, rigid-body orientations, and
+a magnetic-field direction. The wording below is that text. Charts
+and atlases are notebook 02, Lie groups and the exponential map are
+notebook 03, and the application tiers are notebooks 04–06. The map
+is `00_series_guide.ipynb`.
 
-The code cells check the extrinsic calculus from (M1)–(M3). The
-cylinder figure is `cylinder_group_demo.py` in this folder; the
-notebook only launches it. Example titles such as (M1) use a slate
-banner; (M1.1)–(M1.5) use an orange banner.
+The code cells check the extrinsic calculus from (M1)–(M3) and the
+global-phase check (P1). The cylinder figure is
+`cylinder_group_demo.py` in this folder; the notebook only launches
+it. Example titles such as (M1) use a slate banner; (M1.1)–(M1.5)
+use an orange banner.
 '''
 
 SETUP = r'''
@@ -776,6 +778,92 @@ group later.
 velocity of the $\mathrm{SO}(3)$-orbit $t\mapsto R_z(t)p$.
 '''
 
+PHYSICS = r'''
+### 1.2 Physics examples
+
+#### (P1) Pure states of a qubit
+
+A pure state of a two-level quantum system is a unit vector
+$|\psi\rangle\in\mathbb{C}^2$,
+
+$$
+|\psi\rangle
+  =\begin{pmatrix}\alpha\\\beta\end{pmatrix},
+\qquad
+|\alpha|^2+|\beta|^2=1,
+$$
+
+but physics does not distinguish an overall complex factor: for every
+$\lambda\in\mathbb{C}\setminus\{0\}$,
+
+$$
+|\psi\rangle
+\quad\text{and}\quad
+\lambda|\psi\rangle
+$$
+
+describe the **same** preparation (all expectation values
+$\langle\psi|A|\psi\rangle/\langle\psi|\psi\rangle$ agree). Equivalently
+one may keep $\|\psi\|=1$ and identify
+
+$$
+|\psi\rangle\sim e^{i\phi}|\psi\rangle,
+\qquad\phi\in\mathbb{R}.
+$$
+
+The space of pure qubit states is therefore **not** the vector space
+$\mathbb{C}^2$, and not even the unit sphere $S^3\subset\mathbb{C}^2\cong\mathbb{R}^4$
+once global phases are removed. A standard set of representatives is
+
+$$
+|\psi(\theta,\phi)\rangle
+  =\cos\frac{\theta}{2}\,|0\rangle
+  +e^{i\phi}\sin\frac{\theta}{2}\,|1\rangle,
+\qquad
+\theta\in[0,\pi],\quad\phi\in[0,2\pi),
+$$
+
+which labels points of an ordinary sphere $S^2$ (the Bloch sphere) by
+
+$$
+\mathbf{r}
+  =(\sin\theta\cos\phi,\;\sin\theta\sin\phi,\;\cos\theta).
+$$
+
+You need calculus on that sphere (paths of states, derivatives of
+expectation values); you do **not** add two Bloch vectors as if they
+were the states themselves and expect to stay on pure states — the
+sum of two pure-state projectors is generally mixed.
+
+#### (P2) Orientations of a rigid body
+
+The orientation of a rigid body in three-dimensional space is exactly
+a rotation of a body frame into a space frame: an element of
+$\mathrm{SO}(3)$ from (M3). A continuous motion is a smooth curve
+$R(t)\in\mathrm{SO}(3)$. Angular velocity lives in the linear space of
+antisymmetric $3\times 3$ matrices (skew-symmetric generators), while
+the orientation itself lives in the nonlinear set $\mathrm{SO}(3)$.
+Adding two orientation matrices is again the wrong operation;
+composing them (or following the curve $R(t)$) is the right one.
+
+#### (P3) Direction of a magnetic field (or spin axis)
+
+In many control and NMR-style settings the laboratory field direction
+is a unit vector $\hat{\mathbf{n}}\in S^2$. The Hamiltonian of a
+spin‑1/2 aligned with that field has the form
+
+$$
+H = \tfrac12 B\, \hat{\mathbf{n}}\cdot\boldsymbol{\sigma}
+$$
+
+(with Pauli matrices $\boldsymbol{\sigma}$ and strength $B$). The
+**parameter** that labels the family of Hamiltonians is the point
+$\hat{\mathbf{n}}$ on $S^2$, not a vector you add freely in
+$\mathbb{R}^3$: $\hat{\mathbf{n}}$ and $2\hat{\mathbf{n}}$ are not two
+different directions. Smoothly changing the field direction means
+moving on $S^2$, which returns us to (M1) with a physical reading.
+'''
+
 SECTION_13 = r'''
 ### 1.3 What we need next
 
@@ -868,6 +956,24 @@ h = 1e-6
 Rz_dot0 = (Rz(h) - Rz(0.0)) / h
 print("(M3) Rz'(0) ≈\n", np.round(Rz_dot0, 6))
 print("(M3) skew check ||A+A.T|| =", norm(Rz_dot0 + Rz_dot0.T))
+
+# (P1) Global phase does not change Pauli expectations
+def bloch(psi):
+    psi = psi / norm(psi)
+    X = np.array([[0, 1], [1, 0]], dtype=complex)
+    Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
+    Z = np.array([[1, 0], [0, -1]], dtype=complex)
+    return np.array([
+        np.real(np.vdot(psi, X @ psi)),
+        np.real(np.vdot(psi, Y @ psi)),
+        np.real(np.vdot(psi, Z @ psi)),
+    ])
+
+psi = np.array([np.cos(0.3), np.exp(1j * 0.5) * np.sin(0.3)], dtype=complex)
+psi_phase = np.exp(1j * 1.7) * psi
+print("(P1) Bloch(ψ)      =", bloch(psi))
+print("(P1) Bloch(e^{iφ}ψ)=", bloch(psi_phase))
+assert np.allclose(bloch(psi), bloch(psi_phase))
 '''
 
 
@@ -877,9 +983,15 @@ def build_cells() -> list[nbf.NotebookNode]:
     cells.append(code(SETUP))
     cells.append(md(PART_I))
     cells.append(code(CYLINDER, hide_input=True))
-    # (M1.2) continues after the figure. (P1)–(P3) stay in the mega
-    # notebook; section 1.3 is the toolset summary that closes (M1)–(M3).
-    cells.append(md(AFTER_FIGURE.rstrip() + "\n\n" + SECTION_13.lstrip("\n")))
+    # (M1.2) continues after the figure. (P1)–(P3) follow (M3).
+    # Section 1.3 is the toolset summary that closes the examples.
+    cells.append(md(
+        AFTER_FIGURE.rstrip()
+        + "\n\n"
+        + PHYSICS.strip("\n")
+        + "\n\n"
+        + SECTION_13.lstrip("\n")
+    ))
     cells.append(code(CHECKS))
     return cells
 

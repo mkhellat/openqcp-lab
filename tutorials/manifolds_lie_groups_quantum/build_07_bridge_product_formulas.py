@@ -12,8 +12,9 @@ The generated notebook is ``07_bridge_product_formulas.ipynb``
 beside this file. Markdown and the Lie–Trotter check are Part III
 from ``build_notebook.py`` (the Lie product formula and the 2×2
 Hermitian example). Examples (M1)–(M3), charts, Lie groups, and
-Tiers A–C stay in the mega notebook, as do the global summary and
-bookshelf. This builder does not rewrite that text.
+Tiers A–C are notebooks 01–06. The series map, the global summary,
+and the bookshelf are notebook 00. This builder does not rewrite
+that text.
 
 Heading cells are split the same way as the mega notebook:
 level-4 titles become slate banners, and level-5 titles become
@@ -180,8 +181,8 @@ This notebook is Part III from
 `smooth_manifolds_lie_groups_and_the_exponential_map.ipynb`:
 the Lie product formula and the 2×2 Hermitian Trotter check.
 The wording below is that text. Examples (M1)–(M3), charts,
-Lie groups, Tiers A–C, and the global summary stay in the mega
-notebook.
+Lie groups, and Tiers A–C are notebooks 01–06. The series map
+and the global summary are `00_series_guide.ipynb`.
 
 The code cell checks
 $\|\exp(t(A+B))-(\exp(tA/r)\exp(tB/r))^r\|$
@@ -201,7 +202,7 @@ from scipy.linalg import expm, logm
 np.set_printoptions(precision=4, suppress=True)
 plt.rcParams.update({"figure.figsize": (5.5, 4.0), "font.size": 11})
 
-# Defined in the mega notebook's Tier A U(n) cell. Part III calls it.
+# Defined in notebook 04's Tier A U(n) cell. Part III calls it.
 def random_hermitian(n, rng):
     A = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
     return (A + A.conj().T) / 2

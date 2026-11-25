@@ -9,9 +9,11 @@ Run from the repository root or from this directory:
     python tutorials/manifolds_lie_groups_quantum/build_00_series_guide.py
 
 The generated notebook is ``00_series_guide.ipynb`` beside this file.
-Title, prerequisites, learning objectives, and the Tier A/B/C depth
-map are the text already used by the mega notebook and this folder's
-README. This builder does not add a new development of the geometry.
+The opening essay, prerequisites, learning objectives, depth map,
+closing summary, and bookshelf are the text from the single notebook
+this series replaced. This builder does not add a new development of
+the geometry. A few phrases that named a section of that file now
+name the series notebook that holds the section.
 """
 
 from __future__ import annotations
@@ -29,35 +31,83 @@ from _nbutil import code, md
 
 OUT = Path(__file__).with_name("00_series_guide.ipynb")
 
-_MEGA = "smooth_manifolds_lie_groups_and_the_exponential_map.ipynb"
-
 
 def build_cells() -> list[nbf.NotebookNode]:
     cells: list[nbf.NotebookNode] = []
 
-    cells.append(md(rf"""
+    cells.append(md(r"""
 # Smooth Manifolds, Lie Groups, and the Exponential Map
 
-A foundations tutorial: why many objects in quantum theory are
-**smooth manifolds** (or **Lie groups**), how to do calculus on them
-with charts and transition maps, and how the **exponential map**
-connects a Lie algebra of generators to a Lie group of
-transformations — with coded applications at three depths (A/B/C).
+Many sets that appear in mathematics and theoretical physics are not
+vector spaces: if $p$ and $q$ are points of the set, $p+q$ or
+$\alpha p$ need not lie in the set, and need not be meaningful.
+Concrete examples are in notebook 01.
 
-It is a foundations module for the geometry of states, transformations,
-and parameters used across the tutorials and tools here. Part III
-bridges in particular to product formulas and the coupled-oscillator
-Hamiltonian-simulation notebooks (module 05); it does not replace them.
+Such sets arise as domains of points on which geometry and physical
+law are local and differential: they concern how structure and
+quantities vary among neighbouring points. What the points *are*
+depends on the subject — for example:
+
+- in **mathematics**: the domains that forced the invention of
+  manifolds — curved surfaces and higher-dimensional geometries that
+  admit calculus only through local coordinates like open sets in
+  $\mathbb{R}^n$ (not a single global vector-space chart), directions
+  up to scaling, and continuous groups of transformations — so that
+  derivatives, curvature, and differential equations can be stated
+  intrinsically on those sets;
+- in **special and general relativity**: **events**; the domain is
+  spacetime itself, and the independent variables need not single out
+  time as a privileged parameter of the set;
+- in **quantum mechanics**, **quantum information**, and **quantum
+  computing**: pure states up to phase, mixed states, and unitary
+  gates (finite transformations), as well as control parameters of
+  Hamiltonians;
+- in **statistical physics** and **quantum statistical physics**:
+  macroscopic states of ensembles, and parameters of families of
+  probability distributions or Gibbs states;
+- in **twistor theory**: points of the complex projective set
+  $\mathbb{PT}=\mathbb{CP}^{3}$ that reorganise null structure in
+  spacetime (incidence dictionary in notebook 06, §C3);
+- in **post-quantum cryptography and cryptology**: geometric carriers
+  such as elliptic curves and lattice quotients that underwrite hard
+  problems (treated here only as a map; depth belongs in a dedicated
+  notebook).
+
+The language of that local variation is multivariable calculus: smooth
+real-valued functions, smooth curves, and derivatives, written in local
+coordinates. Manifolds were introduced in mathematics precisely to
+carry that language on a set of points that is only locally like an
+open set in $\mathbb{R}^n$, when a single global vector-space domain is
+the wrong description of the points.
+
+A **smooth manifold** is a set equipped with local coordinates in open
+subsets of $\mathbb{R}^d$ so that those calculus notions are defined
+via ordinary calculus in $\mathbb{R}^d$ (details in notebook 02). Differentiating
+a curve through a point $p$ yields an element of a vector space
+$T_pM$, the tangent space at $p$ — not an operation that adds points
+of the set itself.
+
+If a smooth manifold $G$ is also a group and the group operations are
+smooth, $G$ is a **Lie group**. Its **Lie algebra** is the tangent
+space at the identity, $\mathfrak{g}=T_eG$, which is a vector space.
+For the matrix groups used in this notebook, the exponential series
+$\exp(X)=\sum_{k\ge 0}X^k/k!$ maps $\mathfrak{g}$ into $G$, and
+$t\mapsto\exp(tX)$ is the smooth curve in $G$ with derivative $X$ at
+$t=0$.
+
+The series develops that language with pictures and code, then
+applications at depths A / B / C. It is a foundations module for the
+geometry of states, transformations, and parameters used across the
+tutorials and tools here. Part III bridges in particular to product
+formulas and the coupled-oscillator Hamiltonian-simulation notebooks
+(module 05); it does not replace them.
 
 This notebook is the map: prerequisites, reading paths, the depth
-map, and links to the graduate off-ramps. It does not build charts,
-and it does not launch a figure.
-
-> **Transitional.** The legacy mega notebook `{_MEGA}` still
-> holds the full text (Parts I, II‑A, II‑B, II‑C, and III) while
-> notebooks 01–07 are split out of it. Read that file for the labs
-> until those notebooks exist. This series lives at
-> `tutorials/manifolds_lie_groups_quantum/`.
+map, the closing summary, the bookshelf, and links to the graduate
+off-ramps. It does not build charts, and it does not launch a figure.
+Notebooks 01–07 hold the labs. The old single file
+`smooth_manifolds_lie_groups_and_the_exponential_map.ipynb` only
+redirects here.
 """))
 
     cells.append(md(r"""
@@ -87,13 +137,13 @@ and it does not launch a figure.
    (twistor incidence in II‑C §C3; PQC/crypto off‑ramp in §C4).
 """))
 
-    cells.append(md(rf"""
+    cells.append(md(r"""
 ## Notebooks
 
 | ID | Notebook | What it owns |
 |----|----------|----------------|
-| 00 | `00_series_guide.ipynb` | This map |
-| 01 | `01_extrinsic_sphere_and_dg_toolset.ipynb` | (M1)–(M3) and the cylinder demo |
+| 00 | `00_series_guide.ipynb` | This map, closing summary, bookshelf |
+| 01 | `01_extrinsic_sphere_and_dg_toolset.ipynb` | (M1)–(M3), (P1)–(P3), cylinder demo |
 | 02 | `02_charts_atlases_tangent.ipynb` | Part I §2: atlas, charts, transitions |
 | 03 | `03_lie_groups_exponential_map.ipynb` | Lie groups, Lie algebra, exponential map |
 | 04 | `04_tier_a_applications.ipynb` | Part II‑A full labs |
@@ -101,23 +151,24 @@ and it does not launch a figure.
 | 06 | `06_tier_c_offramps.ipynb` | Part II‑C thin map to the graduate notebooks |
 | 07 | `07_bridge_product_formulas.ipynb` | Part III bridge to product formulas / module 05 |
 
-Only 00 is split out. Notebooks 01–07 are the planned roster; their
-cells still live in `{_MEGA}`. Generators (`build_*.py`) are the
-source of truth; rebuild a notebook by running its generator.
-Interactive figures, when a later notebook has them, live in a
-sibling `*_demo.py` and are launched from a hidden cell
-(`_nbutil.code(..., hide_input=True)`). The cylinder demo stays with
-the mega notebook until notebook 01 is extracted. Software
-requirements are in `README.md` in this folder. This guide has no
-demo.
+Notebooks 00–07 are the series. Generators
+(`build_00_series_guide.py` through
+`build_07_bridge_product_formulas.py`) are the source of truth;
+rebuild a notebook by running its generator. `build_notebook.py` is
+deprecated and only writes the redirect at the old filename.
+Interactive figures live in a sibling `*_demo.py` and are launched
+from a hidden cell (`_nbutil.code(..., hide_input=True)`). The
+cylinder demo is launched from notebook 01. Software requirements
+are in `README.md` in this folder. This guide has no demo.
 
-**Citation rule.** Every section of the mega notebook names textbooks
-or articles a reader can open. We do not invent references. Full
-bibliographic detail stays in that notebook; the anchors are listed
-in `README.md`.
+**Citation rule.** Every section of notebooks 01–07 names textbooks
+or articles a reader can open. We do not invent references. The
+compiled bookshelf is in this guide; the same works are named again
+beside the section that uses them. Anchors are also listed in
+`README.md`.
 """))
 
-    cells.append(md(rf"""
+    cells.append(md(r"""
 ## Reading paths
 
 1. **Geometry core.** 00 → 01 → 02 → 03
@@ -133,9 +184,6 @@ light labs (05). Off-ramps are the Tier‑C geometry-depth map (06).
 The bridge (07) is Part III: product formulas and the
 coupled-oscillator Hamiltonian-simulation notebooks (module 05); it
 does not replace them.
-
-Until 01–07 are extracted, each path is still the corresponding part
-of `{_MEGA}`.
 """))
 
     cells.append(code(r"""
@@ -151,8 +199,7 @@ print("Bridge:        00 -> 07")
 
 Each case is written as **background → geometry (with equations) →
 where it shows up**, then code or a reading off-ramp. Tier A is
-planned notebook 04, Tier B notebook 05, and Tier C notebook 06.
-Those cells are still in the mega notebook.
+notebook 04, Tier B notebook 05, and Tier C notebook 06.
 
 | Tier | Topics | Code depth |
 |------|--------|------------|
@@ -177,8 +224,7 @@ holonomy deepen continues in
     cells.append(md(r"""
 ## Links
 
-Graduate off-ramps (Tier C, planned notebook 06), copied from Part II‑C
-of the mega notebook:
+Graduate off-ramps (Tier C, notebook 06):
 
 - Twistors → [`../twistor_theory`](../twistor_theory/)
 - CY / $G_2$ (holonomy deepen) →
@@ -189,7 +235,7 @@ of the mega notebook:
   [`../simplicial_manifolds`](../simplicial_manifolds/)
   (mother notebook `00_series_guide.ipynb`)
 
-**Bridge.** Part III (planned notebook 07) bridges to product formulas
+**Bridge.** Part III (notebook 07) bridges to product formulas
 and Hamiltonian simulation in
 [`../coupled_harmonic_oscillators`](../coupled_harmonic_oscillators/)
 (module 05). In those notebooks, §5.1 of the $N=2$ tutorial keeps a
@@ -199,12 +245,54 @@ the geometry; module 05 is the place for the simulation pipeline. It
 does not replace that pipeline.
 """))
 
-    cells.append(md(rf"""
+    cells.append(md(r"""
 ## Summary
 
-**Takeaway.** This file is the map. The legacy mega notebook
-`{_MEGA}` still holds Parts I, II‑A, II‑B, II‑C, and III until
-notebooks 01–07 are extracted.
+- Smooth manifolds let us do calculus where global addition fails;
+  charts + \(C^\infty\) transitions make derivatives chart‑independent
+  (Lee).
+- Lie groups package manifolds of transformations; Lie algebras are
+  their infinitesimal generators; the exponential map builds
+  one‑parameter subgroups (Hall).
+- Quantum information, Gaussian CV, and statistics supply Tier‑A
+  manifolds you can plot and test in notebooks 04–06
+  (Bengtsson–Życzkowski, de Gosson, Amari).
+- Relativity and bundles appear at Tier‑B (Carroll/Wald, Nakahara,
+  Berry).
+- Tier‑C is geometry‑depth throughout: Calabi–Yau ($c_1=0$), $G_2$
+  (parallel $3$‑form), twistors (incidence
+  $\omega^{A}=ix^{AA'}\pi_{A'}$), elliptic curves / lattice tori.
+  Graduate off‑ramps: [`twistor_theory`](../twistor_theory/);
+  [`special_holonomy`](../special_holonomy/); PQC module for standards
+  and OQS. Combinatorial manifolds ($k=1,\ldots,5$):
+  [`simplicial_manifolds`](../simplicial_manifolds/)
+  (`00_series_guide.ipynb`).
+
+## Global further reading (bookshelf)
+
+1. Lee, *Introduction to Smooth Manifolds*, 2nd ed., Springer, 2013.
+2. Hall, *Lie Groups, Lie Algebras, and Representations*, 2nd ed.,
+   Springer, 2015 (arXiv:math‑ph/0005032).
+3. Bengtsson & Życzkowski, *Geometry of Quantum States*, 2nd ed., CUP,
+   2017.
+4. de Gosson, *Symplectic Geometry and Quantum Mechanics*, Birkhäuser,
+   2006.
+5. Amari & Nagaoka, *Methods of Information Geometry*, AMS, 2000.
+6. Nakahara, *Geometry, Topology and Physics*, 2nd ed., 2003.
+7. Joyce, *Compact Manifolds with Special Holonomy*, OUP, 2000.
+8. Penrose & Rindler, *Spinors and Space‑Time*, Vol. 2, CUP, 1986.
+9. Silverman, *The Arithmetic of Elliptic Curves*, 2nd ed., Springer,
+   2009.
+10. Open Quantum Safe: https://openquantumsafe.org/ and the `liboqs`
+    / `oqs-provider` repositories.
+"""))
+
+    cells.append(md(r"""
+## Where to go next
+
+**Takeaway.** This file is the map. Notebooks 01–07 hold the labs.
+`smooth_manifolds_lie_groups_and_the_exponential_map.ipynb` redirects
+here.
 
 - Geometry core reads 00 → 01 → 02 → 03.
 - Applications reads 00 → 04 → 05 (Tier A, then Tier B).

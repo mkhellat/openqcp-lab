@@ -139,13 +139,15 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   quantum Hamiltonian simulation with exponential speedup.
 
 - [Foundations - Smooth manifolds, Lie groups, and the exponential map](tutorials/manifolds_lie_groups_quantum)  
-  Charts and $C^\infty$ transitions, Lie algebras, and the matrix
+  Series `00_series_guide.ipynb` through `07_bridge_product_formulas.ipynb`:
+  charts and $C^\infty$ transitions, Lie algebras, and the matrix
   exponential, with Tier A/B/C applications (Bloch sphere through
   PQC off-ramp). Tier‑C is geometry-depth for Calabi–Yau, $G_2$,
   twistors ($\mathbb{CP}^{3}$ incidence), and elliptic / lattice
   tori. Foundations for the geometry of states, transformations, and
-  parameters across the lab; Part III bridges to product formulas in
-  module ( 05 ).
+  parameters across the lab; notebook 07 bridges to product formulas in
+  module ( 05 ). The old single-notebook filename redirects to the
+  series guide.
 
 - [Foundations - Twistor theory (geometry and Penrose transform)](tutorials/twistor_theory)  
   Graduate off-ramp from manifolds §C3: 2‑spinor coordinates, reality
@@ -158,14 +160,14 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   3-form ($\mathrm{Spin}(7)$ stays a map).
 
 - [Foundations - Simplicial complexes and combinatorial manifolds](tutorials/simplicial_manifolds)  
-  Graduate off-ramp from the smooth atlas in the manifolds notebook.
+  Graduate off-ramp from the smooth atlas in the manifolds series.
   Mother notebook `00_series_guide.ipynb`: when a finite simplicial
   $k$-complex is a combinatorial manifold, for $k = 1, \ldots, 5$.
 
 - [Foundations - Quantum information and information theory](tutorials/quantum_information_theory)  
   Shannon and von Neumann entropies, relative entropy, channels,
   fidelity and trace distance, with a bridge toward code-based PQC
-  (HQC named as destination). Complements the manifolds notebook;
+  (HQC named as destination). Complements the manifolds series;
   continues in the PQC / cryptology module for NIST and OQS.
 
 - [Foundations - Post-quantum cryptography and cryptology](tutorials/post_quantum_cryptography)  

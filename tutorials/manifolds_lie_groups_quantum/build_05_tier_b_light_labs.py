@@ -12,8 +12,9 @@ The generated notebook is ``05_tier_b_light_labs.ipynb``
 beside this file. Markdown and the two lab checks are Part II-B
 from ``build_notebook.py`` (Minkowski spacetime and the Berry
 phase on a latitude of the Bloch sphere). Examples (M1)–(M3),
-charts and atlases, Lie groups, and Tiers A and C stay in the
-mega notebook. This builder does not rewrite that text.
+charts, and Lie groups are notebooks 01–03. Tier A is notebook
+04 and Tier C is notebook 06. This builder does not rewrite
+that text.
 
 Heading cells are split the same way as the mega notebook:
 level-4 titles become slate banners, and level-5 titles become
@@ -181,9 +182,9 @@ This notebook is Part II‑B from
 `smooth_manifolds_lie_groups_and_the_exponential_map.ipynb`:
 Minkowski spacetime as a Lorentzian manifold, and a $U(1)$ Berry
 phase on a latitude of the Bloch sphere. The wording below is
-that text. Examples (M1)–(M3), charts and atlases, Lie groups
-and the exponential map, and Tiers A and C stay in the mega
-notebook.
+that text. Examples (M1)–(M3), charts, and Lie groups are
+notebooks 01–03. Tier A is notebook 04 and Tier C is notebook 06.
+The map is `00_series_guide.ipynb`.
 
 The code cells check the light cone in $\mathbb{R}^{1,1}$ and
 the latitude Berry phase. There is no sibling demo.
