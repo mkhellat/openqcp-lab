@@ -177,8 +177,13 @@ jobs:
   notebooks:
     name: tutorial notebooks
     needs: [changes, approve]
+    # Label skip-notebooks: author verified touched notebooks locally
+    # (rebuild + execute). ci-result treats skipped as success.
     if: >-
       !cancelled() && needs.changes.outputs.notebooks == 'true' &&
+      (github.event_name != 'pull_request' ||
+       !contains(join(github.event.pull_request.labels.*.name, ','),
+                 'skip-notebooks')) &&
       (needs.approve.result == 'success' ||
        (github.event_name != 'pull_request' &&
         needs.approve.result == 'skipped'))
