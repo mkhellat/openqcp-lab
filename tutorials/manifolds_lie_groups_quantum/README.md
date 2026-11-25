@@ -36,9 +36,10 @@ Parts I, II‑A, II‑B, II‑C, and III, and it is not retired.
 | 06 | `06_tier_c_offramps.ipynb` | Part II‑C thin map |
 | 07 | `07_bridge_product_formulas.ipynb` | Part III → coupled oscillators, module 05 |
 
-Notebooks 00, 01, and 02 are split out. Rebuild notebook 01 with
+Notebooks 00, 01, 02, and 03 are split out. Rebuild notebook 01 with
 `build_01_extrinsic_sphere_and_dg_toolset.py`. Rebuild notebook 02
-with `build_02_charts_atlases_tangent.py`. Notebooks 03–07 are
+with `build_02_charts_atlases_tangent.py`. Rebuild notebook 03
+with `build_03_lie_groups_exponential_map.py`. Notebooks 04–07 are
 the planned roster; their cells still live in the mega notebook.
 
 Interactive figures live in sibling `*_demo.py` modules. Notebook
@@ -53,8 +54,8 @@ hide_input=True)`). The cylinder demo is launched from notebook 01.
 3. **Off-ramps.** 00 → 06
 4. **Bridge.** 00 → 07
 
-Until 03–07 exist as their own notebooks, each of those paths is
-still the corresponding part of the mega notebook.
+Until notebooks 04–07 exist as their own notebooks, each of those
+paths is still the corresponding part of the mega notebook.
 
 
 # Software Requirements
@@ -77,7 +78,8 @@ and the cylinder demo are in
 `01_extrinsic_sphere_and_dg_toolset.ipynb`. Section 2
 makes the atlas language precise; that section is
 `02_charts_atlases_tangent.ipynb`. Lie groups and the exponential
-map stay in the mega notebook until notebook 03 is extracted.
+map (Part I §§3–5) are in
+`03_lie_groups_exponential_map.ipynb`.
 
 # Depth map (applications)
 
