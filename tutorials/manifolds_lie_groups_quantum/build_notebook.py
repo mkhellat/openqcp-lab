@@ -2088,6 +2088,15 @@ and a takeaway. Graduate off‑ramps:
   [`../special_holonomy`](../special_holonomy/)
 - PQC / lattices / ECC engineering →
   [`../post_quantum_cryptography`](../post_quantum_cryptography/)
+- Combinatorial manifolds ($k=1,\ldots,5$) →
+  [`../simplicial_manifolds`](../simplicial_manifolds/)
+  (mother notebook `00_series_guide.ipynb`)
+
+**Off‑ramp:** [`../simplicial_manifolds`](../simplicial_manifolds/)
+(mother notebook `00_series_guide.ipynb`) — when a finite simplicial
+complex is a combinatorial manifold, for $k=1,\ldots,5$. Smooth
+charts, Lie groups, and the exponential map stay in Part I of this
+notebook.
 """))
 
 cells.append(md(r"""
@@ -2640,7 +2649,9 @@ cells.append(md(r"""
   $\omega^{A}=ix^{AA'}\pi_{A'}$), elliptic curves / lattice tori.
   Graduate off‑ramps: [`twistor_theory`](../twistor_theory/);
   [`special_holonomy`](../special_holonomy/); PQC module for standards
-  and OQS.
+  and OQS. Combinatorial manifolds ($k=1,\ldots,5$):
+  [`simplicial_manifolds`](../simplicial_manifolds/)
+  (`00_series_guide.ipynb`).
 
 ## Global further reading (bookshelf)
 
