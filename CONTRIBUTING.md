@@ -181,6 +181,13 @@ request touches:
   (`.github/scripts/runnable-notebooks` lists the ones that run).
   Those are run locally by the contributor instead (see step 7).
 
+Label **`skip-notebooks`** on a pull request skips the tutorial
+nbmake job (preflight, DCO, and `ci-result` still run). Use it only
+when you have already rebuilt and executed the touched notebooks
+locally, and say what you ran in the PR or merge comment. Methodical
+docs/notebook refactors that would otherwise wait on the full suite
+are the intended case — not a way to land untested notebook edits.
+
 A change to the CI itself runs everything. The tests do not start on
 their own: a reviewer approves each run on the workflow run page,
 "Review deployments", select `ci`, "Approve and deploy". Any of the
