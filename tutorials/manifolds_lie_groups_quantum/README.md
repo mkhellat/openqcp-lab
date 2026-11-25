@@ -36,11 +36,12 @@ Parts I, II‑A, II‑B, II‑C, and III, and it is not retired.
 | 06 | `06_tier_c_offramps.ipynb` | Part II‑C thin map |
 | 07 | `07_bridge_product_formulas.ipynb` | Part III → coupled oscillators, module 05 |
 
-Notebooks 00, 01, 02, and 03 are split out. Rebuild notebook 01 with
+Notebooks 00, 01, 02, 03, and 04 are split out. Rebuild notebook 01 with
 `build_01_extrinsic_sphere_and_dg_toolset.py`. Rebuild notebook 02
 with `build_02_charts_atlases_tangent.py`. Rebuild notebook 03
-with `build_03_lie_groups_exponential_map.py`. Notebooks 04–07 are
-the planned roster; their cells still live in the mega notebook.
+with `build_03_lie_groups_exponential_map.py`. Rebuild notebook 04
+with `build_04_tier_a_applications.py`. Notebooks 05–07 are the
+planned roster; their cells still live in the mega notebook.
 
 Interactive figures live in sibling `*_demo.py` modules. Notebook
 cells only launch them, with the source hidden (`_nbutil.code(...,
@@ -54,7 +55,7 @@ hide_input=True)`). The cylinder demo is launched from notebook 01.
 3. **Off-ramps.** 00 → 06
 4. **Bridge.** 00 → 07
 
-Until notebooks 04–07 exist as their own notebooks, each of those
+Until notebooks 05–07 exist as their own notebooks, each of those
 paths is still the corresponding part of the mega notebook.
 
 
@@ -92,8 +93,9 @@ where it shows up**, then code or a reading off-ramp.
 | B | Lorentzian Minkowski; $U(1)$ bundles / Berry phase | Light code |
 | C | Calabi–Yau ($c_1=0$); $G_{2}$ (parallel $3$-form); twistors (incidence); elliptic curves & lattice tori | Geometry-depth + schematics; PQC/crypto off-ramp |
 
-Tier A is planned notebook 04, Tier B notebook 05, and Tier C
-notebook 06. Those cells are still in the mega notebook.
+Tier A is notebook 04 (`04_tier_a_applications.ipynb`). Tier B is
+planned notebook 05, and Tier C notebook 06. The Tier B and Tier C
+cells are still in the mega notebook.
 
 **Tier C (all of C1–C4).** Each section declares a working setup and
 writes at least one explicit equation or dictionary (Yau / $c_1=0$;
