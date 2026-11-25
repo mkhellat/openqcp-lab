@@ -157,6 +157,11 @@ All tutorial notebooks live under [`tutorials/`](tutorials).
   Calabi–Yau ($c_1=0$, Yau, $\mathrm{SU}(m)$), and $G_2$ via a parallel
   3-form ($\mathrm{Spin}(7)$ stays a map).
 
+- [Foundations - Simplicial complexes and combinatorial manifolds](tutorials/simplicial_manifolds)  
+  Graduate off-ramp from the smooth atlas in the manifolds notebook.
+  Mother notebook `00_series_guide.ipynb`: when a finite simplicial
+  $k$-complex is a combinatorial manifold, for $k = 1, \ldots, 5$.
+
 - [Foundations - Quantum information and information theory](tutorials/quantum_information_theory)  
   Shannon and von Neumann entropies, relative entropy, channels,
   fidelity and trace distance, with a bridge toward code-based PQC
