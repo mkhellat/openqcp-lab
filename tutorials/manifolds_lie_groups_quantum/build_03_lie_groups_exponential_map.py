@@ -12,9 +12,9 @@ The generated notebook is ``03_lie_groups_exponential_map.ipynb``
 beside this file. Markdown and the matrix-exponential check are
 Part I §§3–5 from ``build_notebook.py`` (tangent vectors, the
 exponential map, Lie groups and Lie algebras, and GL(n, C)).
-Examples (M1)–(M3), charts and atlases (§2), and the application
-tiers stay in the mega notebook. This builder does not rewrite
-that text.
+Examples (M1)–(M3) and the physics examples are notebook 01,
+charts are notebook 02, and the tiers are notebooks 04–06. This
+builder does not rewrite that text.
 
 Heading cells are split the same way as the mega notebook:
 level-4 titles become slate banners, and level-5 titles become
@@ -182,8 +182,9 @@ This notebook is Part I §§3–5 from
 tangent vectors and the exponential map, Lie groups and Lie
 algebras, and $\mathrm{GL}(n,\mathbb{C})$ with the matrix
 exponential series. The wording below is that text. Examples
-(M1)–(M3), charts and atlases (§2), and the application tiers
-stay in the mega notebook.
+(M1)–(M3) and physics examples (P1)–(P3) are notebook 01. Charts
+and atlases are notebook 02. The application tiers are notebooks
+04–06. Part III is notebook 07. The map is `00_series_guide.ipynb`.
 
 The code cell checks the power series against `scipy.linalg.expm`,
 the one-parameter subgroup ODE, and $\exp(X)\exp(-X)=I$. There is

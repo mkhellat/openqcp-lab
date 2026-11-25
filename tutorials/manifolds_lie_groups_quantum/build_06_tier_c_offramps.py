@@ -12,8 +12,8 @@ The generated notebook is ``06_tier_c_offramps.ipynb``
 beside this file. Markdown and the schematic checks are
 Part II‑C from ``build_notebook.py`` (Calabi-Yau, G2,
 twistor incidence, and elliptic curves / lattices). Examples
-(M1)–(M3), charts and atlases, Lie groups, and Tiers A and B
-stay in the mega notebook. This builder does not rewrite
+(M1)–(M3), charts, and Lie groups are notebooks 01–03. Tiers A
+and B are notebooks 04 and 05. This builder does not rewrite
 that text.
 
 Heading cells are split the same way as the mega notebook:
@@ -182,8 +182,9 @@ This notebook is Part II‑C from
 `smooth_manifolds_lie_groups_and_the_exponential_map.ipynb`:
 Calabi–Yau manifolds, $G_2$ holonomy, twistor incidence, and
 elliptic curves and lattices. The wording below is that text.
-Examples (M1)–(M3), charts and atlases, Lie groups and the
-exponential map, and Tiers A and B stay in the mega notebook.
+Examples (M1)–(M3), charts, and Lie groups are notebooks 01–03.
+Tiers A and B are notebooks 04 and 05. The map is
+`00_series_guide.ipynb`.
 
 The code cells draw the Weierstrass discriminant, inventory the
 model $G_2$ 3-form, sketch twistor incidence, and plot a lattice

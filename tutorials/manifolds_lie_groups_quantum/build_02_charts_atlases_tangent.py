@@ -11,9 +11,9 @@ Run from the repository root or from this directory:
 The generated notebook is ``02_charts_atlases_tangent.ipynb``
 beside this file. Markdown and the circle check are Part I §2
 from ``build_notebook.py`` (atlas, charts, and transition maps
-on the circle). Examples (M1)–(M3), tangent vectors and the
-exponential map (§3), Lie groups, and the application tiers stay
-in the mega notebook. This builder does not rewrite that text.
+on the circle). Examples (M1)–(M3) and the physics examples
+are notebook 01; Lie groups and the tiers are notebooks 03–06.
+This builder does not rewrite that text.
 
 Heading cells are split the same way as the mega notebook:
 level-4 titles become slate banners, and level-5 titles become
@@ -182,8 +182,10 @@ This notebook is Part I §2 from
 `smooth_manifolds_lie_groups_and_the_exponential_map.ipynb`:
 a chart, an atlas, and $C^\infty$ transition maps, checked on
 two angle charts of the circle. The wording below is that text.
-Examples (M1)–(M3), tangent vectors and the exponential map (§3),
-Lie groups, and the application tiers stay in the mega notebook.
+Examples (M1)–(M3) and physics examples (P1)–(P3) are notebook
+01. Tangent vectors, Lie groups, and the exponential map are
+notebook 03. The application tiers are notebooks 04–06. The map
+is `00_series_guide.ipynb`.
 
 The code cell checks the two angle charts on $S^1$ and the
 transition on the upper and lower arcs. The figure is drawn in

@@ -7,29 +7,28 @@ connects a Lie algebra of generators to a Lie group of
 transformations — with coded applications at three depths (A/B/C).
 
 It is a foundations module for the geometry of states, transformations,
-and parameters used across the tutorials and tools here. The module is
-being split into a series (00–07). Until that split finishes, the
-legacy mega notebook still holds the full text. Part III, the bridge
-to product formulas and Hamiltonian simulation in
+and parameters used across the tutorials and tools here. Part III,
+the bridge to product formulas and Hamiltonian simulation in
 [`coupled_harmonic_oscillators`](../coupled_harmonic_oscillators/)
 (module 05), is `07_bridge_product_formulas.ipynb`; it does **not**
 replace that pipeline.
 
+Start at `00_series_guide.ipynb`.
+
 
 # Notebooks
 
-Generators (`build_*.py`) are the source of truth; each `.ipynb` is
-rebuilt from its generator. The series is being split out of the
-legacy mega notebook. That file is **transitional**: it still holds
-Parts I, II‑A, II‑B, II‑C, and III, and it is not retired.
-
-- `smooth_manifolds_lie_groups_and_the_exponential_map.ipynb`
-  (transitional mega notebook)
+Generators `build_00_series_guide.py` through
+`build_07_bridge_product_formulas.py` are the source of truth; each
+series `.ipynb` is rebuilt from its generator. The old filename
+`smooth_manifolds_lie_groups_and_the_exponential_map.ipynb` is a
+redirect to `00_series_guide.ipynb`. `build_notebook.py` is
+deprecated: it only writes that redirect.
 
 | ID | Notebook | Arc |
 |----|----------|-----|
-| 00 | `00_series_guide.ipynb` | Prerequisites, reading paths, depth map, off-ramps |
-| 01 | `01_extrinsic_sphere_and_dg_toolset.ipynb` | (M1)–(M3) and the cylinder demo |
+| 00 | `00_series_guide.ipynb` | Prerequisites, reading paths, depth map, summary, bookshelf |
+| 01 | `01_extrinsic_sphere_and_dg_toolset.ipynb` | (M1)–(M3), (P1)–(P3), and the cylinder demo |
 | 02 | `02_charts_atlases_tangent.ipynb` | Part I §2 atlas, charts, transitions |
 | 03 | `03_lie_groups_exponential_map.ipynb` | Lie groups and the exponential map |
 | 04 | `04_tier_a_applications.ipynb` | Part II‑A full labs |
@@ -37,15 +36,8 @@ Parts I, II‑A, II‑B, II‑C, and III, and it is not retired.
 | 06 | `06_tier_c_offramps.ipynb` | Part II‑C thin map |
 | 07 | `07_bridge_product_formulas.ipynb` | Part III → coupled oscillators, module 05 |
 
-Notebooks 00, 01, 02, 03, 04, 05, 06, and 07 are split out. Rebuild notebook 01 with
-`build_01_extrinsic_sphere_and_dg_toolset.py`. Rebuild notebook 02
-with `build_02_charts_atlases_tangent.py`. Rebuild notebook 03
-with `build_03_lie_groups_exponential_map.py`. Rebuild notebook 04
-with `build_04_tier_a_applications.py`. Rebuild notebook 05 with
-`build_05_tier_b_light_labs.py`. Rebuild notebook 06 with
-`build_06_tier_c_offramps.py`. Rebuild notebook 07 with
-`build_07_bridge_product_formulas.py`. The mega notebook stays
-transitional; it is not retired.
+Notebooks 00–07 are extracted. Rebuild each one by running the
+matching `build_0N_*.py` beside it.
 
 Interactive figures live in sibling `*_demo.py` modules. Notebook
 cells only launch them, with the source hidden (`_nbutil.code(...,
@@ -78,8 +70,8 @@ Examples (M1)–(M3) build an extrinsic differential-geometry kit in
 order: embedded constraint → tangent space; differential of a map /
 vector field; charts + chain rule; projective quotients; matrix Lie
 groups and Lie-algebra velocities at the identity. Those examples
-and the cylinder demo are in
-`01_extrinsic_sphere_and_dg_toolset.ipynb`. Section 2
+and the cylinder demo, together with physics examples (P1)–(P3),
+are in `01_extrinsic_sphere_and_dg_toolset.ipynb`. Section 2
 makes the atlas language precise; that section is
 `02_charts_atlases_tangent.ipynb`. Lie groups and the exponential
 map (Part I §§3–5) are in
@@ -118,7 +110,7 @@ holonomy deepen continues in
 
 # Further reading (primary)
 
-Listed with full bibliographic detail inside the mega notebook. Anchors:
+The compiled bookshelf is in `00_series_guide.ipynb`. Anchors:
 
 - J. M. Lee, *Introduction to Smooth Manifolds*, 2nd ed., Springer, 2013.
 - B. C. Hall, *Lie Groups, Lie Algebras, and Representations*, 2nd ed.,
